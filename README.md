@@ -344,13 +344,15 @@ UPDATE users SET superuser = FALSE WHERE email = 'user@example.com';
 
 - `POST /api/notes/import/joplin` – Import from Joplin JEX archive
   - **Content-Type:** `application/octet-stream`
-  - **Request body:** Binary .jex file (ZIP archive)
+  - **Request body:** Binary .jex file (ZIP or TAR archive)
   - **Response:** `{ "imported": N, "errors": N, "messages": [...] }`
   - Returns 401 if not authenticated
   - Returns 400 if file is invalid
+  - Detects archive format: ZIP (folder/note JSON metadata) or TAR (raw markdown export)
   - Flattens Joplin's folder hierarchy into space-delimited tags
-  - Automatically tags imported notes with folder names
-  - Extracts title from first markdown heading or uses filename
+  - Applies any `tags:` values found in the Joplin metadata footer as Tags
+  - Strips the trailing Joplin metadata block (`id:`, `parent_id:`, etc.) from note content
+  - Extracts title from first markdown heading, else the first content line, else the filename
   - Content is stored as markdown
 
 - `POST /api/notes/import/markdown` – Import a single markdown file

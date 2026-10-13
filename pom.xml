@@ -89,6 +89,12 @@
             <artifactId>jackson-databind</artifactId>
         </dependency>
 
+        <!-- Tar support for Joplin JEX files that are tar archives -->
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-compress</artifactId>
+        </dependency>
+
         <!-- Testing -->
         <dependency>
             <groupId>io.quarkus</groupId>

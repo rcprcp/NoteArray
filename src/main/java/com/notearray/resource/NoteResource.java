@@ -23,6 +23,7 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
+import java.io.IOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -34,6 +35,8 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
+import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
+import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
 
 @Path("/api/notes")
 @Produces(MediaType.APPLICATION_JSON)
@@ -256,7 +259,7 @@ public class NoteResource {
     }
 
     /**
-     * Import a Joplin JEX file (ZIP archive).
+     * Import a Joplin JEX file (supports both ZIP and TAR archives).
      * Flattens folder hierarchy into space-delimited tags.
      */
     @POST
@@ -281,75 +284,153 @@ public class NoteResource {
                     .entity("Failed to read JEX file: " + e.getMessage()).build();
         }
 
-        Map<String, String> folderMap = new HashMap<>(); // folderID -> folderTitle
-        Map<String, String> noteMap = new HashMap<>();   // noteID -> parent folderID
+        Map<String, String> folderMap = new HashMap<>();
+        Map<String, String> noteMap = new HashMap<>();
+
+        boolean isZip = data.length > 3 && data[0] == 0x50 && data[1] == 0x4B && data[2] == 0x03 && data[3] == 0x04;
+        boolean isTar = data.length > 262 && (new String(data, 257, 5, StandardCharsets.US_ASCII)).equals("ustar");
 
         try {
-            // First pass: collect folder hierarchy and note -> folder mapping
-            try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(data))) {
-                ZipEntry entry;
-                byte[] buffer = new byte[8192];
-                while ((entry = zis.getNextEntry()) != null) {
-                    if (entry.getName().endsWith(".md")) continue;
-                    if (!entry.getName().endsWith(".json")) continue;
-
-                    try {
-                        JsonNode node = objectMapper.readTree(readZipEntryAsString(zis, buffer));
-                        String type = node.has("type_") ? node.get("type_").asText() : "";
-                        String id = node.has("id") ? node.get("id").asText() : "";
-                        if (!id.isEmpty() && "2".equals(type)) { // Folder
-                            String title = node.has("title") ? node.get("title").asText() : "Untitled";
-                            folderMap.put(id, title);
-                        } else if (!id.isEmpty() && "1".equals(type)) { // Note
-                            String parentId = node.has("parent_id") ? node.get("parent_id").asText() : "";
-                            if (!parentId.isEmpty()) {
-                                noteMap.put(id, parentId);
-                            }
+            if (isZip) {
+                try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(data))) {
+                    ZipEntry entry;
+                    byte[] buffer = new byte[8192];
+                    while ((entry = zis.getNextEntry()) != null) {
+                        if (entry.getName().endsWith(".md")) {
+                            continue;
                         }
-                    } catch (Exception e) {
-                        messages.add("Warning: Could not parse metadata file");
+                        if (!entry.getName().endsWith(".json")) {
+                            continue;
+                        }
+                        try {
+                            JsonNode node = objectMapper.readTree(readZipEntryAsString(zis, buffer));
+                            String type = node.has("type_") ? node.get("type_").asText() : "";
+                            String id = node.has("id") ? node.get("id").asText() : "";
+                            if (!id.isEmpty() && "2".equals(type)) {
+                                String title = node.has("title") ? node.get("title").asText() : "Untitled";
+                                folderMap.put(id, title);
+                            } else if (!id.isEmpty() && "1".equals(type)) {
+                                String parentId = node.has("parent_id") ? node.get("parent_id").asText() : "";
+                                if (!parentId.isEmpty()) {
+                                    noteMap.put(id, parentId);
+                                }
+                            }
+                        } catch (Exception e) {
+                            messages.add("Warning: Could not parse metadata file");
+                        }
                     }
                 }
-            }
 
-            // Second pass: import notes (the archive is buffered so it can be read again)
-            try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(data))) {
-                ZipEntry entry;
-                byte[] buffer = new byte[8192];
-                while ((entry = zis.getNextEntry()) != null) {
-                    if (!entry.getName().endsWith(".md")) continue;
-
-                    try {
-                        String content = readZipEntryAsString(zis, buffer);
-                        String filename = entry.getName();
-                        String noteId = filename.substring(0, filename.lastIndexOf('.'));
-
-                        // Extract title from first line or use filename
-                        String title = noteId;
-                        if (!content.isEmpty()) {
-                            String[] lines = content.split("\n", 2);
-                            if (lines[0].startsWith("#")) {
-                                title = lines[0].replaceAll("^#+\\s*", "").trim();
+                try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(data))) {
+                    ZipEntry entry;
+                    byte[] buffer = new byte[8192];
+                    while ((entry = zis.getNextEntry()) != null) {
+                        if (!entry.getName().endsWith(".md")) {
+                            continue;
+                        }
+                        try {
+                            String content = readZipEntryAsString(zis, buffer);
+                            String filename = entry.getName();
+                            int dot = filename.lastIndexOf('.');
+                            if (dot < 0) {
+                                continue;
                             }
+                            String noteId = filename.substring(0, dot);
+                            String metaTags = extractJoplinTags(content);
+                            content = stripJoplinMetadata(content);
+
+                            String title = noteId;
+                            if (!content.isEmpty()) {
+                                String[] lines = content.split("\n", 2);
+                                if (lines[0].startsWith("#")) {
+                                    title = lines[0].replaceAll("^#+\\s*", "").trim();
+                                } else if (!lines[0].isEmpty()) {
+                                    String first = lines[0].trim();
+                                    if (!first.equals(noteId)) {
+                                        title = first;
+                                    }
+                                }
+                            }
+
+                            Note note = new Note();
+                            note.ownerId = user.id;
+                            note.title = title.isEmpty() ? "Untitled" : title.substring(0, Math.min(255, title.length()));
+                            note.content = content;
+
+                            List<String> tagParts = new ArrayList<>();
+                            String folderId = noteMap.get(noteId);
+                            if (folderId != null && folderMap.containsKey(folderId)) {
+                                String folderTag = folderMap.get(folderId).replaceAll("[^a-zA-Z0-9\\s-]", "").trim();
+                                if (!folderTag.isEmpty()) {
+                                    tagParts.add(folderTag);
+                                }
+                            }
+                            if (!metaTags.isEmpty()) {
+                                tagParts.add(metaTags);
+                            }
+                            if (tagParts.isEmpty()) {
+                                tagParts.add("joplin-import");
+                            }
+                            note.tags = String.join(" ", tagParts);
+
+                            note.persist();
+                            imported++;
+                        } catch (Exception e) {
+                            errors++;
+                            messages.add("Error importing note: " + e.getMessage());
                         }
-
-                        Note note = new Note();
-                        note.ownerId = user.id;
-                        note.title = title.isEmpty() ? "Untitled" : title.substring(0, Math.min(255, title.length()));
-                        note.content = content;
-
-                        // Map the note's parent folder to a tag
-                        String folderTag = folderMap.getOrDefault(noteMap.get(noteId), "joplin-import");
-                        note.tags = folderTag.replaceAll("[^a-zA-Z0-9\\s-]", "").trim();
-                        if (note.tags.isEmpty()) {
-                            note.tags = "joplin-import";
+                    }
+                }
+            } else {
+                try (TarArchiveInputStream tis = new TarArchiveInputStream(new ByteArrayInputStream(data))) {
+                    TarArchiveEntry entry;
+                    byte[] buffer = new byte[8192];
+                    while ((entry = tis.getNextTarEntry()) != null) {
+                        if (entry.isDirectory()) {
+                            continue;
                         }
+                        String name = entry.getName();
+                        if (!name.endsWith(".md")) {
+                            continue;
+                        }
+                        try {
+                            String content = readTarEntryAsString(tis, buffer, (int) entry.getSize());
+                            String filename = name.replaceFirst("^.*/", "");
+                            if (filename.isEmpty()) {
+                                continue;
+                            }
+                            int dot = filename.lastIndexOf('.');
+                            if (dot < 0) {
+                                continue;
+                            }
+                            String noteId = filename.substring(0, dot);
+                            String metaTags = extractJoplinTags(content);
+                            content = stripJoplinMetadata(content);
 
-                        note.persist();
-                        imported++;
-                    } catch (Exception e) {
-                        errors++;
-                        messages.add("Error importing note: " + e.getMessage());
+                            String title = noteId;
+                            if (!content.isEmpty()) {
+                                String[] lines = content.split("\n", 2);
+                                if (lines[0].startsWith("#")) {
+                                    title = lines[0].replaceAll("^#+\\s*", "").trim();
+                                } else if (!lines[0].isEmpty()) {
+                                    String first = lines[0].trim();
+                                    if (!first.equals(noteId)) {
+                                        title = first;
+                                    }
+                                }
+                            }
+
+                            Note note = new Note();
+                            note.ownerId = user.id;
+                            note.title = title.isEmpty() ? "Untitled" : title.substring(0, Math.min(255, title.length()));
+                            note.content = content;
+                            note.tags = metaTags.isEmpty() ? "joplin-import" : metaTags;
+                            note.persist();
+                            imported++;
+                        } catch (Exception e) {
+                            errors++;
+                            messages.add("Error importing note: " + e.getMessage());
+                        }
                     }
                 }
             }
@@ -360,7 +441,6 @@ public class NoteResource {
 
         return Response.ok(new ImportResult(imported, errors, messages)).build();
     }
-
     /**
      * Import a single Markdown file as a new note.
      */
@@ -376,8 +456,6 @@ public class NoteResource {
 
         try {
             String content = new String(mdStream.readAllBytes(), StandardCharsets.UTF_8);
-
-            // Extract title from first line
             String title = "Untitled";
             if (!content.isEmpty()) {
                 String[] lines = content.split("\n", 2);
@@ -387,14 +465,12 @@ public class NoteResource {
                     title = lines[0];
                 }
             }
-
             Note note = new Note();
             note.ownerId = user.id;
             note.title = title.substring(0, Math.min(255, title.length()));
             note.content = content;
             note.tags = "markdown-import";
             note.persist();
-
             return Response.ok(note).build();
         } catch (Exception e) {
             return Response.status(Response.Status.BAD_REQUEST)
@@ -406,6 +482,115 @@ public class NoteResource {
         StringBuilder sb = new StringBuilder();
         int len;
         while ((len = zis.read(buffer)) > 0) {
+            sb.append(new String(buffer, 0, len, StandardCharsets.UTF_8));
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Index of the first line of the trailing Joplin "key: value" metadata block,
+     * or -1 if no such block is present. The block must be contiguous to the end
+     * and contain both "id:" and "type_:" keys.
+     */
+    private int joplinMetadataStart(String[] lines) {
+        int i = lines.length - 1;
+        while (i >= 0 && lines[i].isBlank()) {
+            i--;
+        }
+        while (i >= 0 && lines[i].matches("^\\s*[A-Za-z_][A-Za-z0-9_]*\\s*:.*")) {
+            i--;
+        }
+        int blockStart = i + 1;
+        if (blockStart >= lines.length) {
+            return -1;
+        }
+        boolean hasId = false;
+        boolean hasType = false;
+        for (int j = blockStart; j < lines.length; j++) {
+            if (lines[j].matches("^\\s*id\\s*:.*")) {
+                hasId = true;
+            } else if (lines[j].matches("^\\s*type_\\s*:.*")) {
+                hasType = true;
+            }
+        }
+        return (hasId && hasType) ? blockStart : -1;
+    }
+
+    /**
+     * Joplin exports append a block of "key: value" metadata to the end of each
+     * Markdown file (starting with "id:"). Strip that trailing block so the note
+     * body only contains the user's content. The block is only removed when it
+     * is contiguous to the end and contains both "id:" and "type_:" keys, to
+     * avoid truncating legitimate content that happens to contain "id:".
+     */
+    private String stripJoplinMetadata(String content) {
+        if (content == null || content.isEmpty()) {
+            return content;
+        }
+        String[] lines = content.split("\n", -1);
+        int blockStart = joplinMetadataStart(lines);
+        if (blockStart < 0) {
+            return content;
+        }
+        if (blockStart > 0 && lines[blockStart - 1].isBlank()) {
+            blockStart--;
+        }
+        StringBuilder sb = new StringBuilder();
+        for (int j = 0; j < blockStart; j++) {
+            sb.append(lines[j]);
+            if (j < blockStart - 1) {
+                sb.append("\n");
+            }
+        }
+        return sb.toString().replaceAll("\n+$", "");
+    }
+
+    /**
+     * Extract tags from the Joplin metadata footer, if present. Supports both
+     * space-delimited ("tags: a b c") and comma-delimited ("tags: a, b, c") forms.
+     * Returns a space-delimited tag string (the format used by the Tags field).
+     */
+    private String extractJoplinTags(String content) {
+        if (content == null || content.isEmpty()) {
+            return "";
+        }
+        String[] lines = content.split("\n", -1);
+        int blockStart = joplinMetadataStart(lines);
+        if (blockStart < 0) {
+            return "";
+        }
+        for (int i = blockStart; i < lines.length; i++) {
+            if (lines[i].matches("^\\s*tags?\\s*:.*")) {
+                String value = lines[i].substring(lines[i].indexOf(':') + 1).trim();
+                if (value.startsWith("[") && value.endsWith("]")) {
+                    value = value.substring(1, value.length() - 1);
+                }
+                String[] parts = value.split("[,\\s]+");
+                StringBuilder sb = new StringBuilder();
+                for (String part : parts) {
+                    String tag = part.replaceAll("[^a-zA-Z0-9_-]", "").trim();
+                    if (!tag.isEmpty()) {
+                        if (sb.length() > 0) {
+                            sb.append(" ");
+                        }
+                        sb.append(tag);
+                    }
+                }
+                return sb.toString();
+            }
+        }
+        return "";
+    }
+
+    private String readTarEntryAsString(TarArchiveInputStream tis, byte[] buffer, int size) throws Exception {
+        StringBuilder sb = new StringBuilder();
+        if (size > 0) {
+            byte[] data = tis.readNBytes(size);
+            sb.append(new String(data, StandardCharsets.UTF_8));
+            return sb.toString();
+        }
+        int len;
+        while ((len = tis.read(buffer)) > 0) {
             sb.append(new String(buffer, 0, len, StandardCharsets.UTF_8));
         }
         return sb.toString();

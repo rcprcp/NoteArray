@@ -5,6 +5,7 @@ import { MantineProvider } from '@mantine/core'
 import App from './App'
 import { usersApi } from './api'
 import '@mantine/core/styles.css'
+import '@mantine/tiptap/styles.css'
 
 const THEME_KEY = 'notearray-theme-color'
 const LEGACY_THEME_KEY = 'notary-theme-color'
