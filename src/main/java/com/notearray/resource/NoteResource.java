@@ -469,7 +469,7 @@ public class NoteResource {
                         .entity("Markdown file exceeds the maximum size of "
                                 + (MAX_CONTENT_LENGTH / (1024 * 1024)) + " MB").build();
             }
-            String content = new String(bytes, StandardCharsets.UTF_8);
+            String content = stripBom(new String(bytes, StandardCharsets.UTF_8));
             String title = "Untitled";
             if (!content.isEmpty()) {
                 String[] lines = content.split("\n", 2);
@@ -496,8 +496,10 @@ public class NoteResource {
     /**
      * Read the current archive entry as UTF-8. Decoding happens once, after the
      * whole entry is read, so multi-byte characters straddling the 8 KB buffer
-     * boundary are not corrupted. Entries larger than the note content limit are
-     * rejected (defends against entries that expand to huge sizes).
+     * boundary are not corrupted. A leading UTF-8 BOM is dropped so heading
+     * detection ("# Title") is not defeated by it. Entries larger than the note
+     * content limit are rejected (defends against entries that expand to huge
+     * sizes).
      */
     private String readEntryAsString(InputStream entryStream, byte[] buffer) throws IOException {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
@@ -509,7 +511,12 @@ public class NoteResource {
             }
             out.write(buffer, 0, len);
         }
-        return out.toString(StandardCharsets.UTF_8);
+        return stripBom(out.toString(StandardCharsets.UTF_8));
+    }
+
+    /** Drop a leading UTF-8 BOM, which would otherwise defeat "# heading" detection. */
+    private static String stripBom(String s) {
+        return !s.isEmpty() && s.charAt(0) == '\uFEFF' ? s.substring(1) : s;
     }
 
     private String readZipEntryAsString(ZipInputStream zis, byte[] buffer) throws IOException {
@@ -599,7 +606,9 @@ public class NoteResource {
         if (content == null || content.isEmpty()) {
             return content;
         }
-        String[] lines = content.split("\n", -1);
+        // Split on CRLF or LF so metadata detection also works on Windows exports
+        // (the key/value regexes anchor with $ semantics that \r would break).
+        String[] lines = content.split("\r?\n", -1);
         int blockStart = joplinMetadataStart(lines);
         if (blockStart < 0) {
             return content;
@@ -626,7 +635,7 @@ public class NoteResource {
         if (content == null || content.isEmpty()) {
             return "";
         }
-        String[] lines = content.split("\n", -1);
+        String[] lines = content.split("\r?\n", -1);
         int blockStart = joplinMetadataStart(lines);
         if (blockStart < 0) {
             return "";
