@@ -47,9 +47,25 @@ public class UserResource {
     /** Request body for login. */
     public record LoginRequest(String email, String password) {}
 
+    /**
+     * Hash compared when the email is unknown, so login timing does not reveal
+     * which emails have accounts. Compared lazily on first use.
+     */
+    private static volatile String timingDecoyHash;
+
     /** Get the authenticated user from the session cookie. Returns null if not logged in. */
     private User getAuthenticatedUser() {
         return sessions.resolve(headers.getCookies().get(SessionService.COOKIE_NAME));
+    }
+
+    private static String timingDecoyHash() {
+        String hash = timingDecoyHash;
+        if (hash == null) {
+            // Costs one bcrypt computation on first login only.
+            hash = BcryptUtil.bcryptHash(UUID.randomUUID().toString());
+            timingDecoyHash = hash;
+        }
+        return hash;
     }
 
     /**
@@ -77,7 +93,12 @@ public class UserResource {
                     .entity("email and password are required").build();
         }
         User user = User.findByEmail(req.email());
-        if (user == null || !BcryptUtil.matches(req.password(), user.passwordHash)) {
+        // Always run a bcrypt comparison — even for unknown emails — so response
+        // timing cannot be used to enumerate registered accounts. Do not short-
+        // circuit on user == null or the timing difference returns.
+        String storedHash = user != null ? user.passwordHash : timingDecoyHash();
+        boolean matches = BcryptUtil.matches(req.password(), storedHash);
+        if (user == null || !matches) {
             return Response.status(Response.Status.UNAUTHORIZED)
                     .entity("invalid email or password").build();
         }

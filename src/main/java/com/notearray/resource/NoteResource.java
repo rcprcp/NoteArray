@@ -22,6 +22,7 @@ import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.IOException;
 import java.net.URI;
@@ -37,11 +38,22 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
+import org.jboss.logging.Logger;
 
 @Path("/api/notes")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
 public class NoteResource {
+
+    /** Maximum compressed size of an uploaded import archive (Joplin JEX). */
+    static final int MAX_IMPORT_BYTES = 50 * 1024 * 1024; // 50 MB
+    /** Maximum size of a single imported note body, matching the notes.content column limit. */
+    static final int MAX_CONTENT_LENGTH = 10 * 1024 * 1024; // 10 MB
+    /** Maximum lengths matching the notes table column definitions. */
+    static final int MAX_TITLE_LENGTH = 255;
+    static final int MAX_TAGS_LENGTH = 10_000;
+
+    private static final Logger LOG = Logger.getLogger(NoteResource.class);
 
     @Context
     HttpHeaders headers;
@@ -197,6 +209,10 @@ public class NoteResource {
             return Response.status(Response.Status.BAD_REQUEST)
                     .entity("title and content are required").build();
         }
+        String lengthError = validateLengths(req.title(), req.content(), req.tags());
+        if (lengthError != null) {
+            return Response.status(Response.Status.BAD_REQUEST).entity(lengthError).build();
+        }
         Note note = new Note();
         note.ownerId = user.id;
         note.title = req.title().trim();
@@ -227,6 +243,10 @@ public class NoteResource {
         if (req.title() != null && req.title().isBlank()) {
             return Response.status(Response.Status.BAD_REQUEST).entity("title must not be blank").build();
         }
+        String lengthError = validateLengths(req.title(), req.content(), req.tags());
+        if (lengthError != null) {
+            return Response.status(Response.Status.BAD_REQUEST).entity(lengthError).build();
+        }
         if (req.title() != null) {
             note.title = req.title().trim();
         }
@@ -240,6 +260,32 @@ public class NoteResource {
             note.pinned = req.pinned();
         }
         return Response.ok(note).build();
+    }
+
+    /** Null if the request fields fit the notes table column limits, else a 400 message. */
+    private static String validateLengths(String title, String content, String tags) {
+        if (title != null && title.trim().length() > MAX_TITLE_LENGTH) {
+            return "title must be at most " + MAX_TITLE_LENGTH + " characters";
+        }
+        if (content != null && content.length() > MAX_CONTENT_LENGTH) {
+            return "content must be at most " + (MAX_CONTENT_LENGTH / (1024 * 1024)) + " MB";
+        }
+        if (tags != null && tags.trim().length() > MAX_TAGS_LENGTH) {
+            return "tags must be at most " + MAX_TAGS_LENGTH + " characters";
+        }
+        return null;
+    }
+
+    /** Truncate without splitting a UTF-16 surrogate pair (avoids lone surrogates in JSON). */
+    private static String truncateTitle(String title) {
+        if (title.length() <= MAX_TITLE_LENGTH) {
+            return title;
+        }
+        int end = MAX_TITLE_LENGTH;
+        if (Character.isLowSurrogate(title.charAt(end))) {
+            end--;
+        }
+        return title.substring(0, end);
     }
 
     @DELETE
@@ -276,12 +322,20 @@ public class NoteResource {
         int imported = 0;
         int errors = 0;
 
+        // Read at most MAX_IMPORT_BYTES + 1 so an oversized upload can be detected
+        // without buffering more than the limit.
         byte[] data;
         try {
-            data = jexStream.readAllBytes();
-        } catch (Exception e) {
+            data = jexStream.readNBytes(MAX_IMPORT_BYTES + 1);
+        } catch (IOException e) {
+            LOG.warn("Failed to read JEX upload", e);
             return Response.status(Response.Status.BAD_REQUEST)
-                    .entity("Failed to read JEX file: " + e.getMessage()).build();
+                    .entity("Failed to read JEX file").build();
+        }
+        if (data.length > MAX_IMPORT_BYTES) {
+            return Response.status(Response.Status.REQUEST_ENTITY_TOO_LARGE)
+                    .entity("JEX file exceeds the maximum import size of "
+                            + (MAX_IMPORT_BYTES / (1024 * 1024)) + " MB").build();
         }
 
         Map<String, String> folderMap = new HashMap<>();
@@ -316,6 +370,7 @@ public class NoteResource {
                                 }
                             }
                         } catch (Exception e) {
+                            LOG.debugf(e, "Could not parse Joplin metadata entry %s", entry.getName());
                             messages.add("Warning: Could not parse metadata file");
                         }
                     }
@@ -330,8 +385,7 @@ public class NoteResource {
                         }
                         try {
                             String content = readZipEntryAsString(zis, buffer);
-                            String filename = entry.getName();
-                            int dot = filename.lastIndexOf('.');
+                            String filename = entry.getName();                            int dot = filename.lastIndexOf('.');
                             if (dot < 0) {
                                 continue;
                             }
@@ -354,7 +408,7 @@ public class NoteResource {
 
                             Note note = new Note();
                             note.ownerId = user.id;
-                            note.title = title.isEmpty() ? "Untitled" : title.substring(0, Math.min(255, title.length()));
+                            note.title = title.isEmpty() ? "Untitled" : truncateTitle(title);
                             note.content = content;
 
                             List<String> tagParts = new ArrayList<>();
@@ -377,7 +431,8 @@ public class NoteResource {
                             imported++;
                         } catch (Exception e) {
                             errors++;
-                            messages.add("Error importing note: " + e.getMessage());
+                            LOG.debugf(e, "Failed to import Joplin ZIP entry %s", entry.getName());
+                            messages.add("Error importing note: could not read entry");
                         }
                     }
                 }
@@ -394,7 +449,7 @@ public class NoteResource {
                             continue;
                         }
                         try {
-                            String content = readTarEntryAsString(tis, buffer, (int) entry.getSize());
+                            String content = readTarEntryAsString(tis, buffer);
                             String filename = name.replaceFirst("^.*/", "");
                             if (filename.isEmpty()) {
                                 continue;
@@ -422,21 +477,23 @@ public class NoteResource {
 
                             Note note = new Note();
                             note.ownerId = user.id;
-                            note.title = title.isEmpty() ? "Untitled" : title.substring(0, Math.min(255, title.length()));
+                            note.title = title.isEmpty() ? "Untitled" : truncateTitle(title);
                             note.content = content;
                             note.tags = metaTags.isEmpty() ? "joplin-import" : metaTags;
                             note.persist();
                             imported++;
                         } catch (Exception e) {
                             errors++;
-                            messages.add("Error importing note: " + e.getMessage());
+                            LOG.debugf(e, "Failed to import Joplin TAR entry %s", name);
+                            messages.add("Error importing note: could not read entry");
                         }
                     }
                 }
             }
         } catch (Exception e) {
+            LOG.warn("Failed to process JEX file", e);
             return Response.status(Response.Status.BAD_REQUEST)
-                    .entity("Failed to process JEX file: " + e.getMessage()).build();
+                    .entity("Failed to process JEX file").build();
         }
 
         return Response.ok(new ImportResult(imported, errors, messages)).build();
@@ -455,36 +512,61 @@ public class NoteResource {
         }
 
         try {
-            String content = new String(mdStream.readAllBytes(), StandardCharsets.UTF_8);
+            byte[] bytes = mdStream.readNBytes(MAX_CONTENT_LENGTH + 1);
+            if (bytes.length > MAX_CONTENT_LENGTH) {
+                return Response.status(Response.Status.REQUEST_ENTITY_TOO_LARGE)
+                        .entity("Markdown file exceeds the maximum size of "
+                                + (MAX_CONTENT_LENGTH / (1024 * 1024)) + " MB").build();
+            }
+            String content = new String(bytes, StandardCharsets.UTF_8);
             String title = "Untitled";
             if (!content.isEmpty()) {
                 String[] lines = content.split("\n", 2);
                 if (lines[0].startsWith("#")) {
-                    title = lines[0].replaceAll("^#+\s*", "").trim();
+                    title = lines[0].replaceAll("^#+\\s*", "").trim();
                 } else if (!lines[0].isEmpty()) {
-                    title = lines[0];
+                    title = lines[0].trim();
                 }
             }
             Note note = new Note();
             note.ownerId = user.id;
-            note.title = title.substring(0, Math.min(255, title.length()));
+            note.title = title.isEmpty() ? "Untitled" : truncateTitle(title);
             note.content = content;
             note.tags = "markdown-import";
             note.persist();
             return Response.ok(note).build();
         } catch (Exception e) {
+            LOG.warn("Failed to process markdown upload", e);
             return Response.status(Response.Status.BAD_REQUEST)
-                    .entity("Failed to process markdown file: " + e.getMessage()).build();
+                    .entity("Failed to process markdown file").build();
         }
     }
 
-    private String readZipEntryAsString(ZipInputStream zis, byte[] buffer) throws Exception {
-        StringBuilder sb = new StringBuilder();
+    /**
+     * Read the current archive entry as UTF-8. Decoding happens once, after the
+     * whole entry is read, so multi-byte characters straddling the 8 KB buffer
+     * boundary are not corrupted. Entries larger than the note content limit are
+     * rejected (defends against entries that expand to huge sizes).
+     */
+    private String readEntryAsString(InputStream entryStream, byte[] buffer) throws IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
         int len;
-        while ((len = zis.read(buffer)) > 0) {
-            sb.append(new String(buffer, 0, len, StandardCharsets.UTF_8));
+        while ((len = entryStream.read(buffer)) > 0) {
+            if (out.size() + len > MAX_CONTENT_LENGTH) {
+                throw new IOException("archive entry exceeds "
+                        + (MAX_CONTENT_LENGTH / (1024 * 1024)) + " MB");
+            }
+            out.write(buffer, 0, len);
         }
-        return sb.toString();
+        return out.toString(StandardCharsets.UTF_8);
+    }
+
+    private String readZipEntryAsString(ZipInputStream zis, byte[] buffer) throws IOException {
+        return readEntryAsString(zis, buffer);
+    }
+
+    private String readTarEntryAsString(TarArchiveInputStream tis, byte[] buffer) throws IOException {
+        return readEntryAsString(tis, buffer);
     }
 
     /**
@@ -580,19 +662,5 @@ public class NoteResource {
             }
         }
         return "";
-    }
-
-    private String readTarEntryAsString(TarArchiveInputStream tis, byte[] buffer, int size) throws Exception {
-        StringBuilder sb = new StringBuilder();
-        if (size > 0) {
-            byte[] data = tis.readNBytes(size);
-            sb.append(new String(data, StandardCharsets.UTF_8));
-            return sb.toString();
-        }
-        int len;
-        while ((len = tis.read(buffer)) > 0) {
-            sb.append(new String(buffer, 0, len, StandardCharsets.UTF_8));
-        }
-        return sb.toString();
     }
 }
