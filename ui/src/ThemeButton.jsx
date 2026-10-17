@@ -1,6 +1,7 @@
-import { useState } from 'react'
 import { Button, Modal, SimpleGrid } from '@mantine/core'
 
+// Mantine color palettes selectable in the UI. Must stay in sync with
+// THEME_COLORS in src/main/java/com/notearray/resource/UserResource.java (server-side validation).
 export const THEME_COLORS = [
   'dark', 'gray', 'red', 'pink', 'grape', 'violet', 'indigo',
   'blue', 'cyan', 'teal', 'green', 'lime', 'yellow', 'orange',
@@ -30,17 +31,5 @@ export function ThemePicker({ opened, onClose, value, onThemeChange }) {
         ))}
       </SimpleGrid>
     </Modal>
-  )
-}
-
-// Standalone button + modal, kept for convenience.
-export default function ThemeButton({ value, onThemeChange }) {
-  const [opened, setOpened] = useState(false)
-
-  return (
-    <>
-      <Button variant="outline" onClick={() => setOpened(true)}>Theme</Button>
-      <ThemePicker opened={opened} onClose={() => setOpened(false)} value={value} onThemeChange={onThemeChange} />
-    </>
   )
 }

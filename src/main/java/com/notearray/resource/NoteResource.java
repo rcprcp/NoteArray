@@ -385,49 +385,21 @@ public class NoteResource {
                         }
                         try {
                             String content = readZipEntryAsString(zis, buffer);
-                            String filename = entry.getName();                            int dot = filename.lastIndexOf('.');
+                            String filename = entry.getName();
+                            int dot = filename.lastIndexOf('.');
                             if (dot < 0) {
                                 continue;
                             }
                             String noteId = filename.substring(0, dot);
-                            String metaTags = extractJoplinTags(content);
-                            content = stripJoplinMetadata(content);
-
-                            String title = noteId;
-                            if (!content.isEmpty()) {
-                                String[] lines = content.split("\n", 2);
-                                if (lines[0].startsWith("#")) {
-                                    title = lines[0].replaceAll("^#+\\s*", "").trim();
-                                } else if (!lines[0].isEmpty()) {
-                                    String first = lines[0].trim();
-                                    if (!first.equals(noteId)) {
-                                        title = first;
-                                    }
-                                }
-                            }
-
-                            Note note = new Note();
-                            note.ownerId = user.id;
-                            note.title = title.isEmpty() ? "Untitled" : truncateTitle(title);
-                            note.content = content;
-
-                            List<String> tagParts = new ArrayList<>();
+                            List<String> folderTags = new ArrayList<>();
                             String folderId = noteMap.get(noteId);
                             if (folderId != null && folderMap.containsKey(folderId)) {
                                 String folderTag = folderMap.get(folderId).replaceAll("[^a-zA-Z0-9\\s-]", "").trim();
                                 if (!folderTag.isEmpty()) {
-                                    tagParts.add(folderTag);
+                                    folderTags.add(folderTag);
                                 }
                             }
-                            if (!metaTags.isEmpty()) {
-                                tagParts.add(metaTags);
-                            }
-                            if (tagParts.isEmpty()) {
-                                tagParts.add("joplin-import");
-                            }
-                            note.tags = String.join(" ", tagParts);
-
-                            note.persist();
+                            buildJoplinNote(user, noteId, content, folderTags).persist();
                             imported++;
                         } catch (Exception e) {
                             errors++;
@@ -459,28 +431,7 @@ public class NoteResource {
                                 continue;
                             }
                             String noteId = filename.substring(0, dot);
-                            String metaTags = extractJoplinTags(content);
-                            content = stripJoplinMetadata(content);
-
-                            String title = noteId;
-                            if (!content.isEmpty()) {
-                                String[] lines = content.split("\n", 2);
-                                if (lines[0].startsWith("#")) {
-                                    title = lines[0].replaceAll("^#+\\s*", "").trim();
-                                } else if (!lines[0].isEmpty()) {
-                                    String first = lines[0].trim();
-                                    if (!first.equals(noteId)) {
-                                        title = first;
-                                    }
-                                }
-                            }
-
-                            Note note = new Note();
-                            note.ownerId = user.id;
-                            note.title = title.isEmpty() ? "Untitled" : truncateTitle(title);
-                            note.content = content;
-                            note.tags = metaTags.isEmpty() ? "joplin-import" : metaTags;
-                            note.persist();
+                            buildJoplinNote(user, noteId, content, List.of()).persist();
                             imported++;
                         } catch (Exception e) {
                             errors++;
@@ -567,6 +518,45 @@ public class NoteResource {
 
     private String readTarEntryAsString(TarArchiveInputStream tis, byte[] buffer) throws IOException {
         return readEntryAsString(tis, buffer);
+    }
+
+    /**
+     * Build a note from one Joplin markdown entry: strips the metadata footer,
+     * derives the title (first heading, else first line, else the note id) and
+     * combines the caller's folder tags with any tags found in the metadata
+     * footer. Falls back to the "joplin-import" tag when no tags apply.
+     */
+    private Note buildJoplinNote(User user, String noteId, String content, List<String> folderTags) {
+        String metaTags = extractJoplinTags(content);
+        content = stripJoplinMetadata(content);
+
+        String title = noteId;
+        if (!content.isEmpty()) {
+            String[] lines = content.split("\n", 2);
+            if (lines[0].startsWith("#")) {
+                title = lines[0].replaceAll("^#+\\s*", "").trim();
+            } else if (!lines[0].isEmpty()) {
+                String first = lines[0].trim();
+                if (!first.equals(noteId)) {
+                    title = first;
+                }
+            }
+        }
+
+        Note note = new Note();
+        note.ownerId = user.id;
+        note.title = title.isEmpty() ? "Untitled" : truncateTitle(title);
+        note.content = content;
+
+        List<String> tagParts = new ArrayList<>(folderTags);
+        if (!metaTags.isEmpty()) {
+            tagParts.add(metaTags);
+        }
+        if (tagParts.isEmpty()) {
+            tagParts.add("joplin-import");
+        }
+        note.tags = String.join(" ", tagParts);
+        return note;
     }
 
     /**

@@ -1,6 +1,5 @@
 package com.notearray.resource;
 
-import com.notearray.entity.Note;
 import com.notearray.entity.User;
 import com.notearray.service.SessionService;
 import io.quarkus.elytron.security.common.BcryptUtil;
@@ -21,7 +20,6 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import java.net.URI;
 import java.time.Instant;
-import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -30,7 +28,10 @@ import java.util.UUID;
 @Consumes(MediaType.APPLICATION_JSON)
 public class UserResource {
 
-    /** Mantine color palettes selectable in the UI. */
+    /**
+     * Mantine color palettes selectable in the UI. Must stay in sync with
+     * THEME_COLORS in ui/src/ThemeButton.jsx (client-side copy).
+     */
     private static final Set<String> THEME_COLORS = Set.of(
             "dark", "gray", "red", "pink", "grape", "violet", "indigo", "blue",
             "cyan", "teal", "green", "lime", "yellow", "orange");
@@ -71,7 +72,6 @@ public class UserResource {
     /**
      * Check if caller has permission to access a target user.
      * Superusers can access anyone; regular users can only access themselves.
-     * Returns false and logs access denial if permission is denied.
      */
     private boolean canAccessUser(User caller, UUID targetId) {
         return caller.superuser || caller.id.equals(targetId);

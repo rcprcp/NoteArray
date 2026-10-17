@@ -44,12 +44,9 @@ NoteArray/
 │   │   ├── api.js                             # Fetch wrapper for REST API (includes credentials)
 │   │   ├── LoginPage.jsx                      # Login and signup page
 │   │   ├── NotesPanel.jsx                     # Note management UI with rich text editor, tags, search, import, auto-save, and responsive design
-│   │   ├── FilterPanel.jsx                    # Advanced search and filtering UI
+│   │   ├── FilterPanel.jsx                    # Tag filters, smart collections, saved searches
 │   │   ├── ThemeButton.jsx                    # Theme color picker
 │   │   ├── UserMenu.jsx                       # Top-right personal settings menu (profile, theme, logout)
-│   │   ├── UsersPanel.jsx                     # Superuser user-management table (list/create/edit/delete)
-│   │   ├── CurrentUserSelect.jsx              # Dropdown to switch the acting user
-│   │   ├── OpenApiButton.jsx                  # Modal that fetches and shows the OpenAPI spec
 │   │   └── index.css                          # Mobile-first responsive styles
 │   ├── vite.config.js                         # Vite configuration
 │   ├── index.html                             # HTML template with viewport meta
@@ -412,16 +409,15 @@ The interactive Swagger UI allows you to test all endpoints directly from your b
   - Click column headers (desktop) to sort; click again to reverse direction
   - Tags displayed as badges below each note's title
   - Star icon to pin/unpin notes as favorites
-- **Create note** – Modal with Title, Tags, and Rich Text Editor fields (full-screen on mobile)
+- **Create note** – "Create note" in the header opens an inline editor with Title, Tags, and Rich Text Editor fields
   - Title is required and shown in the list
   - Tags are space-delimited (e.g., "joplin important work")
   - Content uses a full-featured markdown editor
-  - Auto-save starts after the note is created
-- **Edit note** – Click a row or the Edit button to open the note
-  - Modal shows Title, Tags, and Rich Text Editor (full-screen on mobile)
-  - All fields can be edited with live formatting
+  - The note is auto-created a couple of seconds after typing starts; auto-save takes over from there
+- **Edit note** – Click a row or the Edit button to open the note in the inline editor
+  - Title, Tags, and Rich Text Editor fields (all editable with live formatting)
   - Only changed fields are sent to the server on update
-  - Pin/unpin toggle in the edit modal
+  - Pin/unpin toggle from the note list
 - **Delete note** – Confirmation shows the note's title
 
 ### Tags
@@ -433,18 +429,17 @@ The interactive Swagger UI allows you to test all endpoints directly from your b
   - Particularly useful with imported notes (tags preserve folder hierarchy from Joplin)
 
 ### Auto-Save
-- **Auto-save for existing notes** – Changes saved automatically after 2 seconds of typing inactivity
+- **Auto-save** – Changes are saved automatically after 2 seconds of typing inactivity
+  - Applies to both new and existing notes: a new note is created by the first auto-save, then updated in place
   - No data loss: all unsaved changes are persisted to the server
   - Status indicators:
     - **"Saving..."** – Request in flight
     - **"✓ Saved at HH:MM:SS"** – Recent successful save with timestamp
     - **"Unsaved changes..."** – Changes pending the 2-second debounce timer
-    - **Error message** – Auto-save failed; click "Update" to retry
-  - New notes require manual save (click "Create"); auto-save starts after creation
-  - Manual "Update" button still available for immediate save anytime
-  - Closing the modal flushes any pending changes to prevent data loss
+    - **Error message** – Auto-save failed; continuing to edit retries the save
+  - Closing the editor flushes any pending changes to prevent data loss
   - Only changed fields are sent to the server (optimized)
-- **No data loss guarantee** – In-flight requests complete before modal closes; debounced changes flush before modal closes
+- **No data loss guarantee** – In-flight requests complete before the editor closes; debounced changes flush before the editor closes
 
 ### Rich Text Editing with Markdown
 - **Formatting toolbar** – Bold, Italic, Underline, Strikethrough, Clear formatting
@@ -457,31 +452,24 @@ The interactive Swagger UI allows you to test all endpoints directly from your b
 - **Live preview** – Editor supports TipTap's rich text rendering with markdown shortcuts
 
 ### Advanced Search & Filtering
-- **Filter panel** – Sidebar on desktop (collapsible on mobile)
-  - **Date range filters:**
-    - Last 7 days / Last 30 days / Custom date range
-    - Filter by note creation date or modification date
-    - Date picker for custom ranges
-  - **Tag multi-select filter:**
-    - Choose multiple tags; notes must have all selected tags
-    - Tag suggestions based on existing tags
-    - Visual tag count display
+- **Filter panel** – Toggled with the "Tags" header button
+  - **Tag filter:**
+    - Add tags by typing (space-delimited) or multi-select from existing tags
+    - Notes must have all selected tags
   - **Smart collections:**
-    - **Untagged** – Notes with no tags
     - **Pinned** – Favorite/pinned notes
-    - **Modified today** – Notes edited today
-    - **Oldest unmodified** – Notes not edited in 30+ days
-    - Display note counts for each collection
+    - **Untagged** – Notes with no tags
+    - Note counts shown on each collection button
+  - **Saved searches:**
+    - Save current search query and filters under a custom name
+    - One click applies a saved search
+    - Delete saved searches
+    - Filters and saved searches stored in browser localStorage
+    - Auto-restore last used filters on page reload
 - **Active filter badges** showing which filters are applied
   - Clear individual filters with X button
   - "Clear all filters" button to reset all filters
   - Active filter count indicator
-- **Saved searches:**
-  - Save current search query and filters under a custom name
-  - Quick access to saved searches
-  - Delete saved searches
-  - Filters and saved searches stored in browser localStorage
-  - Auto-restore last used filters on page reload
 
 ### Full-Text Search
 - **Search bar** – Type your search query
@@ -534,7 +522,7 @@ Output: `src/main/resources/META-INF/resources/` (consumed by Quarkus)
 ### Build the Backend
 
 ```bash
-mvn clean package -DskipTests
+mvn clean package
 ```
 
 Output: `target/quarkus-app/` (Quarkus fast-jar layout)

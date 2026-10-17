@@ -141,7 +141,7 @@ function AutoSaveStatus({ status, lastSaved }) {
     )
   }
   if (status === 'error') {
-    return <Text size="xs" c="red">Auto-save failed. Your changes are not saved yet; click Update to retry.</Text>
+    return <Text size="xs" c="red">Auto-save failed. Your changes are not saved yet; they will be retried when you continue editing.</Text>
   }
   if (status === 'pending') {
     return <Text size="xs" c="dimmed">Unsaved changes...</Text>
@@ -215,10 +215,8 @@ export default function NotesPanel({ registerActions } = {}) {
   const [sort, setSort] = useState({ field: 'createdAt', dir: 'desc' })
   const [error, setError] = useState(null)
   const [formError, setFormError] = useState(null)
-  const [opened, setOpened] = useState(false)
   const [editingNote, setEditingNote] = useState(null)
   const [form, setForm] = useState(EMPTY_FORM)
-  const [saving, setSaving] = useState(false)
 
   // Auto-save state (only used when editing an existing note)
   const [autoSaveStatus, setAutoSaveStatus] = useState('idle') // idle | pending | saving | saved | error
@@ -289,7 +287,6 @@ export default function NotesPanel({ registerActions } = {}) {
     setImportModalOpened(false)
     setCreateMode(false)
     setEditMode(false)
-    setOpened(false)
     setActiveSearch(null)
     setSearch(DEFAULT_SEARCH)
     setFilters({ ...DEFAULT_FILTERS })
@@ -306,7 +303,6 @@ export default function NotesPanel({ registerActions } = {}) {
     setEditingNote(null)
     setForm(EMPTY_FORM)
     setFormError(null)
-    setOpened(false)
     setEditMode(false)
     setCreateMode(true)
   }
@@ -335,7 +331,6 @@ export default function NotesPanel({ registerActions } = {}) {
   useEffect(() => writeStorage(SAVED_SEARCHES_KEY, savedSearches), [savedSearches])
 
   const updateFilters = (patch) => {
-    if (patch.collection === 'stale') setSort({ field: 'updatedAt', dir: 'asc' })
     setFilters((f) => ({ ...f, ...patch }))
   }
 
@@ -348,18 +343,10 @@ export default function NotesPanel({ registerActions } = {}) {
     return [...set].sort((a, b) => a.localeCompare(b))
   }, [allNotes, filters.tags])
 
-  const collectionCounts = useMemo(() => {
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    const staleBefore = new Date(today)
-    staleBefore.setDate(staleBefore.getDate() - 30)
-    return {
-      untagged: allNotes.filter((n) => !(n.tags || '').trim()).length,
-      pinned: allNotes.filter((n) => n.pinned).length,
-      today: allNotes.filter((n) => new Date(n.updatedAt) >= today).length,
-      stale: allNotes.filter((n) => new Date(n.updatedAt) <= staleBefore).length,
-    }
-  }, [allNotes])
+  const collectionCounts = useMemo(() => ({
+    untagged: allNotes.filter((n) => !(n.tags || '').trim()).length,
+    pinned: allNotes.filter((n) => n.pinned).length,
+  }), [allNotes])
 
   const resultCounts = useMemo(() => ({
     pinned: notes.filter((n) => n.pinned).length,
@@ -476,7 +463,6 @@ export default function NotesPanel({ registerActions } = {}) {
     setEditingNote(note)
     setForm({ title: note.title || '', content: note.content || '', tags: (note.tags || '').toLowerCase() })
     setFormError(null)
-    setOpened(false)
     setCreateMode(false)
     setEditMode(true)
   }
@@ -507,7 +493,7 @@ export default function NotesPanel({ registerActions } = {}) {
 
   // Debounced auto-save: runs AUTOSAVE_DELAY_MS after the last edit to an existing note.
   useEffect(() => {
-    if (!(opened || createMode || editMode)) return undefined
+    if (!(createMode || editMode)) return undefined
     const body = diffFromBaseline(form)
     if (Object.keys(body).length === 0) return undefined
     // Never auto-save a blank title (the server rejects it).
@@ -527,7 +513,6 @@ export default function NotesPanel({ registerActions } = {}) {
       // picked up once setEditingNote below re-runs this effect.
       if (creatingRef.current) return
       creatingRef.current = true
-      setSaving(true)
       try {
         const created = await notesApi.create({ title: form.title.trim(), content: form.content, tags: form.tags.trim().toLowerCase() })
         baselineRef.current = {
@@ -550,13 +535,12 @@ export default function NotesPanel({ registerActions } = {}) {
         setFormError(e.message || 'Failed to save note')
       } finally {
         creatingRef.current = false
-        setSaving(false)
       }
     }, AUTOSAVE_DELAY_MS)
 
     return clearAutoSaveTimer
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form, opened, createMode, editMode, editingNote, performAutoSave])
+  }, [form, createMode, editMode, editingNote, performAutoSave])
 
   // Wait for any in-flight auto-save so manual save/close don't race with it.
   const waitForInFlight = async () => {
@@ -592,65 +576,12 @@ export default function NotesPanel({ registerActions } = {}) {
         }
       }
     }
-    setOpened(false)
     setEditMode(false)
     setCreateMode(false)
     setAutoSaveStatus('idle')
     if (autoSavedRef.current) {
       autoSavedRef.current = false
       await reload()
-    }
-  }
-
-  const save = async () => {
-    if (!form.title.trim()) {
-      setFormError('Title is required')
-      return
-    }
-    setFormError(null)
-    clearAutoSaveTimer()
-    setSaving(true)
-    try {
-      await waitForInFlight()
-      if (editingNote) {
-        // Send only the fields that differ from what is already saved.
-        const body = diffFromBaseline(form)
-        if (Object.keys(body).length > 0) {
-          await notesApi.update(editingNote.id, body)
-        }
-      } else {
-        const created = await notesApi.create({ title: form.title.trim(), content: form.content, tags: form.tags.trim().toLowerCase() })
-        // Transition to edit mode and keep modal open so autosave starts working.
-        clearAutoSaveTimer()
-        baselineRef.current = {
-          title: created.title || form.title.trim() || '',
-          content: created.content || form.content || '',
-          tags: created.tags || form.tags.trim().toLowerCase() || '',
-        }
-        autoSavedRef.current = false
-        setAutoSaveStatus('idle')
-        setLastSaved(null)
-        setEditingNote(created)
-        setForm({ title: created.title || '', content: created.content || '', tags: created.tags || '' })
-        setFormError(null)
-        setError(null)
-        await reload()
-      }
-      if (editingNote) {
-        autoSavedRef.current = false
-        setOpened(false)
-        setAutoSaveStatus('idle')
-        setError(null)
-        await reload()
-      }
-    } catch (e) {
-      if (e.status === 401) {
-        setError('Session expired. Please login again.')
-      } else {
-        setError(`Failed to save note: ${e.message}`)
-      }
-    } finally {
-      setSaving(false)
     }
   }
 
@@ -883,69 +814,6 @@ export default function NotesPanel({ registerActions } = {}) {
       )}
 
       </Stack>
-
-      {/* Edit/Create Modal */}
-      <Modal
-        opened={opened}
-        onClose={closeModal}
-        title={<div style={{ textAlign: 'center', fontWeight: 700, fontSize: '1.25rem' }}>{editingNote ? 'Edit note' : 'New note'}</div>}
-        closeButtonProps={{ 'aria-label': 'Close modal', variant: 'light' }}
-        size={modalSize}
-        fullScreen={isMobile}
-      >
-        <Stack gap="md">
-          <TextInput
-            label="Title"
-            required
-            maxLength={255}
-            value={form.title}
-            error={formError}
-            onChange={(e) => setForm({ ...form, title: e.currentTarget.value })}
-            size={inputSize}
-          />
-          {editingNote && (
-            <Text size="xs" c="dimmed">Created: {new Date(editingNote.createdAt).toLocaleString()}</Text>
-          )}
-
-          <div>
-            <TextInput
-              label="Tags (space-delimited)"
-              placeholder="joplin important work"
-              maxLength={10000}
-              value={form.tags}
-              onChange={(e) => setForm({ ...form, tags: e.currentTarget.value })}
-              size={inputSize}
-            />
-            {form.tags && (
-              <Group gap="xs" mt="xs">
-                {form.tags.split(/\s+/).filter(t => t.length > 0).map((tag, idx) => (
-                  <Badge key={idx} size="sm" variant="light">{tag}</Badge>
-                ))}
-              </Group>
-            )}
-          </div>
-
-          <div>
-            <Text fw={500} size="sm" mb={6}>Content</Text>
-            <MarkdownEditor
-              value={form.content}
-              onChange={(value) => setForm((current) => ({ ...current, content: value }))}
-            />
-          </div>
-
-          <Stack gap="xs">
-            {editingNote ? (
-              <AutoSaveStatus status={autoSaveStatus} lastSaved={lastSaved} />
-            ) : (
-              <Text size="xs" c="dimmed">Auto-save starts after the note is created.</Text>
-            )}
-            <Group justify={isMobile ? 'flex-end' : 'space-between'} gap="xs">
-              <Button variant="default" onClick={closeModal} size={inputSize}>{editingNote ? 'Close' : 'Cancel'}</Button>
-              
-            </Group>
-          </Stack>
-        </Stack>
-      </Modal>
 
       {/* Import Modal */}
       <Modal

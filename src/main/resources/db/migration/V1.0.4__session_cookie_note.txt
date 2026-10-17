@@ -1,6 +1,0 @@
-<!-- Add to pom.xml dependencies section -->
-<!-- Session management via HttpOnly cookies -->
-<dependency>
-    <groupId>io.quarkus</groupId>
-    <artifactId>quarkus-vertx-http</artifactId>
-</dependency>
