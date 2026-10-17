@@ -34,7 +34,9 @@ NoteArray/
 │               ├── V1.0.7__add_tags_to_notes.sql
 │               ├── V1.0.8__add_pinned_to_notes.sql
 │               ├── V1.0.9__add_session_to_users.sql
-│               └── V1.1.0__create_sessions_table.sql
+│               ├── V1.1.0__create_sessions_table.sql
+│               ├── V1.1.1__add_unique_constraint_to_users_name.sql
+│               └── V1.1.2__remove_seeded_test_user.sql
 ├── ui/                                        # React + Vite frontend (mobile-responsive)
 │   ├── src/
 │   │   ├── App.jsx                            # Main app shell with routing and logout
@@ -105,21 +107,14 @@ The frontend dev server will run on `http://localhost:3000` and proxy API calls 
 
 Open your browser to **`http://localhost:3000`** (or access on any device on your network).
 
-You will see a login page. Use the initial test user credentials below or create a new account.
+You will see a login page. Create an account with the signup form; the first account created can be granted superuser access (see below).
 
-### Initial Test User
+### Initial Account
 
-When the database is first created, an initial test user is automatically inserted:
-
-- **Email:** mickey@mickey.com
-- **Password:** mickey
-- **Name:** mickey
-- **Superuser:** ❌ No (regular user only)
-
-This account has regular user permissions. It can create, view, and manage only its own notes. To give this user superuser access, use `psql`:
+No account is seeded. Sign up through the login page to create the first user. To grant a user superuser access, use `psql`:
 
 ```sql
-UPDATE users SET superuser = TRUE WHERE email = 'mickey@mickey.com';
+UPDATE users SET superuser = TRUE WHERE email = 'you@example.com';
 ```
 
 ## Database Schema
@@ -549,6 +544,16 @@ java -jar target/quarkus-app/quarkus-run.jar
 ```
 
 The app will be available at `http://localhost:8080` with both the backend API and the built UI.
+
+### Production Configuration
+
+Database credentials are read from environment variables. **Set these in production** — the built-in defaults point at the local dev database (`localhost:5432/bob`):
+
+| Variable | Default | Description |
+|---|---|---|
+| `NOTEARRAY_DB_URL` | `jdbc:postgresql://localhost:5432/bob` | JDBC connection URL |
+| `NOTEARRAY_DB_USERNAME` | `bob` | Database username |
+| `NOTEARRAY_DB_PASSWORD` | `bob` | Database password |
 
 ### Mobile Deployment
 - The app is fully responsive and works on mobile devices
