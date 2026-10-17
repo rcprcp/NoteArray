@@ -228,6 +228,8 @@ export default function NotesPanel({ registerActions } = {}) {
   const baselineRef = useRef(null)
   // Promise of an in-flight auto-save request, so manual save/close can wait for it.
   const inFlightRef = useRef(null)
+  // True while a "create note" request is in flight; see the debounce effect below.
+  const creatingRef = useRef(false)
   // True if at least one auto-save succeeded in the current edit session (list needs refresh).
   const autoSavedRef = useRef(false)
 
@@ -310,6 +312,9 @@ export default function NotesPanel({ registerActions } = {}) {
   }
 
   useEffect(() => writeStorage(FILTERS_KEY, filters), [filters])
+  // Re-register whenever the values the header reads change. registerActions is a
+  // stable callback in App, so without these deps the handlers and the open/closed
+  // button state would stay frozen at their first-render values forever.
   useEffect(() => {
     if (registerActions) {
       registerActions({
@@ -326,7 +331,7 @@ export default function NotesPanel({ registerActions } = {}) {
         importOpen: importModalOpened,
       })
     }
-  }, [registerActions])
+  }, [registerActions, searchVisible, tagsVisible, importModalOpened, activeSearch, filters])
   useEffect(() => writeStorage(SAVED_SEARCHES_KEY, savedSearches), [savedSearches])
 
   const updateFilters = (patch) => {
@@ -516,6 +521,12 @@ export default function NotesPanel({ registerActions } = {}) {
         performAutoSave(editingNote.id, form)
         return
       }
+      // A create is already in flight (editingNote is still null until its response
+      // lands). Without this guard, continued typing re-arms this debounce and a
+      // second POST would duplicate the note. Any keystrokes made meanwhile are
+      // picked up once setEditingNote below re-runs this effect.
+      if (creatingRef.current) return
+      creatingRef.current = true
       setSaving(true)
       try {
         const created = await notesApi.create({ title: form.title.trim(), content: form.content, tags: form.tags.trim().toLowerCase() })
@@ -525,7 +536,9 @@ export default function NotesPanel({ registerActions } = {}) {
           tags: (created.tags || form.tags.trim().toLowerCase() || ''),
         }
         setEditingNote(created)
-        setForm({ title: created.title || '', content: created.content || '', tags: (created.tags || '').toLowerCase() })
+        // Keep the form as-is: the user may have kept typing while the request was
+        // in flight. The effect re-runs once editingNote is set and saves any
+        // difference between the current form and the created note as an update.
         autoSavedRef.current = true
         setAutoSaveStatus('saved')
         setLastSaved(new Date())
@@ -536,6 +549,7 @@ export default function NotesPanel({ registerActions } = {}) {
         setAutoSaveStatus('error')
         setFormError(e.message || 'Failed to save note')
       } finally {
+        creatingRef.current = false
         setSaving(false)
       }
     }, AUTOSAVE_DELAY_MS)
