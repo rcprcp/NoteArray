@@ -5,12 +5,11 @@ import { useMediaQuery } from '@mantine/hooks'
 import { RichTextEditor } from '@mantine/tiptap'
 import { useEditor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
-import Underline from '@tiptap/extension-underline'
-import Link from '@tiptap/extension-link'
 import Highlight from '@tiptap/extension-highlight'
 import TextAlign from '@tiptap/extension-text-align'
 import Placeholder from '@tiptap/extension-placeholder'
 import { Markdown } from 'tiptap-markdown'
+import { Link } from '@mantine/tiptap'
 import { notesApi } from './api'
 import FilterPanel, { DEFAULT_FILTERS, buildApiFilters, describeFilters } from './FilterPanel'
 
@@ -42,9 +41,13 @@ const AUTOSAVE_DELAY_MS = 2000
 
 function MarkdownEditor({ value, onChange }) {
   const editor = useEditor({
+    // Tiptap 3 no longer re-renders the editor on every transaction by default;
+    // Mantine's toolbar controls rely on it to reflect the active marks.
+    shouldRerenderOnTransaction: true,
     extensions: [
-      (StarterKit.default || StarterKit),
-      Underline,
+      // StarterKit 3 bundles link/underline extensions. Keep underline, but use
+      // Mantine's Link so RichTextEditor.Link/Unlink controls can manage it.
+      (StarterKit.default || StarterKit).configure({ link: false }),
       Link.configure({
         openOnClick: false,
         autolink: true,
@@ -709,7 +712,7 @@ export default function NotesPanel({ registerActions } = {}) {
           </Group>
         )}
         {tagsVisible && (
-          <Collapse in={tagsVisible}>{filterPanel}</Collapse>
+          <Collapse expanded={tagsVisible}>{filterPanel}</Collapse>
         )}
 
         {!(createMode || editMode) && activeFilterCount > 0 && (

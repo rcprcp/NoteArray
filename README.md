@@ -58,7 +58,7 @@ NoteArray/
 
 - **Java 25** (JDK)
 - **Maven 3.8+**
-- **Node.js 18+** and **npm**
+- **Node.js 20.19+** (or 22.12+) and **npm**
 - **PostgreSQL** running locally (or configure DB connection)
 
 ## Getting Started
@@ -631,11 +631,11 @@ npm run dev
 - **Jackson** – JSON processing for import parsing
 
 ### Frontend
-- **React** 18 – UI library
-- **React Router** 6 – client-side routing (HashRouter for SPA)
-- **Vite** 5 – fast build tool and dev server
-- **Mantine** 7 – UI component library with hooks for responsive design
-- **TipTap** 2 – headless rich text editor with markdown support
+- **React** 19 – UI library
+- **React Router** 7 – client-side routing (HashRouter for SPA)
+- **Vite** 8 – fast build tool and dev server
+- **Mantine** 9 – UI component library with hooks for responsive design
+- **TipTap** 3 – headless rich text editor with markdown support
 - **Tabler Icons** – icon library
 
 ## License
