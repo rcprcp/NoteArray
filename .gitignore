@@ -1,10 +1,5 @@
 # Maven
 target/
-*.jar
-*.war
-*.ear
-*.zip
-*.tar.gz
 .m2/
 
 # IDE
@@ -13,21 +8,22 @@ target/
 *.swp
 *.swo
 *~
-.DS_Store
 *.iml
+
+# OS
+.DS_Store
+Thumbs.db
 
 # Node/UI
 ui/node_modules/
-ui/dist/
-ui/build/
 
-# Quarkus
+# The Vite build writes the served SPA here (see ui/vite.config.js build.outDir)
 src/main/resources/META-INF/resources/
 
 # Environment
 .env
 .env.local
 
-# OS
-.DS_Store
-Thumbs.db
+# NOTE: Maven build artifacts land in target/ (ignored above), so the repository
+# deliberately does not ignore *.jar/*.zip/*.tar.gz globally. Those patterns
+# would also hide import test fixtures such as sample Joplin archives.
