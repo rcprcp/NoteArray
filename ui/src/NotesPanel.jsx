@@ -131,7 +131,7 @@ function SortableTh({ label, field, sort, onSort }) {
 }
 
 // Small status line shown in the edit modal while auto-save is active.
-function AutoSaveStatus({ status, lastSaved }) {
+function AutoSaveStatus({ status, lastSaved, errorMessage }) {
   if (status === 'saving') {
     return (
       <Group gap={6}>
@@ -141,7 +141,11 @@ function AutoSaveStatus({ status, lastSaved }) {
     )
   }
   if (status === 'error') {
-    return <Text size="xs" c="red">Auto-save failed. Your changes are not saved yet; they will be retried when you continue editing.</Text>
+    return (
+      <Text size="xs" c="red">
+        Auto-save failed{errorMessage ? `: ${errorMessage}` : '.'} Your changes are not saved yet; they will be retried when you continue editing.
+      </Text>
+    )
   }
   if (status === 'pending') {
     return <Text size="xs" c="dimmed">Unsaved changes...</Text>
@@ -220,6 +224,7 @@ export default function NotesPanel({ registerActions } = {}) {
 
   // Auto-save state (only used when editing an existing note)
   const [autoSaveStatus, setAutoSaveStatus] = useState('idle') // idle | pending | saving | saved | error
+  const [autoSaveError, setAutoSaveError] = useState(null)
   const [lastSaved, setLastSaved] = useState(null)
   const autoSaveTimerRef = useRef(null)
   // Last values known to be persisted on the server for the note being edited.
@@ -483,8 +488,10 @@ export default function NotesPanel({ registerActions } = {}) {
       baselineRef.current = { ...(baselineRef.current || {}), ...body }
       autoSavedRef.current = true
       setLastSaved(new Date())
+      setAutoSaveError(null)
       setAutoSaveStatus('saved')
     } catch (e) {
+      setAutoSaveError(e.status === 401 ? 'Session expired. Please login again.' : (e.message || 'Auto-save failed'))
       setAutoSaveStatus('error')
     } finally {
       if (inFlightRef.current === request) inFlightRef.current = null
@@ -500,6 +507,7 @@ export default function NotesPanel({ registerActions } = {}) {
     if (!form.title.trim()) return undefined
 
     setAutoSaveStatus('pending')
+    setAutoSaveError(null)
     clearAutoSaveTimer()
     autoSaveTimerRef.current = setTimeout(async () => {
       autoSaveTimerRef.current = null
@@ -531,6 +539,7 @@ export default function NotesPanel({ registerActions } = {}) {
         setCreateMode(false)
         setEditMode(true)
       } catch (e) {
+        setAutoSaveError(e.message || 'Failed to save note')
         setAutoSaveStatus('error')
         setFormError(e.message || 'Failed to save note')
       } finally {
@@ -757,7 +766,7 @@ export default function NotesPanel({ registerActions } = {}) {
             <Text fw={500} size="sm" mb={6}>Content</Text>
             <div style={{ width: "100%" }}><MarkdownEditor value={form.content} onChange={(c) => setForm((prev) => ({ ...prev, content: c }))} /></div>
           </div>
-          <AutoSaveStatus status={autoSaveStatus} lastSaved={lastSaved} />
+          <AutoSaveStatus status={autoSaveStatus} lastSaved={lastSaved} errorMessage={autoSaveError} />
           <Group justify={isMobile ? 'flex-end' : 'space-between'} gap="xs">
             <Button variant="default" onClick={closeModal} size={inputSize}>{editingNote ? 'Close' : 'Cancel'}</Button>
 

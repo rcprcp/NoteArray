@@ -2,10 +2,12 @@ import React, { useCallback, useEffect, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import { HashRouter } from 'react-router-dom'
 import { MantineProvider } from '@mantine/core'
+import { Notifications, notifications } from '@mantine/notifications'
 import App from './App'
 import { usersApi } from './api'
 import '@mantine/core/styles.css'
 import '@mantine/tiptap/styles.css'
+import '@mantine/notifications/styles.css'
 
 const THEME_KEY = 'notearray-theme-color'
 const LEGACY_THEME_KEY = 'notary-theme-color'
@@ -56,7 +58,8 @@ function Root() {
         setThemeColor(user.themeColor)
       }
     } catch (e) {
-      console.error('Failed to load user after login', e)
+      // Surface to the login page, which displays it in its error alert.
+      throw new Error('Logged in, but loading your account failed. Please try again.')
     }
   }
 
@@ -64,7 +67,12 @@ function Root() {
     try {
       await usersApi.logout()
     } catch (e) {
-      console.error('Logout error', e)
+      // The local session is cleared regardless; just tell the user.
+      notifications.show({
+        color: 'red',
+        title: 'Logout failed',
+        message: 'The server could not end the session; you have been signed out locally.',
+      })
     }
     setCurrentUser(null)
   }
@@ -79,7 +87,11 @@ function Root() {
       // Update local state
       setCurrentUser({ ...currentUser, themeColor: color })
     } catch (e) {
-      console.error('Failed to save theme to user record', e)
+      notifications.show({
+        color: 'red',
+        title: 'Theme not saved',
+        message: 'Your color choice applies now but could not be saved to your account.',
+      })
     }
   }
 
@@ -89,6 +101,7 @@ function Root() {
 
   return (
     <MantineProvider theme={{ primaryColor: themeColor }}>
+      <Notifications position="top-center" />
       <HashRouter>
         <App
           themeColor={themeColor}

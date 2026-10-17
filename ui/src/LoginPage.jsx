@@ -22,7 +22,7 @@ export default function LoginPage({ onLogin }) {
     try {
       await usersApi.login(email, password)
       setError(null)
-      onLogin()
+      await onLogin()
     } catch (e) {
       setError(e.message || 'Login failed')
     } finally {
@@ -47,7 +47,7 @@ export default function LoginPage({ onLogin }) {
       // Auto-login after signup
       await usersApi.login(email, password)
       setError(null)
-      onLogin()
+      await onLogin()
     } catch (e) {
       if (e.status === 409) {
         const msg = e.message.toLowerCase()
