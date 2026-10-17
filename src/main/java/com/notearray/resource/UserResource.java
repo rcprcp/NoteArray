@@ -5,6 +5,7 @@ import com.notearray.entity.User;
 import com.notearray.service.SessionService;
 import io.quarkus.elytron.security.common.BcryptUtil;
 import jakarta.inject.Inject;
+import jakarta.persistence.PersistenceException;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
@@ -120,6 +121,13 @@ public class UserResource {
             user.themeColor = req.themeColor();
         }
         user.persist();
+        try {
+            user.flush();
+        } catch (PersistenceException e) {
+            // Unique-constraint race: another request inserted the same name/email
+            // after our check above. Map to a 409 rather than a 500.
+            return Response.status(Response.Status.CONFLICT).entity("name or email already in use").build();
+        }
         return Response.created(URI.create("/api/users/" + user.id)).entity(user).build();
     }
 
@@ -189,6 +197,13 @@ public class UserResource {
         }
         if (!isBlank(req.themeColor())) {
             user.themeColor = req.themeColor();
+        }
+
+        try {
+            user.flush();
+        } catch (PersistenceException e) {
+            // Unique-constraint race on name/email; map to a 409 rather than a 500.
+            return Response.status(Response.Status.CONFLICT).entity("name or email already in use").build();
         }
 
         Response.ResponseBuilder response = Response.ok(user);
