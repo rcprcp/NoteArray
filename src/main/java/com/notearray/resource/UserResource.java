@@ -1,8 +1,12 @@
 package com.notearray.resource;
 
 import com.notearray.entity.User;
+import com.notearray.service.AuthenticationService;
+import com.notearray.service.ClientIp;
+import com.notearray.service.LoginThrottleService;
 import com.notearray.service.SessionService;
 import io.quarkus.elytron.security.common.BcryptUtil;
+import io.vertx.core.http.HttpServerRequest;
 import jakarta.inject.Inject;
 import jakarta.persistence.PersistenceException;
 import jakarta.transaction.Transactional;
@@ -19,9 +23,9 @@ import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import java.net.URI;
-import java.time.Instant;
 import java.util.Set;
 import java.util.UUID;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 @Path("/api/users")
 @Produces(MediaType.APPLICATION_JSON)
@@ -39,8 +43,25 @@ public class UserResource {
     @Context
     HttpHeaders headers;
 
+    /** Peer HTTP request, used only to key rate limits on the client address. */
+    @Context
+    HttpServerRequest request;
+
     @Inject
     SessionService sessions;
+
+    @Inject
+    AuthenticationService authentication;
+
+    @Inject
+    LoginThrottleService throttle;
+
+    /**
+     * Trust the X-Forwarded-For header when resolving the client IP. Enable only
+     * behind a reverse proxy that overwrites the header (see {@link ClientIp}).
+     */
+    @ConfigProperty(name = "notearray.rate-limit.trust-proxy", defaultValue = "false")
+    boolean trustProxy;
 
     /** Request body for create/update. For update, every field is optional. */
     public record UserRequest(String name, String email, String password, String themeColor) {}
@@ -48,25 +69,9 @@ public class UserResource {
     /** Request body for login. */
     public record LoginRequest(String email, String password) {}
 
-    /**
-     * Hash compared when the email is unknown, so login timing does not reveal
-     * which emails have accounts. Compared lazily on first use.
-     */
-    private static volatile String timingDecoyHash;
-
     /** Get the authenticated user from the session cookie. Returns null if not logged in. */
     private User getAuthenticatedUser() {
         return sessions.resolve(headers.getCookies().get(SessionService.COOKIE_NAME));
-    }
-
-    private static String timingDecoyHash() {
-        String hash = timingDecoyHash;
-        if (hash == null) {
-            // Costs one bcrypt computation on first login only.
-            hash = BcryptUtil.bcryptHash(UUID.randomUUID().toString());
-            timingDecoyHash = hash;
-        }
-        return hash;
     }
 
     /**
@@ -84,25 +89,35 @@ public class UserResource {
         return user == null ? Response.status(Response.Status.UNAUTHORIZED).build() : Response.ok(user).build();
     }
 
+    /**
+     * Log in with email + password.
+     *
+     * <p>Runs outside a transaction so the throttling delay (which can hold the
+     * request for up to {@link LoginThrottleService#MAX_SERVER_SIDE_WAIT}) never
+     * ties up a database connection. Credential checking and session creation run
+     * in their own short transactions afterwards.
+     */
     @POST
     @Path("/login")
-    @Transactional
     public Response login(LoginRequest req) {
         if (req == null || isBlank(req.email()) || isBlank(req.password())) {
             return Response.status(Response.Status.BAD_REQUEST)
                     .entity("email and password are required").build();
         }
-        User user = User.findByEmail(req.email());
-        // Always run a bcrypt comparison — even for unknown emails — so response
-        // timing cannot be used to enumerate registered accounts. Do not short-
-        // circuit on user == null or the timing difference returns.
-        String storedHash = user != null ? user.passwordHash : timingDecoyHash();
-        boolean matches = BcryptUtil.matches(req.password(), storedHash);
-        if (user == null || !matches) {
+        LoginThrottleService.Decision decision = throttle.startLogin(req.email(), clientIp());
+        if (!decision.allowed()) {
+            return tooManyAttempts(decision.retryAfterSeconds());
+        }
+        if (decision.waitSeconds() > 0) {
+            sleep(decision.waitSeconds() * 1000L);
+        }
+        User user = authentication.authenticate(req.email(), req.password());
+        if (user == null) {
+            throttle.recordLoginFailure(req.email());
             return Response.status(Response.Status.UNAUTHORIZED)
                     .entity("invalid email or password").build();
         }
-        user.lastLogin = Instant.now();
+        throttle.recordLoginSuccess(req.email());
         String token = sessions.create(user);
         return Response.ok(user)
                 .header("Set-Cookie", sessions.cookieHeader(token))
@@ -124,6 +139,10 @@ public class UserResource {
         if (req == null || isBlank(req.name()) || isBlank(req.email()) || isBlank(req.password())) {
             return Response.status(Response.Status.BAD_REQUEST)
                     .entity("name, email and password are required").build();
+        }
+        LoginThrottleService.Decision decision = throttle.startSignup(clientIp());
+        if (!decision.allowed()) {
+            return tooManyAttempts(decision.retryAfterSeconds());
         }
         if (!isBlank(req.themeColor()) && !THEME_COLORS.contains(req.themeColor())) {
             return Response.status(Response.Status.BAD_REQUEST).entity("invalid themeColor").build();
@@ -258,5 +277,27 @@ public class UserResource {
 
     private static boolean isBlank(String s) {
         return s == null || s.isBlank();
+    }
+
+    /** Client address used to key IP-based limits (see {@link ClientIp}). */
+    private String clientIp() {
+        return ClientIp.resolve(request, headers, trustProxy);
+    }
+
+    /** 429 telling the client how long to wait — used by both the login and signup budgets. */
+    private static Response tooManyAttempts(long retryAfterSeconds) {
+        return Response.status(429)
+                .header("Retry-After", Long.toString(retryAfterSeconds))
+                .entity("too many attempts; try again in " + retryAfterSeconds + " seconds")
+                .build();
+    }
+
+    /** Wait out a throttling delay; the login endpoint is blocking, so sleeping a worker thread is safe. */
+    private static void sleep(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 }
