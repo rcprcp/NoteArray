@@ -40,6 +40,11 @@ export default function LoginPage({ onLogin }) {
       setFieldErrors(errs)
       return
     }
+    // Basic client-side check mirrors server policy; server remains authoritative.
+    if (password.length < 8 || !/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password)) {
+      setFieldErrors({ password: 'Password does not meet requirements' })
+      return
+    }
     setFieldErrors({})
     setLoading(true)
     try {
@@ -112,13 +117,19 @@ export default function LoginPage({ onLogin }) {
           />
 
           {mode === 'signup' && (
-            <PasswordInput
-              label="Confirm Password"
-              required
-              value={passwordConfirm}
-              error={fieldErrors.passwordConfirm}
-              onChange={(e) => setPasswordConfirm(e.currentTarget.value)}
-            />
+            <>
+              <PasswordInput
+                label="Confirm Password"
+                required
+                value={passwordConfirm}
+                error={fieldErrors.passwordConfirm}
+                onChange={(e) => setPasswordConfirm(e.currentTarget.value)}
+              />
+
+              <Text size="xs" c="dimmed" mt={-4}>
+                Password must be at least 8 characters and include at least one uppercase letter, one lowercase letter, and one number. Special characters (!@#$%^&*) are optional.
+              </Text>
+            </>
           )}
 
           <Button onClick={mode === 'login' ? handleLogin : handleSignup} loading={loading} fullWidth color="red">
