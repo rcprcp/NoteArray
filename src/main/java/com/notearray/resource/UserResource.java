@@ -3,6 +3,7 @@ package com.notearray.resource;
 import com.notearray.entity.User;
 import com.notearray.service.AuthenticationService;
 import com.notearray.service.ClientIp;
+import com.notearray.service.EmailPolicy;
 import com.notearray.service.LoginThrottleService;
 import com.notearray.service.PasswordPolicy;
 import com.notearray.service.SessionService;
@@ -119,20 +120,26 @@ public class UserResource {
             return Response.status(Response.Status.BAD_REQUEST)
                     .entity("email and password are required").build();
         }
-        LoginThrottleService.Decision decision = throttle.startLogin(req.email(), clientIp());
+        String normalizedEmail = EmailPolicy.normalizeEmail(req.email());
+        String emailError = EmailPolicy.validateEmail(normalizedEmail);
+        if (emailError != null) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(emailError).build();
+        }
+        LoginThrottleService.Decision decision = throttle.startLogin(normalizedEmail, clientIp());
         if (!decision.allowed()) {
             return tooManyAttempts(decision.retryAfterSeconds());
         }
         if (decision.waitSeconds() > 0) {
             sleep(decision.waitSeconds() * 1000L);
         }
-        User user = authentication.authenticate(req.email(), req.password());
+        User user = authentication.authenticate(normalizedEmail, req.password());
         if (user == null) {
-            throttle.recordLoginFailure(req.email());
+            throttle.recordLoginFailure(normalizedEmail);
             return Response.status(Response.Status.UNAUTHORIZED)
                     .entity("invalid email or password").build();
         }
-        throttle.recordLoginSuccess(req.email());
+        throttle.recordLoginSuccess(normalizedEmail);
         String token = sessions.create(user);
         return Response.ok(user)
                 .header("Set-Cookie", sessions.cookieHeader(token))
@@ -159,13 +166,23 @@ public class UserResource {
         if (!decision.allowed()) {
             return tooManyAttempts(decision.retryAfterSeconds());
         }
+        String normalizedName = EmailPolicy.normalizeName(req.name());
+        String nameError = EmailPolicy.validateName(normalizedName);
+        if (nameError != null) {
+            return Response.status(Response.Status.BAD_REQUEST).entity(nameError).build();
+        }
+        String normalizedEmail = EmailPolicy.normalizeEmail(req.email());
+        String emailError = EmailPolicy.validateEmail(normalizedEmail);
+        if (emailError != null) {
+            return Response.status(Response.Status.BAD_REQUEST).entity(emailError).build();
+        }
         if (!isBlank(req.themeColor()) && !THEME_COLORS.contains(req.themeColor())) {
             return Response.status(Response.Status.BAD_REQUEST).entity("invalid themeColor").build();
         }
-        if (User.findByName(req.name()) != null) {
+        if (User.findByName(normalizedName) != null) {
             return Response.status(Response.Status.CONFLICT).entity("name already in use").build();
         }
-        if (User.findByEmail(req.email()) != null) {
+        if (User.findByEmail(normalizedEmail) != null) {
             return Response.status(Response.Status.CONFLICT).entity("email already in use").build();
         }
         Response passwordError = invalidPassword(req.password());
@@ -173,8 +190,8 @@ public class UserResource {
             return passwordError;
         }
         User user = new User();
-        user.name = req.name();
-        user.email = req.email();
+        user.name = normalizedName;
+        user.email = normalizedEmail;
         user.passwordHash = BcryptUtil.bcryptHash(req.password());
         if (!isBlank(req.themeColor())) {
             user.themeColor = req.themeColor();
@@ -238,17 +255,31 @@ public class UserResource {
         if (!isBlank(req.themeColor()) && !THEME_COLORS.contains(req.themeColor())) {
             return Response.status(Response.Status.BAD_REQUEST).entity("invalid themeColor").build();
         }
-        if (!isBlank(req.name()) && !req.name().equals(user.name)) {
-            if (User.findByName(req.name()) != null) {
-                return Response.status(Response.Status.CONFLICT).entity("name already in use").build();
+        if (!isBlank(req.name())) {
+            String normalizedName = EmailPolicy.normalizeName(req.name());
+            String nameError = EmailPolicy.validateName(normalizedName);
+            if (nameError != null) {
+                return Response.status(Response.Status.BAD_REQUEST).entity(nameError).build();
             }
-            user.name = req.name();
+            if (!normalizedName.equals(user.name)) {
+                if (User.findByName(normalizedName) != null) {
+                    return Response.status(Response.Status.CONFLICT).entity("name already in use").build();
+                }
+                user.name = normalizedName;
+            }
         }
-        if (!isBlank(req.email()) && !req.email().equals(user.email)) {
-            if (User.findByEmail(req.email()) != null) {
-                return Response.status(Response.Status.CONFLICT).entity("email already in use").build();
+        if (!isBlank(req.email())) {
+            String normalizedEmail = EmailPolicy.normalizeEmail(req.email());
+            String emailError = EmailPolicy.validateEmail(normalizedEmail);
+            if (emailError != null) {
+                return Response.status(Response.Status.BAD_REQUEST).entity(emailError).build();
             }
-            user.email = req.email();
+            if (!normalizedEmail.equalsIgnoreCase(user.email)) {
+                if (User.findByEmail(normalizedEmail) != null) {
+                    return Response.status(Response.Status.CONFLICT).entity("email already in use").build();
+                }
+            }
+            user.email = normalizedEmail;
         }
         boolean passwordChanged = !isBlank(req.password())
                 || !isBlank(req.currentPassword())

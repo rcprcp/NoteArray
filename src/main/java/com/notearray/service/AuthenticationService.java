@@ -30,7 +30,8 @@ public class AuthenticationService {
      */
     @Transactional
     public User authenticate(String email, String password) {
-        User user = User.findByEmail(email);
+        String normalizedEmail = EmailPolicy.normalizeEmail(email);
+        User user = User.findByEmail(normalizedEmail);
         String storedHash = user != null ? user.passwordHash : timingDecoyHash();
         boolean matches = BcryptUtil.matches(password, storedHash);
         if (user == null || !matches) {

@@ -1,6 +1,7 @@
 package com.notearray.entity;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.notearray.service.EmailPolicy;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
@@ -39,10 +40,18 @@ public class User extends BaseEntity {
     public boolean superuser;
 
     public static User findByEmail(String email) {
-        return find("email", email).firstResult();
+        String normalized = EmailPolicy.normalizeEmail(email);
+        if (normalized == null || normalized.isEmpty()) {
+            return null;
+        }
+        return find("LOWER(email) = ?1", normalized).firstResult();
     }
 
     public static User findByName(String name) {
-        return find("name", name).firstResult();
+        String normalized = EmailPolicy.normalizeName(name);
+        if (normalized == null || normalized.isEmpty()) {
+            return null;
+        }
+        return find("name", normalized).firstResult();
     }
 }

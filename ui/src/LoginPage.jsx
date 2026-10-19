@@ -1,6 +1,72 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Container, Stack, Text, Button, PasswordInput, TextInput, Group, Card, Title, Alert } from '@mantine/core'
 import { usersApi } from './api'
+
+const LOCAL_PART_RE = /^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+$/
+const DOMAIN_LABEL_RE = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/
+
+export function normalizeEmail(raw) {
+  return (raw || '').trim().toLowerCase()
+}
+
+export function normalizeName(raw) {
+  return (raw || '').trim()
+}
+
+export function validateEmail(raw) {
+  const value = normalizeEmail(raw)
+  if (!value) return 'Email is required'
+  if (value.length > 320) return 'Email must be at most 320 characters'
+  if (/[\u0000-\u001F\u007F\s]/.test(value)) return 'Invalid email format'
+
+  const at = value.indexOf('@')
+  if (at <= 0 || at !== value.lastIndexOf('@') || at === value.length - 1) {
+    return 'Invalid email format'
+  }
+
+  const local = value.slice(0, at)
+  const domain = value.slice(at + 1)
+
+  if (
+    local.length > 64 ||
+    local.startsWith('.') ||
+    local.endsWith('.') ||
+    local.includes('..') ||
+    !LOCAL_PART_RE.test(local)
+  ) {
+    return 'Invalid email format'
+  }
+
+  if (
+    domain.length > 255 ||
+    !domain.includes('.') ||
+    domain.startsWith('.') ||
+    domain.endsWith('.') ||
+    domain.includes('..')
+  ) {
+    return 'Invalid email format'
+  }
+
+  const labels = domain.split('.')
+  if (labels.length < 2) return 'Invalid email format'
+  for (const label of labels) {
+    if (!label || label.length > 63 || !DOMAIN_LABEL_RE.test(label)) {
+      return 'Invalid email format'
+    }
+  }
+  const tld = labels[labels.length - 1]
+  if (!/[a-z]/.test(tld)) return 'Invalid email format'
+
+  return null
+}
+
+export function validateName(raw) {
+  const value = normalizeName(raw)
+  if (!value) return 'Name is required'
+  if (value.length > 255) return 'Name must be at most 255 characters'
+  if (/[\u0000-\u001F\u007F]/.test(value)) return 'Invalid name'
+  return null
+}
 
 export default function LoginPage({ onLogin }) {
   const [email, setEmail] = useState('')
@@ -13,14 +79,20 @@ export default function LoginPage({ onLogin }) {
   const [fieldErrors, setFieldErrors] = useState({})
 
   const handleLogin = async () => {
-    if (!email.trim() || !password) {
-      setFieldErrors({ email: !email.trim() ? 'Email is required' : '', password: !password ? 'Password is required' : '' })
+    const normalizedEmail = normalizeEmail(email)
+    setEmail(normalizedEmail)
+    const emailErr = validateEmail(normalizedEmail)
+    const errs = {}
+    if (emailErr) errs.email = emailErr
+    if (!password) errs.password = 'Password is required'
+    if (Object.keys(errs).length > 0) {
+      setFieldErrors(errs)
       return
     }
     setFieldErrors({})
     setLoading(true)
     try {
-      await usersApi.login(email, password)
+      await usersApi.login(normalizedEmail, password)
       setError(null)
       await onLogin()
     } catch (e) {
@@ -31,9 +103,16 @@ export default function LoginPage({ onLogin }) {
   }
 
   const handleSignup = async () => {
+    const normalizedName = normalizeName(name)
+    const normalizedEmail = normalizeEmail(email)
+    setName(normalizedName)
+    setEmail(normalizedEmail)
+
     const errs = {}
-    if (!name.trim()) errs.name = 'Name is required'
-    if (!email.trim()) errs.email = 'Email is required'
+    const nameErr = validateName(normalizedName)
+    const emailErr = validateEmail(normalizedEmail)
+    if (nameErr) errs.name = nameErr
+    if (emailErr) errs.email = emailErr
     if (!password) errs.password = 'Password is required'
     if (password !== passwordConfirm) errs.passwordConfirm = 'Passwords do not match'
     if (Object.keys(errs).length > 0) {
@@ -48,9 +127,9 @@ export default function LoginPage({ onLogin }) {
     setFieldErrors({})
     setLoading(true)
     try {
-      await usersApi.create({ name: name.trim(), email: email.trim(), password })
+      await usersApi.create({ name: normalizedName, email: normalizedEmail, password })
       // Auto-login after signup
-      await usersApi.login(email, password)
+      await usersApi.login(normalizedEmail, password)
       setError(null)
       await onLogin()
     } catch (e) {
@@ -106,6 +185,7 @@ export default function LoginPage({ onLogin }) {
             value={email}
             error={fieldErrors.email}
             onChange={(e) => setEmail(e.currentTarget.value)}
+            onBlur={() => setEmail((v) => normalizeEmail(v))}
           />
 
           <PasswordInput

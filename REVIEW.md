@@ -57,7 +57,7 @@
   `Permissions-Policy`, strict `Content-Security-Policy` with `script-src 'self'` and
   `frame-ancestors 'none'`, plus HSTS when `notearray.session.cookie-secure=true`).*
 
-- [ ] **4. Email handling bugs enable duplicate accounts and enumeration**
+- [x] **4. Email handling bugs enable duplicate accounts and enumeration**
   (`User.java:41`, `UserResource.java:131-136`). Emails are stored as typed and looked up
   case-sensitively — `A@x.com` and `a@x.com` are different accounts, and trailing spaces differ too
   (signup trims, login doesn't — `LoginPage.jsx:23` vs `:46`). Also no email *format* validation
@@ -65,6 +65,10 @@
   are registered on an open-signup app.
   Normalize (trim + lowercase) at write and lookup; validate format; consider an
   invite-only/disable-signup config flag and email verification.
+  *Done (branch `agent/email-validation`): `EmailPolicy` trims and lowercases emails and trims names on
+  both server (`UserResource`, `AuthenticationService`, `User.findByEmail`/`findByName`) and client
+  (`LoginPage.jsx`), and validates `local@domain.tld` (`something@x.y`) token structure and length limits
+  on both sides (`EmailPolicyTest`).*
 
 - [ ] **5. Import limits are inconsistent and expandable** (`NoteResource.java:49,329`).
   `MAX_IMPORT_BYTES` is 50 MB, but Quarkus's default `quarkus.http.limits.max-body-size` is ~10 MB —
@@ -99,9 +103,11 @@
   serialized, so a slow PUT can land *after* a newer one. Add optimistic locking (`@Version` → 409),
   queue auto-saves one-at-a-time, and retry-with-merge in the UI.
 
-- [ ] **10. Misleading 409 for oversized fields** (`UserResource.java:145-151`). Name/email lengths are
+- [x] **10. Misleading 409 for oversized fields** (`UserResource.java:145-151`). Name/email lengths are
   never validated, so a 500-char name fails on flush and is mapped to **409 "name or email already in
   use"**. Validate lengths/format → 400.
+  *Done (branch `agent/email-validation`): `EmailPolicy` validates name (≤ 255 chars) and email (≤ 320
+  chars, local ≤ 64, domain ≤ 255) before persistence and returns 400.*
 
 - [ ] **11. Re-importing the same JEX duplicates every note** — no dedupe (hash of title+content) and the
   whole import runs in one transaction with all entities in one Hibernate session. Batch it, and
@@ -194,7 +200,7 @@
 |---|------|----------|--------|
 | 1 | Login rate limiting + password policy | #1, #2 | ✓ (`agent/login-throttling`, `agent/password-policy`) |
 | 2 | Security headers + CSP + link/HTML sanitization | #3 | ✓ (`security-sanitization`, `agent/security-xss-headers`) |
-| 3 | Email normalization/validation + signup config flag | #4 | ☐ |
+| 3 | Email normalization/validation + signup config flag | #4, #10 | ✓ (`agent/email-validation`) |
 | 4 | Fix body-size limit & import expansion caps | #5 | ☐ |
 | 5 | Test suite + CI | #21, #22 | ☐ |
 | 6 | Paginated list + lightweight projection + tags endpoint | #12 | ☐ |
@@ -213,3 +219,4 @@
 | 2026-10-18 | #2 | `agent/password-policy` | 8+ chars / uppercase / lowercase / digit enforced in `UserResource` create+update and signup form; specials `!@#$%^&*` optional; `PasswordPolicyTest` |
 | 2026-10-19 | #3 | `security-sanitization`, `agent/security-xss-headers` | DOMPurify on render + update, `Link` protocol whitelist (`http/https/mailto`), server-side ingest sanitization in `NoteResource`, `SecurityHeadersFilter` with strict CSP + prod HSTS, `SecurityHeadersFilterTest` |
 | 2026-10-19 | #8, #18, #21, #24 | `personal_settings`, `change_password` | Personal Settings view in main area with Light/Dark/Auto appearance selector, current-password-verified password change that invalidates sessions and logs out to `/login`, SPA route redirects, and 36 JUnit 5 unit tests |
+| 2026-10-19 | #4, #10 | `agent/email-validation` | Email trim+lowercase normalization and liberal `something@x.y` token/length validation + name validation on server (`EmailPolicy`, `UserResource`, `AuthenticationService`, `User`) and client (`LoginPage.jsx`); `EmailPolicyTest` |
