@@ -32,7 +32,7 @@ export default function App({ themeColor, onThemeChange, currentUser, onLogin, o
               <Button variant="light" onClick={() => { navigate('/notes'); actions?.onReset?.(); }}>
                 List Notes
               </Button>
-              <Button variant="light" onClick={() => actions?.onCreate?.()}>Create note</Button>
+              <Button variant="light" onClick={() => actions?.onCreate?.()}>Create Note</Button>
               <Button variant={actions?.tagsOpen ? "filled" : "light"} onClick={() => actions?.onToggleTags?.()} aria-expanded={actions?.tagsOpen}>
                 Tag Search
               </Button>
