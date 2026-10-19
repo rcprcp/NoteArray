@@ -19,7 +19,10 @@ NoteArray/
 │   │   │   │   └── LoginThrottle.java         # Throttle state (per-email backoff, per-IP hourly windows)
 │   │   │   ├── resource/
 │   │   │   │   ├── UserResource.java          # REST endpoints for users (CRUD + login/logout, throttled, password policy)
-│   │   │   │   └── NoteResource.java          # REST endpoints for notes (CRUD + search + filter + import)
+│   │   │   │   ├── NoteResource.java          # REST endpoints for notes (CRUD + search + filter + import, ingest sanitization)
+│   │   │   │   └── SpaResource.java           # SPA route handler and unauthenticated redirect to /login
+│   │   │   ├── security/
+│   │   │   │   └── SecurityHeadersFilter.java # HTTP security headers (CSP, X-Frame-Options, nosniff, Referrer/Permissions, HSTS)
 │   │   │   └── service/
 │   │   │       ├── SessionService.java        # Persisted session create/resolve/invalidate + scheduled purge
 │   │   │       ├── AuthenticationService.java # BCrypt credential check for login (timing-safe for unknown emails)
@@ -28,7 +31,7 @@ NoteArray/
 │   │   │       ├── ClientIp.java              # Client address for rate limiting (X-Forwarded-For opt-in)
 │   │   │       └── PasswordPolicy.java        # Password rules (8+ chars, uppercase, lowercase, digit)
 │   │   └── resources/
-│   │       ├── application.properties         # Quarkus config (DB, Flyway, OpenAPI, sessions, rate limits)
+│   │       ├── application.properties         # Quarkus config (DB, Flyway, OpenAPI, sessions, rate limits, security headers)
 │   │       └── db/migration/
 │   │           ├── V1.0.0__create_users_and_notes.sql
 │   │           ├── V1.0.1__add_theme_color_to_users.sql
@@ -45,20 +48,28 @@ NoteArray/
 │   │           ├── V1.1.2__remove_seeded_test_user.sql
 │   │           ├── V1.1.3__add_notes_created_at_index.sql
 │   │           └── V1.1.4__create_login_throttle.sql
-│   └── test/java/com/notearray/service/
-│       ├── LoginThrottlePolicyTest.java      # Backoff/lockout rule tests
-│       ├── ClientIpTest.java                 # X-Forwarded-For parsing tests
-│       └── PasswordPolicyTest.java           # Password rule tests
+│   └── test/java/com/notearray/
+│       ├── NoteArrayApplicationTest.java      # JAX-RS registration and SPA route redirect tests
+│       ├── resource/
+│       │   └── UserPasswordChangeTest.java    # Password change validation order and policy tests
+│       ├── security/
+│       │   └── SecurityHeadersFilterTest.java # Security headers, CSP, HSTS, and ingest sanitization tests
+│       └── service/
+│           ├── LoginThrottlePolicyTest.java   # Backoff/lockout rule tests
+│           ├── ClientIpTest.java              # X-Forwarded-For parsing tests
+│           └── PasswordPolicyTest.java        # Password rule tests
 ├── ui/                                        # React + Vite frontend (mobile-responsive)
 │   ├── src/
-│   │   ├── App.jsx                            # Main app shell with routing and logout
-│   │   ├── main.jsx                           # React entry point with session check
+│   │   ├── App.jsx                            # Main app shell with responsive header and routing (/login, /notes, /settings)
+│   │   ├── HeaderActions.jsx                  # Dynamic right-to-left header action overflow menu
+│   │   ├── PersonalSettings.jsx               # Personal settings view (profile details, light/dark/auto + color theme, password change, logout)
+│   │   ├── main.jsx                           # React entry point with session check and theme management
 │   │   ├── api.js                             # Fetch wrapper for REST API (includes credentials)
 │   │   ├── LoginPage.jsx                      # Login and signup page
-│   │   ├── NotesPanel.jsx                     # Note management UI with rich text editor, tags, search, import, auto-save, and responsive design
-│   │   ├── FilterPanel.jsx                    # Tag filters, smart collections, saved searches
-│   │   ├── ThemeButton.jsx                    # Theme color picker
-│   │   ├── UserMenu.jsx                       # Top-right personal settings menu (profile, theme, logout)
+│   │   ├── NotesPanel.jsx                     # Note management UI with rich text editor, tags, search, import, auto-save, and DOMPurify sanitization
+│   │   ├── FilterPanel.jsx                    # Tag filters panel
+│   │   ├── ThemeButton.jsx                    # Theme color palette constants and picker
+│   │   ├── UserMenu.jsx                       # Legacy user menu components
 │   │   └── index.css                          # Mobile-first responsive styles
 │   ├── vite.config.js                         # Vite configuration
 │   ├── index.html                             # HTML template with viewport meta
@@ -191,8 +202,8 @@ Only a **SHA-256 hash** of the token is stored in the database; the raw token li
 the browser cookie, so a leaked database snapshot cannot be replayed. Sessions expire after
 **7 days**; expired sessions are rejected and deleted on access, and a scheduled job
 (`quarkus-scheduler`, hourly) also purges stale rows. Changing a password invalidates **all** of
-that user's sessions; when you change your own password you stay signed in on the current device
-with a freshly rotated token.
+that user's sessions, expires the current session cookie, and redirects the user to the login
+screen so they must sign in again with the new password.
 
 ### Session Cookies
 
@@ -294,14 +305,14 @@ UPDATE users SET superuser = FALSE WHERE email = 'user@example.com';
   - Returns 404 if user doesn't exist or caller lacks permission (non-superusers can only view themselves)
 
 - `PUT /api/users/{id}` – Update a user (all fields optional)
-  - **Request body:** `{ "name": "...", "email": "...", "password": "...", "themeColor": "..." }`
+  - **Request body:** `{ "name": "...", "email": "...", "currentPassword": "...", "password": "...", "confirmPassword": "...", "themeColor": "..." }`
   - **Response:** Updated user object
   - Returns 401 if not authenticated
   - Returns 404 if user doesn't exist or caller lacks permission
   - Returns 409 if new name or email is already in use
-  - Returns 400 if a provided password fails the policy (see Password Policy)
+  - When changing a password, `currentPassword` is verified against the stored hash **first**; only after it is confirmed valid is the new `password` validated against the Password Policy and checked against `confirmPassword` (returning 400 on any failure)
   - Superusers can update any user; regular users can only update themselves
-  - Changing the password invalidates **all** of that user's sessions; when you change your own password you stay signed in on the current device with a freshly rotated token
+  - Changing the password invalidates **all** of that user's sessions and expires the caller's session cookie so they must log in again with the new password
 
 - `DELETE /api/users/{id}` – Delete a user
   - **Response:** 204 No Content
@@ -442,14 +453,19 @@ The interactive Swagger UI allows you to test all endpoints directly from your b
 
 ### Login & Authentication
 - **Login page** – Email and password fields (responsive)
+  - Unauthenticated requests to any application route (e.g. `/`, `/overview`, `/notes`, `/settings`) redirect to `/login`
   - Invalid credentials show an error message
-  - Session cookie is set on success
+  - Session cookie is set on success and the user is navigated to `/notes` (the Notes List page)
   - Repeated failures are throttled with exponential backoff (1s doubling to 64s; 15-minute lockout after 8 consecutive failures, cleared by a successful login) — a throttled attempt shows a "try again in N seconds" message
 - **Signup** – Create a new account from the login page
   - Name, email, and password fields
   - Password must be confirmed and meet the password policy (8+ characters, uppercase, lowercase, number; special characters optional) — shown as a hint under the field and checked client-side
   - Auto-login after successful signup
-- **Logout button** – Clears the session cookie and returns to login page
+- **Personal Settings & Logout** – Clicking the avatar in the header opens the Personal Settings page in the main content area:
+  - **Logout button** in the upper-right of the main content area (directly below the avatar) clears the session cookie and returns to the login page
+  - **My profile** table displaying Name, Email, Theme, Last login, Created, Updated, and ID
+  - **Theme** card with **Appearance** (**Light / Dark / Auto**) above the 14 Mantine **Color** palettes
+  - **Security / Change Password** form requiring Current Password (verified first), New Password, and Verify New Password; upon success, all sessions are invalidated and the user is logged out to `/login`
 
 ### Note Management
 - **List notes** – Responsive view that adapts to screen size
@@ -502,24 +518,16 @@ The interactive Swagger UI allows you to test all endpoints directly from your b
 - **Live preview** – Editor supports TipTap's rich text rendering with markdown shortcuts
 
 ### Advanced Search & Filtering
-- **Filter panel** – Toggled with the "Tags" header button
-  - **Tag filter:**
-    - Add tags by typing (space-delimited) or multi-select from existing tags
-    - Notes must have all selected tags
-  - **Smart collections:**
-    - **Pinned** – Favorite/pinned notes
-    - **Untagged** – Notes with no tags
-    - Note counts shown on each collection button
-  - **Saved searches:**
-    - Save current search query and filters under a custom name
-    - One click applies a saved search
-    - Delete saved searches
-    - Filters and saved searches stored in browser localStorage
-    - Auto-restore last used filters on page reload
+- **Responsive header actions** – Header includes **List Notes**, **Create Note**, **Tag Search**, **Text Search**, **Pinned**, **Untagged**, **Import**, and the user avatar. When viewport width is constrained, items collapse right-to-left into an overflow (`...`) menu.
+- **Tag Search panel** – Toggled with the **Tag Search** header button
+  - Add tags by typing (space-delimited) or multi-select from existing tags
+  - Notes must have all selected tags
+- **Quick collection buttons** – **Pinned** and **Untagged** buttons in the header filter directly to pinned or untagged notes
 - **Active filter badges** showing which filters are applied
   - Clear individual filters with X button
   - "Clear all filters" button to reset all filters
   - Active filter count indicator
+  - Filter state persists to browser `localStorage` and restores on page reload
 
 ### Full-Text Search
 - **Search bar** – Type your search query
@@ -548,8 +556,14 @@ The interactive Swagger UI allows you to test all endpoints directly from your b
   - Preserves all markdown formatting
 
 ### Theme Selection
-- **"Theme" button** – Choose from 14 Mantine color palettes
-  - Saved to the user's account and restored on login
+- **Appearance & Color Theme** (in Personal Settings):
+  - **Appearance**: Switch between **Light**, **Dark**, and **Auto** (system preference) modes
+  - **Color**: Choose from 14 Mantine color palettes, saved to the user's account and synced to `localStorage` on login and session restore
+
+### XSS Protection & Security Headers
+- **Render & Link Sanitization**: Note content is sanitized with **DOMPurify** on initial editor load and content updates, and the Tiptap `Link` extension restricts link protocols to `http:`, `https:`, `mailto:`, and relative URLs.
+- **Ingest Sanitization**: `NoteResource` strips `<script>`, `<iframe>`, `<object>`, `<embed>` elements, inline `on*=` attributes, and `javascript:`/`vbscript:`/`data:text/html` URIs on note create, update, and import.
+- **HTTP Security Headers**: `SecurityHeadersFilter` and `application.properties` emit `Content-Security-Policy` (`default-src 'self'; script-src 'self'; ... frame-ancestors 'none'`), `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy`, and `Strict-Transport-Security` (when `notearray.session.cookie-secure=true` in `prod`).
 
 ### Superuser Features (if applicable)
 - If you are a superuser, `GET /api/notes` returns all notes from all users
@@ -642,7 +656,7 @@ Backend unit tests run with JUnit 5 (no database or server required):
 mvn test
 ```
 
-Covered so far: login-throttle backoff/lockout rules, client-IP / `X-Forwarded-For` parsing, and the password policy. The UI has no automated tests yet. `mvn clean package` runs the tests as part of the build.
+Covered so far (36 unit tests across 6 test classes): login-throttle backoff/lockout rules (`LoginThrottlePolicyTest`), client-IP / `X-Forwarded-For` parsing (`ClientIpTest`), the password policy (`PasswordPolicyTest`), JAX-RS resource registration and SPA route redirects (`NoteArrayApplicationTest`), password change validation order and rules (`UserPasswordChangeTest`), and HTTP security headers + ingest XSS sanitization (`SecurityHeadersFilterTest`). `mvn clean package` runs the tests as part of the build.
 
 ### Testing on Mobile Devices
 
@@ -680,11 +694,11 @@ Covered so far: login-throttle backoff/lockout rules, client-IP / `X-Forwarded-F
 - **Auto-save behavior:** Changes to existing notes are automatically saved after 2 seconds of inactivity. New notes require manual save first. The debounce delay prevents excessive server requests while providing responsive save behavior. No changes are lost when closing the modal—pending changes are flushed before closing.
 - **Responsive design:** Mobile-first CSS approach with breakpoints at 768px and 1024px. Use browser DevTools to test different screen sizes. Touch targets are 44px minimum on mobile for accessibility.
 - **Mobile optimization:** Modals go full-screen on mobile, search filters collapse, notes display as cards instead of tables. Font sizes scale with viewport using `clamp()`.
-- **Filter state management:** Active filters and saved searches are managed in NotesPanel state. Filter state persists to localStorage for quick recovery on page reload. Filters are combined with search queries using AND logic.
-- **Date filtering:** Date range filters support custom date pickers with ISO-8601 instant format (`YYYY-MM-DDTHH:MM:SSZ`). Backend validates date ranges and returns 400 for invalid formats.
+- **Filter state management:** Active filters are managed in NotesPanel state and persisted to `localStorage` for recovery on page reload. Filters are combined with search queries using AND logic.
+- **Date filtering:** Backend API supports ISO-8601 instant range parameters (`createdFrom`, `createdTo`, `updatedFrom`, `updatedTo`) and returns 400 for invalid formats.
 - **Tag filtering:** Multi-select tag filter automatically populates from tags in the user's notes. A note matches if it has ALL selected tags. Combine multiple tags for powerful filtering.
-- **Smart collections:** Pre-built collections (Untagged, Pinned, Modified today, Oldest unmodified) update dynamically as notes are created/edited. Display note counts to help users navigate quickly.
-- **Pinned notes:** Use the star icon in notes list or edit modal to pin/unpin notes as favorites. Pinned notes are easily filterable and appear first in custom collection.
+- **Smart collections:** Header buttons (**Pinned**, **Untagged**) filter directly to pinned or untagged notes.
+- **Pinned notes:** Use the pin icon in the notes list to pin/unpin notes as favorites.
 
 ## Technologies Used
 
@@ -703,10 +717,11 @@ Covered so far: login-throttle backoff/lockout rules, client-IP / `X-Forwarded-F
 
 ### Frontend
 - **React** 19 – UI library
-- **React Router** 7 – client-side routing (HashRouter for SPA)
+- **React Router** 7 – client-side routing (`BrowserRouter` with backend `SpaResource` fallback)
 - **Vite** 8 – fast build tool and dev server
-- **Mantine** 9 – UI component library with hooks for responsive design
+- **Mantine** 9 – UI component library with Light/Dark/Auto color scheme and responsive hooks
 - **TipTap** 3 – headless rich text editor with markdown support
+- **DOMPurify** – HTML/markdown sanitization against XSS
 - **Tabler Icons** – icon library
 
 ## License
