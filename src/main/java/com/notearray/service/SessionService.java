@@ -22,6 +22,17 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
  * survive application restarts and are shared across multiple application instances that use
  * the same database. A user may be signed in on many devices at once; each login is its own row.
  * Only a SHA-256 hash of the token is stored, never the raw token.
+ *
+ * <p><b>CSRF Invariant:</b> Cookie-based session authentication is protected against CSRF by
+ * three layers that must be maintained together:
+ * <ol>
+ *   <li>{@code SameSite=Strict} on {@link #COOKIE_NAME} (never relax to {@code None} without a
+ *       per-request CSRF token).</li>
+ *   <li>All state-changing endpoints require {@code application/json} or
+ *       {@code application/octet-stream} bodies (never form-encoded bodies).</li>
+ *   <li>{@link com.notearray.security.CsrfFilter} enforces {@code Sec-Fetch-Site} and
+ *       {@code Origin} checks on all non-GET/HEAD/OPTIONS requests.</li>
+ * </ol>
  */
 @ApplicationScoped
 public class SessionService {

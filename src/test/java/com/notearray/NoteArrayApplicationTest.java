@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.notearray.resource.NoteResource;
 import com.notearray.resource.SpaResource;
 import com.notearray.resource.UserResource;
+import com.notearray.security.CsrfFilter;
 import com.notearray.security.SecurityHeadersFilter;
 import jakarta.ws.rs.core.Response;
 import java.net.URI;
@@ -26,6 +27,8 @@ class NoteArrayApplicationTest {
             "NoteResource should be registered in NoteArrayApplication");
         assertTrue(classes.contains(SpaResource.class),
             "SpaResource should be registered in NoteArrayApplication");
+        assertTrue(classes.contains(CsrfFilter.class),
+            "CsrfFilter should be registered in NoteArrayApplication");
         assertTrue(classes.contains(SecurityHeadersFilter.class),
             "SecurityHeadersFilter should be registered in NoteArrayApplication");
     }

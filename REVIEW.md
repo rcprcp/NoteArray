@@ -89,10 +89,14 @@
 
 ### Medium
 
-- [ ] **7. CSRF is currently OK but the invariant is undocumented.** Safety rests entirely on
+- [x] **7. CSRF is currently OK but the invariant is undocumented.** Safety rests entirely on
   `SameSite=Strict` + JSON-only body consumption. If anyone ever relaxes SameSite or adds CORS, every
   endpoint becomes cross-site writable. Add an `Origin`/`Sec-Fetch-Site` check or CSRF token, and
   document why it's currently safe.
+  *Done (branch `agent/csrf-protection`): added `CsrfFilter` (`@PreMatching` `ContainerRequestFilter`)
+  enforcing `Sec-Fetch-Site` (`same-origin`/`same-site`/`none`) and `Origin`-to-`Host` matching on all
+  state-changing methods (`POST`, `PUT`, `DELETE`, `PATCH` → `403 Forbidden`), documented the 3-layer
+  CSRF invariant in `CsrfFilter`, `SessionService`, and `README.md`, and added `CsrfFilterTest`.*
 
 - [x] **8. Session UX/gaps**: fixed 7-day TTL with no rotation or idle timeout; no UI to view/revoke
   other devices (though `invalidateAllForUser` exists); **no password-reset flow at all** — a forgotten
@@ -226,3 +230,4 @@
 | 2026-10-19 | #8, #18, #21, #24 | `personal_settings`, `change_password` | Personal Settings view in main area with Light/Dark/Auto appearance selector, current-password-verified password change that invalidates sessions and logs out to `/login`, SPA route redirects, and 36 JUnit 5 unit tests |
 | 2026-10-19 | #4, #10 | `agent/email-validation` | Email trim+lowercase normalization and liberal `something@x.y` token/length validation + name validation on server (`EmailPolicy`, `UserResource`, `AuthenticationService`, `User`) and client (`LoginPage.jsx`); `EmailPolicyTest` |
 | 2026-10-19 | #6 | `agent/disable-prod-openapi-metrics` | Disabled Swagger UI, SmallRye OpenAPI, and Prometheus `/q/metrics` export in `%prod` (`application.properties`); verified in `NoteArrayApplicationTest` |
+| 2026-10-19 | #7 | `agent/csrf-protection` | Added `CsrfFilter` (`Sec-Fetch-Site` + `Origin` verification on state-changing requests → 403), documented 3-layer CSRF invariant in `SessionService`, `CsrfFilter`, and `README.md`; `CsrfFilterTest` |

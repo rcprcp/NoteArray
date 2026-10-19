@@ -205,10 +205,12 @@ the browser cookie, so a leaked database snapshot cannot be replayed. Sessions e
 that user's sessions, expires the current session cookie, and redirects the user to the login
 screen so they must sign in again with the new password.
 
-### Session Cookies
+### Session Cookies & CSRF Protection
 
 - **HttpOnly:** Cannot be accessed by JavaScript; protects against XSS attacks.
-- **SameSite=Strict:** Prevents CSRF attacks.
+- **SameSite=Strict:** Prevents browsers from attaching `NOTEARRAY_SESSION` to cross-site requests.
+- **Non-form Content-Type:** All state-changing endpoints require `application/json` (or `application/octet-stream` for imports), which HTML `<form>` submissions cannot produce and which forces a CORS preflight on cross-origin `fetch`/`XHR`.
+- **Origin & `Sec-Fetch-Site` Filter (`CsrfFilter`):** Every state-changing request (`POST`, `PUT`, `DELETE`, `PATCH`) is checked by `CsrfFilter`: requests with `Sec-Fetch-Site: cross-site`, `Origin: null`, or a mismatched `Origin` host are rejected with **403 Forbidden**, ensuring endpoints remain protected even if `SameSite` or CORS settings are ever relaxed.
 - **Secure:** Added in the `prod` profile by default (`notearray.session.cookie-secure=true`). Requires HTTPS; set it to `false` if you run the production JAR over plain HTTP (e.g. LAN testing).
 - **Automatic:** Handled by the browser; no manual token management needed.
 
