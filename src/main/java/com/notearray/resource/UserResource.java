@@ -65,7 +65,21 @@ public class UserResource {
     boolean trustProxy;
 
     /** Request body for create/update. For update, every field is optional. */
-    public record UserRequest(String name, String email, String password, String themeColor) {}
+    public record UserRequest(
+            String name,
+            String email,
+            String password,
+            String currentPassword,
+            String confirmPassword,
+            String themeColor) {
+        public UserRequest(String name, String email, String password, String themeColor) {
+            this(name, email, password, null, null, themeColor);
+        }
+
+        public UserRequest(String name, String email, String password, String currentPassword, String themeColor) {
+            this(name, email, password, currentPassword, null, themeColor);
+        }
+    }
 
     /** Request body for login. */
     public record LoginRequest(String email, String password) {}
@@ -236,9 +250,11 @@ public class UserResource {
             }
             user.email = req.email();
         }
-        boolean passwordChanged = !isBlank(req.password());
+        boolean passwordChanged = !isBlank(req.password())
+                || !isBlank(req.currentPassword())
+                || !isBlank(req.confirmPassword());
         if (passwordChanged) {
-            Response passwordError = invalidPassword(req.password());
+            Response passwordError = validatePasswordChange(user, req);
             if (passwordError != null) {
                 return passwordError;
             }
@@ -257,12 +273,11 @@ public class UserResource {
 
         Response.ResponseBuilder response = Response.ok(user);
         if (passwordChanged) {
-            // A password change invalidates every existing session for the user.
+            // A password change invalidates every existing session for the user
+            // and signs out the caller so they must log in again with the new password.
             sessions.invalidateAllForUser(user.id);
             if (caller.id.equals(user.id)) {
-                // Keep the caller signed in on this device with a brand-new token.
-                String token = sessions.create(user);
-                response.header("Set-Cookie", sessions.cookieHeader(token));
+                response.header("Set-Cookie", sessions.expiredCookieHeader());
             }
         }
         return response.build();
@@ -308,6 +323,40 @@ public class UserResource {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
+    }
+
+    /**
+     * Validate a password-change request: all fields must be present, the current
+     * password is verified against the stored hash first, and only then is the new
+     * password validated against {@link PasswordPolicy} and checked against any
+     * confirmation field.
+     */
+    static Response validatePasswordChange(User user, UserRequest req) {
+        if (isBlank(req.currentPassword())) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity("Current password is required").build();
+        }
+        if (isBlank(req.password())) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity("New password is required").build();
+        }
+        if (req.confirmPassword() != null && isBlank(req.confirmPassword())) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity("Password verification is required").build();
+        }
+        if (!BcryptUtil.matches(req.currentPassword(), user.passwordHash)) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity("Current password is incorrect").build();
+        }
+        Response passwordError = invalidPassword(req.password());
+        if (passwordError != null) {
+            return passwordError;
+        }
+        if (req.confirmPassword() != null && !req.password().equals(req.confirmPassword())) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity("Passwords do not match").build();
+        }
+        return null;
     }
 
     /**

@@ -41,44 +41,59 @@ export default function PersonalSettings({
 }) {
   const { colorScheme, setColorScheme } = useMantineColorScheme()
   const [passwordOpen, setPasswordOpen] = useState(false)
+  const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [fieldErrors, setFieldErrors] = useState({})
   const [passwordError, setPasswordError] = useState(null)
   const [passwordSuccess, setPasswordSuccess] = useState(null)
   const [savingPassword, setSavingPassword] = useState(false)
 
+  const resetPasswordForm = () => {
+    setCurrentPassword('')
+    setNewPassword('')
+    setConfirmPassword('')
+    setFieldErrors({})
+    setPasswordError(null)
+  }
+
   const handlePasswordSubmit = async () => {
     setPasswordError(null)
     setPasswordSuccess(null)
-    if (!newPassword) {
-      setPasswordError('Password is required')
-      return
-    }
-    if (newPassword !== confirmPassword) {
-      setPasswordError('Passwords do not match')
-      return
-    }
-    if (
-      newPassword.length < 8 ||
-      !/[A-Z]/.test(newPassword) ||
-      !/[a-z]/.test(newPassword) ||
-      !/[0-9]/.test(newPassword)
-    ) {
-      setPasswordError(
-        'Password must be at least 8 characters and include uppercase, lowercase, and a number'
-      )
+
+    const errs = {}
+    if (!currentPassword) errs.currentPassword = 'Current password is required'
+    if (!newPassword) errs.newPassword = 'New password is required'
+    if (!confirmPassword) errs.confirmPassword = 'Password verification is required'
+    if (Object.keys(errs).length > 0) {
+      setFieldErrors(errs)
       return
     }
 
+    setFieldErrors({})
     setSavingPassword(true)
     try {
-      await usersApi.update(user.id, { password: newPassword })
-      setNewPassword('')
-      setConfirmPassword('')
-      setPasswordSuccess('Password updated successfully.')
+      // Server validates currentPassword first, then validates newPassword policy and confirmPassword match.
+      await usersApi.update(user.id, {
+        currentPassword,
+        password: newPassword,
+        confirmPassword,
+      })
+      resetPasswordForm()
       setPasswordOpen(false)
+      await onLogout()
     } catch (e) {
-      setPasswordError(e.message || 'Failed to update password')
+      const msg = e.message || 'Failed to update password'
+      const lower = msg.toLowerCase()
+      if (lower.includes('current password')) {
+        setFieldErrors({ currentPassword: msg })
+      } else if (lower.includes('do not match')) {
+        setFieldErrors({ confirmPassword: msg })
+      } else if (lower.includes('password must')) {
+        setFieldErrors({ newPassword: msg })
+      } else {
+        setPasswordError(msg)
+      }
     } finally {
       setSavingPassword(false)
     }
@@ -171,7 +186,7 @@ export default function PersonalSettings({
             leftSection={<IconKey size={16} />}
             onClick={() => {
               setPasswordOpen((v) => !v)
-              setPasswordError(null)
+              resetPasswordForm()
               setPasswordSuccess(null)
             }}
           >
@@ -193,22 +208,37 @@ export default function PersonalSettings({
               </Alert>
             )}
             <PasswordInput
+              label="Current Password"
+              required
+              value={currentPassword}
+              error={fieldErrors.currentPassword}
+              onChange={(e) => setCurrentPassword(e.currentTarget.value)}
+            />
+            <PasswordInput
               label="New Password"
               required
               value={newPassword}
+              error={fieldErrors.newPassword}
               onChange={(e) => setNewPassword(e.currentTarget.value)}
             />
             <PasswordInput
-              label="Confirm New Password"
+              label="Verify New Password"
               required
               value={confirmPassword}
+              error={fieldErrors.confirmPassword}
               onChange={(e) => setConfirmPassword(e.currentTarget.value)}
             />
             <Text size="xs" c="dimmed">
-              Password must be at least 8 characters and include at least one uppercase letter, one lowercase letter, and one number.
+              Password must be at least 8 characters and include at least one uppercase letter, one lowercase letter, and one number. Special characters (!@#$%^&*) are optional.
             </Text>
             <Group justify="flex-end">
-              <Button variant="default" onClick={() => setPasswordOpen(false)}>
+              <Button
+                variant="default"
+                onClick={() => {
+                  resetPasswordForm()
+                  setPasswordOpen(false)
+                }}
+              >
                 Cancel
               </Button>
               <Button onClick={handlePasswordSubmit} loading={savingPassword}>
