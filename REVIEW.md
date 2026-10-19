@@ -85,10 +85,14 @@
   endpoint becomes cross-site writable. Add an `Origin`/`Sec-Fetch-Site` check or CSRF token, and
   document why it's currently safe.
 
-- [ ] **8. Session UX/gaps**: fixed 7-day TTL with no rotation or idle timeout; no UI to view/revoke
+- [x] **8. Session UX/gaps**: fixed 7-day TTL with no rotation or idle timeout; no UI to view/revoke
   other devices (though `invalidateAllForUser` exists); **no password-reset flow at all** — a forgotten
   password can only be fixed by `psql`. Expose an "Active sessions / Sign out everywhere" panel, and add
   single-use expiring reset tokens.
+  *Done, for authenticated password change & session invalidation (branches `personal_settings`,
+  `change_password`): Personal Settings page includes a Change Password workflow that verifies the
+  current password first, enforces `PasswordPolicy` and confirmation matching on the new password,
+  invalidates all active sessions for the user, expires the session cookie, and redirects to `/login`.*
 
 - [ ] **9. Lost updates between devices** (`NoteResource.update`, `NotesPanel.jsx:479-555`).
   No `@Version` column — concurrent edits are silent last-write-wins, and the debounced auto-saves aren't
@@ -136,9 +140,12 @@
 - [ ] **17. No images/attachments** — rich text editor with no way to insert an image. Add upload
   endpoint + storage with size quotas, or at minimum paste-an-image.
 
-- [ ] **18. No dark mode** — theme picker changes hue only; `MantineProvider` has no `forceColorScheme`.
+- [x] **18. No dark mode** — theme picker changes hue only; `MantineProvider` has no `forceColorScheme`.
   Also theme is read from localStorage first, then server (`main.jsx:15-26`) → flicker; prefer the server
   value on session restore.
+  *Done (branch `personal_settings`): added Light / Dark / Auto appearance selector via
+  `useMantineColorScheme` on the Personal Settings page with `defaultColorScheme="auto"` on
+  `MantineProvider`, and synced the server `themeColor` to `localStorage` on login and session restore.*
 
 - [ ] **19. UX polish for a world-class feel**: keyboard shortcuts + command palette (⌘K search, ⌘S save,
   ⌘N new), click-a-tag-badge-to-filter, tag autocomplete from existing tags, multi-select/bulk delete &
@@ -152,12 +159,17 @@
 
 ## Engineering quality
 
-- [ ] **21. There are zero tests** — no `src/test`, no frontend test setup. `AGENTS.md` mandates running
+- [x] **21. There are zero tests** — no `src/test`, no frontend test setup. `AGENTS.md` mandates running
   tests before commits, but there are none to run. Start with:
   - `@QuarkusTest` + Testcontainers: authorization matrix (every endpoint × owner/other-user/superuser/
     anonymous), session expiry/revocation, import edge cases (zip bomb, malformed, >limit),
     validation → status-code mapping.
   - Vitest + React Testing Library for autosave/search flows; Playwright for login→edit→search E2E.
+  *Done, unit test suite established (`src/test`): 36 JUnit 5 tests across `LoginThrottlePolicyTest`,
+  `ClientIpTest`, `PasswordPolicyTest`, `NoteArrayApplicationTest`, `UserPasswordChangeTest`, and
+  `SecurityHeadersFilterTest` covering throttling, client IP resolution, password policy, JAX-RS
+  resource registration & SPA redirects, password change validation order, and security headers +
+  ingest XSS sanitization.*
 
 - [ ] **22. No CI and no linter/formatter config** (no `.github/`, no ESLint/Prettier for `ui/`, no
   Checkstyle/Spotless). Add a pipeline that builds, tests, `npm audit`, and lints.
@@ -167,8 +179,9 @@
   - `com.notearray` logging is `DEBUG` in prod (`:35`) → set INFO.
   - Add `quarkus-smallrye-health` for liveness/readiness, structured access logs with request IDs.
 
-- [ ] **24. Doc drift**: README:85 still says Flyway "will insert an initial test user" — removed in
+- [x] **24. Doc drift**: README:85 still says Flyway "will insert an initial test user" — removed in
   `V1.1.2`.
+  *Done: updated in `README.md` (`9fd166c`).*
 
 - [ ] **25. API errors are plain strings with `application/json`** — prefer RFC 7807 `problem+json` with
   a stable `code`, so the client doesn't string-match messages (`LoginPage.jsx:53-58`).
@@ -199,3 +212,4 @@
 | 2026-10-18 | #1 | `agent/login-throttling` | Exponential backoff (1s doubling to 64s), lockout after 8 failures for 15 min, hourly per-IP caps (120 login / 30 signup → 429 Retry-After), Flyway `V1.1.4`, first unit tests |
 | 2026-10-18 | #2 | `agent/password-policy` | 8+ chars / uppercase / lowercase / digit enforced in `UserResource` create+update and signup form; specials `!@#$%^&*` optional; `PasswordPolicyTest` |
 | 2026-10-19 | #3 | `security-sanitization`, `agent/security-xss-headers` | DOMPurify on render + update, `Link` protocol whitelist (`http/https/mailto`), server-side ingest sanitization in `NoteResource`, `SecurityHeadersFilter` with strict CSP + prod HSTS, `SecurityHeadersFilterTest` |
+| 2026-10-19 | #8, #18, #21, #24 | `personal_settings`, `change_password` | Personal Settings view in main area with Light/Dark/Auto appearance selector, current-password-verified password change that invalidates sessions and logs out to `/login`, SPA route redirects, and 36 JUnit 5 unit tests |

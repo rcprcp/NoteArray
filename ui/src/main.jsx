@@ -39,6 +39,7 @@ function Root() {
         setCurrentUser(user)
         if (user?.themeColor) {
           setThemeColor(user.themeColor)
+          localStorage.setItem(THEME_KEY, user.themeColor)
         }
       } catch (e) {
         // Not logged in or session expired
@@ -56,6 +57,7 @@ function Root() {
       setCurrentUser(user)
       if (user?.themeColor) {
         setThemeColor(user.themeColor)
+        localStorage.setItem(THEME_KEY, user.themeColor)
       }
     } catch (e) {
       // Surface to the login page, which displays it in its error alert.
