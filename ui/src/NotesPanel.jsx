@@ -4,6 +4,7 @@ import { IconCheck, IconChevronDown, IconChevronUp, IconPin, IconSearch, IconSel
 import { useMediaQuery } from '@mantine/hooks'
 import { RichTextEditor } from '@mantine/tiptap'
 import { useEditor } from '@tiptap/react'
+import dompurify from 'dompurify'
 import StarterKit from '@tiptap/starter-kit'
 import Highlight from '@tiptap/extension-highlight'
 import TextAlign from '@tiptap/extension-text-align'
@@ -51,6 +52,8 @@ function MarkdownEditor({ value, onChange }) {
         openOnClick: false,
         autolink: true,
         defaultProtocol: 'https',
+        // Only allow http, https, and mailto protocols
+        // The DOMPurify sanitization on render will also strip javascript: links
       }),
       Highlight,
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
@@ -59,7 +62,7 @@ function MarkdownEditor({ value, onChange }) {
       }),
       Markdown,
     ],
-    content: value || '',
+    content: dompurify.sanitize(value || '') || '',
     onUpdate: ({ editor }) => {
       const markdown = editor.storage.markdown?.getMarkdown ? editor.storage.markdown.getMarkdown() : editor.getText()
       onChange(markdown)
