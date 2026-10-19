@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import ReactDOM from 'react-dom/client'
-import { HashRouter } from 'react-router-dom'
+import { BrowserRouter } from 'react-router-dom'
 import { MantineProvider } from '@mantine/core'
 import { Notifications, notifications } from '@mantine/notifications'
 import App from './App'
@@ -100,9 +100,9 @@ function Root() {
   }
 
   return (
-    <MantineProvider theme={{ primaryColor: themeColor }}>
+    <MantineProvider theme={{ primaryColor: themeColor }} defaultColorScheme="auto">
       <Notifications position="top-center" />
-      <HashRouter>
+      <BrowserRouter>
         <App
           themeColor={themeColor}
           onThemeChange={changeTheme}
@@ -110,7 +110,7 @@ function Root() {
           onLogin={handleLogin}
           onLogout={handleLogout}
         />
-      </HashRouter>
+      </BrowserRouter>
     </MantineProvider>
   )
 }

@@ -1,18 +1,22 @@
-import { useState, useCallback, useEffect, useLayoutEffect, useRef } from 'react'
+import { useState, useCallback, useLayoutEffect, useRef } from 'react'
 import { Routes, Route, Navigate, useNavigate } from 'react-router-dom'
-import { Avatar, Box, Container, Group, Stack, Text, Title, UnstyledButton } from '@mantine/core'
-import { IconChevronDown, IconUpload } from '@tabler/icons-react'
+import { Avatar, Box, Container, Group, Menu, Stack, Text, Title, UnstyledButton } from '@mantine/core'
+import { IconUpload, IconUser } from '@tabler/icons-react'
 import LoginPage from './LoginPage'
 import NotesPanel from './NotesPanel'
-import UserMenu, { UserMenuItems, UserMenuDialogs } from './UserMenu'
 import HeaderActions from './HeaderActions'
+import PersonalSettings from './PersonalSettings'
+
+function initials(name) {
+  const parts = (name || '').trim().split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return '?'
+  return (parts[0][0] + (parts[1]?.[0] || '')).toUpperCase()
+}
 
 export default function App({ themeColor, onThemeChange, currentUser, onLogin, onLogout }) {
   const navigate = useNavigate()
   const [actions, setActions] = useState(null)
   const [headerOverflow, setHeaderOverflow] = useState(false)
-  const [profileOpened, setProfileOpened] = useState(false)
-  const [themeOpened, setThemeOpened] = useState(false)
   const headerRef = useRef(null)
   const titleRef = useRef(null)
   const [headerWidth, setHeaderWidth] = useState(0)
@@ -44,26 +48,37 @@ export default function App({ themeColor, onThemeChange, currentUser, onLogin, o
   const headerInner = Math.max(0, headerWidth - 32) // p="md" => 16px padding each side
   const availableActionsWidth = Math.max(0, headerInner - titleWidth - 8)
 
-  // Close the profile/theme dialogs when the user changes.
-  useEffect(() => {
-    setProfileOpened(false)
-    setThemeOpened(false)
-  }, [currentUser])
-
-  if (!currentUser) {
-    return <LoginPage onLogin={onLogin} />
+  const handleLoginSuccess = async () => {
+    await onLogin()
+    navigate('/notes', { replace: true })
   }
 
-  const goToList = () => { navigate('/notes'); actions?.onReset?.() }
+  if (!currentUser) {
+    return (
+      <Routes>
+        <Route path="/login" element={<LoginPage onLogin={handleLoginSuccess} />} />
+        <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
+    )
+  }
+
+  const goToList = () => {
+    navigate('/notes')
+    actions?.onReset?.()
+  }
+
+  const openSettings = () => {
+    navigate('/settings')
+  }
 
   const headerItems = [
     { key: 'list', label: 'List Notes', onClick: goToList },
-    { key: 'create', label: 'Create Note', onClick: () => actions?.onCreate?.() },
-    { key: 'tags', label: 'Tag Search', active: actions?.tagsOpen, toggle: true, onClick: () => actions?.onToggleTags?.() },
-    { key: 'text', label: 'Text Search', active: actions?.searchOpen, toggle: true, onClick: () => actions?.onToggleSearch?.() },
-    { key: 'pinned', label: 'Pinned', onClick: () => actions?.onSetPinned?.() },
-    { key: 'untagged', label: 'Untagged', onClick: () => actions?.onSetUntagged?.() },
-    { key: 'import', label: 'Import', icon: IconUpload, active: actions?.importOpen, toggle: true, onClick: () => actions?.onImport?.() },
+    { key: 'create', label: 'Create Note', onClick: () => { navigate('/notes'); actions?.onCreate?.() } },
+    { key: 'tags', label: 'Tag Search', active: actions?.tagsOpen, toggle: true, onClick: () => { navigate('/notes'); actions?.onToggleTags?.() } },
+    { key: 'text', label: 'Text Search', active: actions?.searchOpen, toggle: true, onClick: () => { navigate('/notes'); actions?.onToggleSearch?.() } },
+    { key: 'pinned', label: 'Pinned', onClick: () => { navigate('/notes'); actions?.onSetPinned?.() } },
+    { key: 'untagged', label: 'Untagged', onClick: () => { navigate('/notes'); actions?.onSetUntagged?.() } },
+    { key: 'import', label: 'Import', icon: IconUpload, active: actions?.importOpen, toggle: true, onClick: () => { navigate('/notes'); actions?.onImport?.() } },
   ]
 
   return (
@@ -83,8 +98,6 @@ export default function App({ themeColor, onThemeChange, currentUser, onLogin, o
               cursor: 'pointer',
               flex: '0 0 auto',
               whiteSpace: 'nowrap',
-              // Once anything is pushed into the overflow menu the title yields
-              // its space entirely (kept mounted only so it can be measured).
               visibility: headerOverflow ? 'hidden' : 'visible',
               width: headerOverflow ? 0 : undefined,
               overflow: 'hidden',
@@ -100,53 +113,50 @@ export default function App({ themeColor, onThemeChange, currentUser, onLogin, o
             availableWidth={availableActionsWidth}
             onOverflowChange={setHeaderOverflow}
             userMenu={{
-              // Rendered inline while there is room for the avatar.
+              // Rendered inline while there is room for the avatar. Clicking
+              // opens Personal Settings in the main area (no dropdown).
               element: (
-                <UserMenu
-                  user={currentUser}
-                  themeColor={themeColor}
-                  onProfile={() => setProfileOpened(true)}
-                  onTheme={() => setThemeOpened(true)}
-                  onLogout={onLogout}
-                />
+                <UnstyledButton aria-label="Personal settings" onClick={openSettings}>
+                  <Group gap="xs" wrap="nowrap">
+                    <Avatar radius="xl" color={themeColor} size="sm">
+                      {initials(currentUser.name)}
+                    </Avatar>
+                    <Text fw={500} visibleFrom="sm">{currentUser.name}</Text>
+                  </Group>
+                </UnstyledButton>
               ),
-              // Measured at its natural width alongside the action buttons.
               measureElement: (
                 <UnstyledButton aria-hidden="true" tabIndex={-1}>
                   <Group gap="xs" wrap="nowrap">
                     <Avatar radius="xl" color={themeColor} size="sm" />
-                    <Text fw={500}>placeholder</Text>
-                    <IconChevronDown size={14} />
+                    <Text fw={500}>{currentUser.name || 'placeholder'}</Text>
                   </Group>
                 </UnstyledButton>
               ),
-              // Rendered inside the overflow dropdown when the avatar is hidden.
               menuItems: () => (
-                <UserMenuItems
-                  user={currentUser}
-                  onProfile={() => setProfileOpened(true)}
-                  onTheme={() => setThemeOpened(true)}
-                  onLogout={onLogout}
-                />
+                <Menu.Item leftSection={<IconUser size={16} />} onClick={openSettings}>
+                  Personal settings
+                </Menu.Item>
               ),
             }}
           />
         </Group>
       </Box>
 
-      <UserMenuDialogs
-        user={currentUser}
-        themeColor={themeColor}
-        onThemeChange={onThemeChange}
-        profileOpened={profileOpened}
-        onProfileClose={() => setProfileOpened(false)}
-        themeOpened={themeOpened}
-        onThemeClose={() => setThemeOpened(false)}
-      />
-
       <Container fluid my="md" style={{ flex: 1, width: '100%', maxWidth: '100%' }}>
         <Routes>
           <Route path="/notes" element={<NotesPanel registerActions={handleRegister} />} />
+          <Route
+            path="/settings"
+            element={
+              <PersonalSettings
+                user={currentUser}
+                themeColor={themeColor}
+                onThemeChange={onThemeChange}
+                onLogout={onLogout}
+              />
+            }
+          />
           <Route path="*" element={<Navigate to="/notes" replace />} />
         </Routes>
       </Container>
