@@ -8,35 +8,47 @@ A modern note-taking application built with **Quarkus** (Java 25), **Panache ORM
 NoteArray/
 ├── pom.xml                                    # Maven configuration with Java 25 and Quarkus
 ├── src/
-│   └── main/
-│       ├── java/com/notearray/
-│       │   ├── NoteArrayApplication.java       # JAX-RS application root (@ApplicationPath "/")
-│       │   ├── entity/
-│       │   │   ├── BaseEntity.java            # Base class with UUID id and timestamps
-│       │   │   ├── User.java                  # User entity with unique name/email, theme_color, last_login, superuser flag
-│       │   │   ├── Note.java                  # Note entity with title, markdown content, and space-delimited tags
-│       │   │   └── Session.java               # Session entity backing persistent logins (token hash, user, expiry)
-│       │   ├── resource/
-│       │   │   ├── UserResource.java          # REST endpoints for users (CRUD + login/logout)
-│       │   │   └── NoteResource.java          # REST endpoints for notes (CRUD + search + filter + import)
-│       │   └── service/
-│       │       └── SessionService.java        # Persisted session create/resolve/invalidate + scheduled purge
-│       └── resources/
-│           ├── application.properties         # Quarkus config (DB, Flyway, OpenAPI, sessions)
-│           └── db/migration/
-│               ├── V1.0.0__create_users_and_notes.sql
-│               ├── V1.0.1__add_theme_color_to_users.sql
-│               ├── V1.0.2__add_title_to_notes.sql
-│               ├── V1.0.3__add_last_login_to_users.sql
-│               ├── V1.0.4__add_superuser_to_users.sql
-│               ├── V1.0.5__insert_initial_user.sql
-│               ├── V1.0.6__add_fulltext_search_to_notes.sql
-│               ├── V1.0.7__add_tags_to_notes.sql
-│               ├── V1.0.8__add_pinned_to_notes.sql
-│               ├── V1.0.9__add_session_to_users.sql
-│               ├── V1.1.0__create_sessions_table.sql
-│               ├── V1.1.1__add_unique_constraint_to_users_name.sql
-│               └── V1.1.2__remove_seeded_test_user.sql
+│   ├── main/
+│   │   ├── java/com/notearray/
+│   │   │   ├── NoteArrayApplication.java       # JAX-RS application root (@ApplicationPath "/")
+│   │   │   ├── entity/
+│   │   │   │   ├── BaseEntity.java            # Base class with UUID id and timestamps
+│   │   │   │   ├── User.java                  # User entity with unique name/email, theme_color, last_login, superuser flag
+│   │   │   │   ├── Note.java                  # Note entity with title, markdown content, and space-delimited tags
+│   │   │   │   ├── Session.java               # Session entity backing persistent logins (token hash, user, expiry)
+│   │   │   │   └── LoginThrottle.java         # Throttle state (per-email backoff, per-IP hourly windows)
+│   │   │   ├── resource/
+│   │   │   │   ├── UserResource.java          # REST endpoints for users (CRUD + login/logout, throttled, password policy)
+│   │   │   │   └── NoteResource.java          # REST endpoints for notes (CRUD + search + filter + import)
+│   │   │   └── service/
+│   │   │       ├── SessionService.java        # Persisted session create/resolve/invalidate + scheduled purge
+│   │   │       ├── AuthenticationService.java # BCrypt credential check for login (timing-safe for unknown emails)
+│   │   │       ├── LoginThrottleService.java  # Rate-limit decisions: backoff/lockout + per-IP hourly budgets
+│   │   │       ├── LoginThrottlePolicy.java   # Pure backoff rules (1s doubling to 64s, lockout after 8 failures)
+│   │   │       ├── ClientIp.java              # Client address for rate limiting (X-Forwarded-For opt-in)
+│   │   │       └── PasswordPolicy.java        # Password rules (8+ chars, uppercase, lowercase, digit)
+│   │   └── resources/
+│   │       ├── application.properties         # Quarkus config (DB, Flyway, OpenAPI, sessions, rate limits)
+│   │       └── db/migration/
+│   │           ├── V1.0.0__create_users_and_notes.sql
+│   │           ├── V1.0.1__add_theme_color_to_users.sql
+│   │           ├── V1.0.2__add_title_to_notes.sql
+│   │           ├── V1.0.3__add_last_login_to_users.sql
+│   │           ├── V1.0.4__add_superuser_to_users.sql
+│   │           ├── V1.0.5__insert_initial_user.sql
+│   │           ├── V1.0.6__add_fulltext_search_to_notes.sql
+│   │           ├── V1.0.7__add_tags_to_notes.sql
+│   │           ├── V1.0.8__add_pinned_to_notes.sql
+│   │           ├── V1.0.9__add_session_to_users.sql
+│   │           ├── V1.1.0__create_sessions_table.sql
+│   │           ├── V1.1.1__add_unique_constraint_to_users_name.sql
+│   │           ├── V1.1.2__remove_seeded_test_user.sql
+│   │           ├── V1.1.3__add_notes_created_at_index.sql
+│   │           └── V1.1.4__create_login_throttle.sql
+│   └── test/java/com/notearray/service/
+│       ├── LoginThrottlePolicyTest.java      # Backoff/lockout rule tests
+│       ├── ClientIpTest.java                 # X-Forwarded-For parsing tests
+│       └── PasswordPolicyTest.java           # Password rule tests
 ├── ui/                                        # React + Vite frontend (mobile-responsive)
 │   ├── src/
 │   │   ├── App.jsx                            # Main app shell with routing and logout
@@ -82,7 +94,7 @@ mvn quarkus:dev
 
 The backend will run on `http://localhost:8080`.
 
-Flyway will automatically create/migrate the schema on startup and insert an initial test user.
+Flyway will automatically create/migrate the schema on startup.
 
 ### 3. Frontend Setup (React + Vite)
 
@@ -149,6 +161,18 @@ Indexed on `owner_id` for efficient owner-based queries. GIN indexes on `title_t
 - Indexed on `user_id` and `expires_at`
 - A user may have many rows, i.e. be signed in on multiple devices at once
 
+### `login_throttle` Table
+
+Rate-limiting state for the login and signup endpoints (added in `V1.1.4`). Rows are keyed by an opaque key so per-account backoff and per-IP budgets share one table:
+
+- `throttle_key` (VARCHAR 320, primary key) – `email:<lowercased email>` for failed-login backoff, `login-ip:<address>` / `signup-ip:<address>` for hourly request windows
+- `consecutive_failures` (INTEGER) – consecutive failed logins for an email key
+- `window_count` (INTEGER) / `window_started_at` (TIMESTAMP) – requests seen in the current hourly window for an IP key
+- `next_allowed_at` (TIMESTAMP, nullable) – when set, the key's next attempt must wait until this instant
+- `updated_at` (TIMESTAMP) – supports the hourly purge of stale rows (scheduled job)
+
+Rows are read under a pessimistic lock so concurrent login attempts cannot lose increments.
+
 ## Authentication & Session Management
 
 ### How It Works
@@ -176,6 +200,28 @@ with a freshly rotated token.
 - **SameSite=Strict:** Prevents CSRF attacks.
 - **Secure:** Added in the `prod` profile by default (`notearray.session.cookie-secure=true`). Requires HTTPS; set it to `false` if you run the production JAR over plain HTTP (e.g. LAN testing).
 - **Automatic:** Handled by the browser; no manual token management needed.
+
+### Rate Limiting & Lockout
+
+Failed logins are throttled per account, and both auth endpoints are budgeted per client IP:
+
+- **Per-account exponential backoff** – after a failed login, the next attempt for that email is delayed 1s, then 2s, 4s … up to 64s. The 8th consecutive failure locks the account out for 15 minutes. A successful login clears the counter. The email is throttled even when no such account exists, so throttling never reveals which addresses are registered.
+- **Per-IP hourly budgets** – 120 login and 30 signup requests per hour per client address (configurable, see Production Configuration).
+- Exceeding a budget or hitting a locked account returns **429 Too Many Requests** with a `Retry-After` header and a message such as `too many attempts; try again in 30 seconds`. Short backoff waits (≤ 5 seconds) are held server-side before the request is processed.
+- State lives in the `login_throttle` table, so limits survive application restarts and are shared across multiple application instances; stale rows are purged hourly by a scheduled job.
+- Client addresses come from the socket peer by default. Behind a trusted reverse proxy that overwrites `X-Forwarded-For`, set `notearray.rate-limit.trust-proxy=true` so limits key on the real client — leave it `false` when the app is directly exposed, otherwise clients can spoof the header to bypass the per-IP budgets.
+
+### Password Policy
+
+Passwords are validated wherever they can be set (signup and password-changing updates):
+
+- At least **8 characters**
+- At least one **uppercase** letter
+- At least one **lowercase** letter
+- At least one **number**
+- Special characters from `!@#$%^&*` are allowed but **optional**
+
+Violations return **400** listing each unmet rule (e.g. `password must be at least 8 characters`). The signup form checks the same rules client-side and shows a hint under the password field; the server remains authoritative.
 
 ## Authorization & Access Control
 
@@ -215,6 +261,7 @@ UPDATE users SET superuser = FALSE WHERE email = 'user@example.com';
   - **Response:** User object on success (password hash and superuser flag not returned)
   - Returns 400 if email or password is missing
   - Returns 401 if credentials are invalid
+  - Returns 429 with a `Retry-After` header if the account is in backoff/lockout or the IP's hourly login budget is exhausted
   - Sets session cookie on success; updates `last_login` timestamp
 
 - `POST /api/users/logout` – Invalidate session and log out
@@ -232,8 +279,9 @@ UPDATE users SET superuser = FALSE WHERE email = 'user@example.com';
 - `POST /api/users` – Create a new user (public, no authentication required)
   - **Request body:** `{ "name": "...", "email": "...", "password": "..." }`
   - **Response:** User object
-  - Returns 400 if any required field is missing
+  - Returns 400 if any required field is missing or the password fails the policy (see Password Policy)
   - Returns 409 if name or email already exists
+  - Returns 429 with a `Retry-After` header when the IP's hourly signup budget is exhausted
 
 - `GET /api/users` – List all users (superusers only)
   - **Response:** Array of user objects
@@ -251,6 +299,7 @@ UPDATE users SET superuser = FALSE WHERE email = 'user@example.com';
   - Returns 401 if not authenticated
   - Returns 404 if user doesn't exist or caller lacks permission
   - Returns 409 if new name or email is already in use
+  - Returns 400 if a provided password fails the policy (see Password Policy)
   - Superusers can update any user; regular users can only update themselves
   - Changing the password invalidates **all** of that user's sessions; when you change your own password you stay signed in on the current device with a freshly rotated token
 
@@ -395,9 +444,10 @@ The interactive Swagger UI allows you to test all endpoints directly from your b
 - **Login page** – Email and password fields (responsive)
   - Invalid credentials show an error message
   - Session cookie is set on success
+  - Repeated failures are throttled with exponential backoff (1s doubling to 64s; 15-minute lockout after 8 consecutive failures, cleared by a successful login) — a throttled attempt shows a "try again in N seconds" message
 - **Signup** – Create a new account from the login page
   - Name, email, and password fields
-  - Password must be confirmed
+  - Password must be confirmed and meet the password policy (8+ characters, uppercase, lowercase, number; special characters optional) — shown as a hint under the field and checked client-side
   - Auto-login after successful signup
 - **Logout button** – Clears the session cookie and returns to login page
 
@@ -545,6 +595,14 @@ Database credentials are read from environment variables. **Set these in product
 | `NOTEARRAY_DB_USERNAME` | `bob` | Database username |
 | `NOTEARRAY_DB_PASSWORD` | `bob` | Database password |
 
+Rate-limit settings (defaults suit local development):
+
+| Variable | Default | Description |
+|---|---|---|
+| `NOTEARRAY_RATE_LIMIT_LOGIN_PER_HOUR_PER_IP` | `120` | Hourly login request budget per client IP |
+| `NOTEARRAY_RATE_LIMIT_SIGNUP_PER_HOUR_PER_IP` | `30` | Hourly signup request budget per client IP |
+| `NOTEARRAY_RATE_LIMIT_TRUST_PROXY` | `false` | Honor `X-Forwarded-For` when resolving client IPs (only enable behind a trusted reverse proxy) |
+
 ### Mobile Deployment
 - The app is fully responsive and works on mobile devices
 - Serve on your network to access from phones/tablets: `http://<your-ip>:3000` (dev) or `http://<your-ip>:8080` (production)
@@ -576,6 +634,16 @@ npm run dev
 
 **Access the app at `http://localhost:3000`**
 
+### Running Tests
+
+Backend unit tests run with JUnit 5 (no database or server required):
+
+```bash
+mvn test
+```
+
+Covered so far: login-throttle backoff/lockout rules, client-IP / `X-Forwarded-For` parsing, and the password policy. The UI has no automated tests yet. `mvn clean package` runs the tests as part of the build.
+
 ### Testing on Mobile Devices
 
 1. Find your machine's IP address:
@@ -604,6 +672,8 @@ npm run dev
 - **Note sorting:** Notes are sorted by creation time (newest first) by default. Click any column header in the Notes table to sort by that field (desktop only; mobile cards maintain date sort).
 - **Login tracking:** Each successful login via `POST /api/users/login` updates the user's `last_login` timestamp.
 - **Session security:** Sessions are stored (SHA-256 hashed) in the `sessions` table, so they survive restarts and allow multiple concurrent logins; cookies are HttpOnly and SameSite=Strict (plus Secure in `prod`).
+- **Login throttling:** Failed logins back off exponentially (1s doubling to 64s; 15-minute lockout after 8 consecutive failures, reset by a successful login), and each client IP gets 120 login + 30 signup requests per hour. Throttled requests return `429` with a `Retry-After` header. Tune via `notearray.rate-limit.*` properties — repeated failed logins while testing locally will hit the lockout.
+- **Password policy:** New or changed passwords need 8+ characters with an uppercase letter, a lowercase letter, and a number (special characters from `!@#$%^&*` are optional). Enforced server-side on create/update and mirrored by the signup form.
 - **Markdown in notes:** Content is stored as markdown, so you can export, version control, and sync notes easily.
 - **Tags and search:** Tags are space-delimited and searchable via the full-text search feature and tag filters.
 - **Importing notes:** Use the Import feature to migrate notes from Joplin or upload individual markdown files. Imports automatically preserve metadata and convert folder structures to tags.
@@ -627,8 +697,9 @@ npm run dev
 - **BCrypt** (Quarkus Elytron) – password hashing and verification
 - **SmallRye OpenAPI** – automatic OpenAPI 3.0 spec generation and Swagger UI
 - **Micrometer Prometheus** – application metrics export
-- **Quarkus Scheduler** – periodic cleanup of expired sessions
+- **Quarkus Scheduler** – periodic cleanup of expired sessions and stale throttle rows
 - **Jackson** – JSON processing for import parsing
+- **JUnit 5** – backend unit tests (`src/test`)
 
 ### Frontend
 - **React** 19 – UI library
