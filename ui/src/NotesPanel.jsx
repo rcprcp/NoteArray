@@ -346,15 +346,26 @@ export default function NotesPanel({ registerActions } = {}) {
         onImport: () => setImportModalOpened(true),
         onToggleSearch: () => setSearchVisible((v) => !v),
         onToggleTags: () => setTagsVisible((v) => !v),
-        onSetPinned: () => { resetAll(); setFilters({ ...DEFAULT_FILTERS, collection: 'pinned' }); setTagsVisible(false); setSearchVisible(false); },
-        onSetUntagged: () => { resetAll(); setFilters({ ...DEFAULT_FILTERS, collection: 'untagged' }); setTagsVisible(false); setSearchVisible(false); },
+        onSetPinned: () => {
+          if (filters.collection === 'pinned') {
+            setFilters((f) => ({ ...f, collection: null }))
+          } else {
+            resetAll()
+            setFilters({ ...DEFAULT_FILTERS, collection: 'pinned' })
+            setTagsVisible(false)
+            setSearchVisible(false)
+          }
+        },
         onReset: resetAll,
+        inEditor: createMode || editMode,
+        createOpen: createMode,
         searchOpen: searchVisible,
         tagsOpen: tagsVisible,
+        pinnedActive: filters.collection === 'pinned',
         importOpen: importModalOpened,
       })
     }
-  }, [registerActions, searchVisible, tagsVisible, importModalOpened, activeSearch, filters])
+  }, [registerActions, createMode, editMode, searchVisible, tagsVisible, importModalOpened, activeSearch, filters])
 
   const updateFilters = (patch) => {
     setFilters((f) => ({ ...f, ...patch }))
@@ -686,7 +697,7 @@ export default function NotesPanel({ registerActions } = {}) {
             }}
             size={inputSize}
           />
-          <Button onClick={runSearch} size={controlSize}>Text Search</Button>
+          <Button onClick={runSearch} size={controlSize}>Search Text</Button>
           <Button variant="default" onClick={clearSearch} disabled={!activeSearch && !search.q} size={controlSize}>
             Clear
           </Button>
@@ -731,7 +742,7 @@ export default function NotesPanel({ registerActions } = {}) {
         </Alert>
       )}
 
-      {!(createMode || editMode) && activeFilterCount > 0 && (
+      {!(createMode || editMode) && (
         <Stack gap="xs">
           {activeSearch && (
             <Text fw={600} size={isMobile ? 'md' : 'lg'}>
@@ -740,7 +751,6 @@ export default function NotesPanel({ registerActions } = {}) {
           )}
           <Text size="sm" c="dimmed" role="status">
             Found {notes.length} result{notes.length === 1 ? '' : 's'}
-            {notes.length > 0 && ` (${resultCounts.pinned} pinned, ${resultCounts.untagged} untagged)`}
           </Text>
         </Stack>
       )}
@@ -911,12 +921,12 @@ export default function NotesPanel({ registerActions } = {}) {
           </List>
           <Text size="sm">
             Check both to search titles and content together. Then type your search words and
-            press <b>Search</b> (or Enter).
+            press <b>Search Text</b> (or Enter).
           </Text>
           <Text size="xs" c="dimmed">
             Search is word-based and ignores case, common words (like "the"), and word endings
             (for example, "running" also matches "run"). All of your words must appear in the
-            same field. Clear the search box and press Search, or press Clear, to see all notes again.
+            same field. Clear the search box and press Search Text, or press Clear, to see all notes again.
           </Text>
           <Group justify="flex-end">
             <Button onClick={() => setHelpOpened(false)} size="sm">Got it</Button>

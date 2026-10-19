@@ -1,5 +1,5 @@
 import { useState, useCallback, useLayoutEffect, useRef } from 'react'
-import { Routes, Route, Navigate, useNavigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { Avatar, Box, Container, Group, Menu, Stack, Text, Title, UnstyledButton } from '@mantine/core'
 import { IconUpload, IconUser } from '@tabler/icons-react'
 import LoginPage from './LoginPage'
@@ -15,6 +15,7 @@ function initials(name) {
 
 export default function App({ themeColor, onThemeChange, currentUser, onLogin, onLogout }) {
   const navigate = useNavigate()
+  const location = useLocation()
   const [actions, setActions] = useState(null)
   const [headerOverflow, setHeaderOverflow] = useState(false)
   const headerRef = useRef(null)
@@ -71,14 +72,15 @@ export default function App({ themeColor, onThemeChange, currentUser, onLogin, o
     navigate('/settings')
   }
 
+  const listOnlyDisabled = location.pathname !== '/notes' || !!actions?.inEditor
+
   const headerItems = [
+    { key: 'create', label: 'Create Note', active: actions?.createOpen, onClick: () => { navigate('/notes'); actions?.onCreate?.() } },
     { key: 'list', label: 'List Notes', onClick: goToList },
-    { key: 'create', label: 'Create Note', onClick: () => { navigate('/notes'); actions?.onCreate?.() } },
-    { key: 'tags', label: 'Tag Search', active: actions?.tagsOpen, toggle: true, onClick: () => { navigate('/notes'); actions?.onToggleTags?.() } },
-    { key: 'text', label: 'Text Search', active: actions?.searchOpen, toggle: true, onClick: () => { navigate('/notes'); actions?.onToggleSearch?.() } },
-    { key: 'pinned', label: 'Pinned', onClick: () => { navigate('/notes'); actions?.onSetPinned?.() } },
-    { key: 'untagged', label: 'Untagged', onClick: () => { navigate('/notes'); actions?.onSetUntagged?.() } },
-    { key: 'import', label: 'Import', icon: IconUpload, active: actions?.importOpen, toggle: true, onClick: () => { navigate('/notes'); actions?.onImport?.() } },
+    { key: 'text', label: 'Search Text', active: actions?.searchOpen, toggle: true, disabled: listOnlyDisabled, onClick: () => actions?.onToggleSearch?.() },
+    { key: 'tags', label: 'Find by Tag', active: actions?.tagsOpen, toggle: true, disabled: listOnlyDisabled, onClick: () => actions?.onToggleTags?.() },
+    { key: 'pinned', label: 'Pinned', active: actions?.pinnedActive, toggle: true, disabled: listOnlyDisabled, onClick: () => actions?.onSetPinned?.() },
+    { key: 'import', label: 'Import', icon: IconUpload, active: actions?.importOpen, toggle: true, disabled: listOnlyDisabled, onClick: () => actions?.onImport?.() },
   ]
 
   return (

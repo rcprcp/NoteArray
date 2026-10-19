@@ -113,8 +113,9 @@ export default function HeaderActions({ items, userMenu, availableWidth = 0, onO
         {visibleActions.map((item) => (
           <Button
             key={item.key}
-            variant={item.active ? 'filled' : 'light'}
+            variant={item.active && !item.disabled ? 'filled' : 'light'}
             leftSection={item.icon ? <item.icon size={16} /> : null}
+            disabled={item.disabled}
             onClick={item.onClick}
             aria-expanded={item.toggle ? item.active : undefined}
             style={{ flex: '0 0 auto' }}
@@ -139,9 +140,11 @@ export default function HeaderActions({ items, userMenu, availableWidth = 0, onO
                 {overflowActions.map((item) => (
                   <Menu.Item
                     key={item.key}
+                    disabled={item.disabled}
                     leftSection={item.icon ? <item.icon size={16} /> : null}
-                    rightSection={item.active ? <IconCheck size={16} /> : null}
+                    rightSection={item.active && !item.disabled ? <IconCheck size={16} /> : null}
                     onClick={() => {
+                      if (item.disabled) return
                       item.onClick?.()
                       setMenuOpened(false)
                     }}

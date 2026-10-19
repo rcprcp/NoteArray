@@ -1,33 +1,49 @@
 import {
-  Button,
   Card,
-  Group,
+  Checkbox,
   MultiSelect,
   Stack,
-  Text,
 } from '@mantine/core'
 
 export const DEFAULT_FILTERS = {
   tags: [],
   collection: null,
+  untagged: false,
 }
 
 export function buildApiFilters(f) {
   const out = { tags: f.tags || [] }
-  if (f.collection === 'untagged') out.untagged = true
+  if (f.untagged || f.collection === 'untagged') out.untagged = true
   if (f.collection === 'pinned') out.pinned = true
   return out
 }
 
 export function describeFilters(f) {
   const items = []
-  ;(f.tags || []).forEach((t) => items.push({ key: `tag:${t}`, label: `Tag: ${t}`, clear: { tags: (f.tags || []).filter((x) => x !== t) } }))
-  if (f.collection === 'pinned') items.push({ key: 'collection', label: 'Pinned', clear: { collection: null } })
-  if (f.collection === 'untagged') items.push({ key: 'collection', label: 'Untagged', clear: { collection: null } })
+  ;(f.tags || []).forEach((t) =>
+    items.push({
+      key: `tag:${t}`,
+      label: `Tag: ${t}`,
+      clear: { tags: (f.tags || []).filter((x) => x !== t) },
+    }),
+  )
+  if (f.collection === 'pinned') {
+    items.push({ key: 'collection', label: 'Pinned', clear: { collection: null } })
+  }
+  if (f.untagged || f.collection === 'untagged') {
+    items.push({
+      key: 'untagged',
+      label: 'Untagged',
+      clear: {
+        untagged: false,
+        ...(f.collection === 'untagged' ? { collection: null } : {}),
+      },
+    })
+  }
   return items
 }
 
-export function TagMultiSelect({ tags, value, onChange }) {
+export function TagMultiSelect({ tags, value, onChange, onSearchChange }) {
   return (
     <MultiSelect
       label="Tags"
@@ -35,6 +51,7 @@ export function TagMultiSelect({ tags, value, onChange }) {
       data={(tags || []).concat((value || []).filter((t) => !(tags || []).includes(t)))}
       value={value || []}
       onChange={onChange}
+      onSearchChange={onSearchChange}
       searchable
       clearable
       nothingFoundMessage="No tags"
@@ -42,44 +59,57 @@ export function TagMultiSelect({ tags, value, onChange }) {
   )
 }
 
-const COLLECTIONS = [
-  { key: 'pinned', label: 'Pinned' },
-  { key: 'untagged', label: 'Untagged' },
-]
-
 export default function FilterPanel({
   filters,
   onChange,
   allTags,
-  collectionCounts,
 }) {
+  const untaggedActive = !!filters.untagged || filters.collection === 'untagged'
+
+  const handleUntaggedChange = (checked) => {
+    onChange({
+      untagged: checked,
+      ...(checked ? { tags: [] } : {}),
+      ...(filters.collection === 'untagged' ? { collection: null } : {}),
+    })
+  }
+
+  const handleTagsChange = (tags) => {
+    onChange({
+      tags,
+      ...(tags.length > 0 && untaggedActive
+        ? {
+            untagged: false,
+            ...(filters.collection === 'untagged' ? { collection: null } : {}),
+          }
+        : {}),
+    })
+  }
+
+  const handleTagSearchInput = (query) => {
+    if (query && query.trim().length > 0 && untaggedActive) {
+      onChange({
+        untagged: false,
+        ...(filters.collection === 'untagged' ? { collection: null } : {}),
+      })
+    }
+  }
+
   return (
     <Card withBorder padding="md" radius="md">
       <Stack gap="md">
-        <TagMultiSelect tags={allTags} value={filters.tags || []} onChange={(tags) => onChange({ tags })} />
+        <Checkbox
+          label="Find notes with no tags"
+          checked={untaggedActive}
+          onChange={(e) => handleUntaggedChange(e.currentTarget.checked)}
+        />
 
-        <Stack gap="xs">
-          <Text fw={600} size="sm">Collections</Text>
-          <Group gap="xs">
-            {COLLECTIONS.map((c) => {
-              const active = filters.collection === c.key
-              const count = collectionCounts ? collectionCounts[c.key] : null
-              return (
-                <Button
-                  key={c.key}
-                  variant={active ? 'filled' : 'light'}
-                  size="xs"
-                  onClick={() => onChange({ collection: active ? null : c.key })}
-                  rightSection={count != null ? (
-                    <Text size="xs" c={active ? 'white' : 'dimmed'}>{count}</Text>
-                  ) : null}
-                >
-                  {c.label}
-                </Button>
-              )
-            })}
-          </Group>
-        </Stack>
+        <TagMultiSelect
+          tags={allTags}
+          value={filters.tags || []}
+          onChange={handleTagsChange}
+          onSearchChange={handleTagSearchInput}
+        />
       </Stack>
     </Card>
   )

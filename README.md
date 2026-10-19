@@ -520,11 +520,12 @@ The interactive Swagger UI allows you to test all endpoints directly from your b
 - **Live preview** – Editor supports TipTap's rich text rendering with markdown shortcuts
 
 ### Advanced Search & Filtering
-- **Responsive header actions** – Header includes **List Notes**, **Create Note**, **Tag Search**, **Text Search**, **Pinned**, **Untagged**, **Import**, and the user avatar. When viewport width is constrained, items collapse right-to-left into an overflow (`...`) menu.
-- **Tag Search panel** – Toggled with the **Tag Search** header button
+- **Responsive header actions** – Header includes **Create Note**, **List Notes**, **Search Text**, **Find by Tag**, **Pinned**, **Import**, and the user avatar. When viewport width is constrained, items collapse right-to-left into an overflow (`...`) menu, and Search/Tag/Pinned/Import controls are disabled when outside the List Notes view.
+- **Find by Tag panel** – Toggled with the **Find by Tag** header button
+  - **Find notes with no tags** checkbox at the top of the panel filters to notes with no tags (and automatically unchecks if the user types in the Tags field or selects a tag)
   - Add tags by typing (space-delimited) or multi-select from existing tags
   - Notes must have all selected tags
-- **Quick collection buttons** – **Pinned** and **Untagged** buttons in the header filter directly to pinned or untagged notes
+- **Pinned button** – **Pinned** toggle button in the header filters directly to pinned notes
 - **Active filter badges** showing which filters are applied
   - Clear individual filters with X button
   - "Clear all filters" button to reset all filters
@@ -699,7 +700,7 @@ Covered so far (36 unit tests across 6 test classes): login-throttle backoff/loc
 - **Filter state management:** Active filters are managed in NotesPanel state and persisted to `localStorage` for recovery on page reload. Filters are combined with search queries using AND logic.
 - **Date filtering:** Backend API supports ISO-8601 instant range parameters (`createdFrom`, `createdTo`, `updatedFrom`, `updatedTo`) and returns 400 for invalid formats.
 - **Tag filtering:** Multi-select tag filter automatically populates from tags in the user's notes. A note matches if it has ALL selected tags. Combine multiple tags for powerful filtering.
-- **Smart collections:** Header buttons (**Pinned**, **Untagged**) filter directly to pinned or untagged notes.
+- **Smart collections:** **Pinned** in the header and **Untagged** inside the **Find by Tag** panel filter directly to pinned or untagged notes.
 - **Pinned notes:** Use the pin icon in the notes list to pin/unpin notes as favorites.
 
 ## Technologies Used
