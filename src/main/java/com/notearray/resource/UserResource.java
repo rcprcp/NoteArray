@@ -4,6 +4,7 @@ import com.notearray.entity.User;
 import com.notearray.service.AuthenticationService;
 import com.notearray.service.ClientIp;
 import com.notearray.service.LoginThrottleService;
+import com.notearray.service.PasswordPolicy;
 import com.notearray.service.SessionService;
 import io.quarkus.elytron.security.common.BcryptUtil;
 import io.vertx.core.http.HttpServerRequest;
@@ -153,6 +154,10 @@ public class UserResource {
         if (User.findByEmail(req.email()) != null) {
             return Response.status(Response.Status.CONFLICT).entity("email already in use").build();
         }
+        Response passwordError = invalidPassword(req.password());
+        if (passwordError != null) {
+            return passwordError;
+        }
         User user = new User();
         user.name = req.name();
         user.email = req.email();
@@ -233,6 +238,10 @@ public class UserResource {
         }
         boolean passwordChanged = !isBlank(req.password());
         if (passwordChanged) {
+            Response passwordError = invalidPassword(req.password());
+            if (passwordError != null) {
+                return passwordError;
+            }
             user.passwordHash = BcryptUtil.bcryptHash(req.password());
         }
         if (!isBlank(req.themeColor())) {
@@ -299,5 +308,19 @@ public class UserResource {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
+    }
+
+    /**
+     * 400 listing every unmet {@link PasswordPolicy} rule, or null when the
+     * password is acceptable. Applied wherever a password can be set (create and
+     * update), so the API is authoritative regardless of client checks.
+     */
+    private static Response invalidPassword(String password) {
+        java.util.List<String> failures = PasswordPolicy.validate(password);
+        if (failures.isEmpty()) {
+            return null;
+        }
+        return Response.status(Response.Status.BAD_REQUEST)
+                .entity(String.join("; ", failures)).build();
     }
 }
