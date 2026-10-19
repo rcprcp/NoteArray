@@ -22,14 +22,21 @@
 
 ### High
 
-- [ ] **1. No rate limiting / lockout on login or signup** (`UserResource.java:90,122`).
+- [x] **1. No rate limiting / lockout on login or signup** (`UserResource.java:90,122`).
   bcrypt slows an attacker but nothing stops distributed or patient brute-forcing, and failed attempts
   aren't logged or counted. Add per-IP + per-account throttling (`quarkus-smallrye-fault-tolerance`
   `@RateLimiting`, or a JAX-RS filter with a bucket counter), lockout/backoff, and a metric/log on failures.
+  *Done (branch `agent/login-throttling`): DB-backed per-account exponential backoff (1s→64s, 15-min
+  lockout after 8 consecutive failures, reset on success) + per-IP hourly budgets (120 login / 30
+  signup → `429` + `Retry-After`); `X-Forwarded-For` honored only behind a trusted proxy.*
 
-- [ ] **2. No password strength policy anywhere**. Any non-blank password is accepted
+- [x] **2. No password strength policy anywhere**. Any non-blank password is accepted
   (`UserResource.java:124,215`; `LoginPage.jsx` only checks presence). Enforce min length (12+),
   reject common/breached passwords (zxcvbn, or HaveIBeenPwned k-anonymity API).
+  *Done, at the requested strength (branch `agent/password-policy`): 8+ chars, one uppercase, one
+  lowercase, one digit; special characters from `!@#$%^&*` allowed but optional. Enforced on create
+  and password-changing update (400 lists each unmet rule) and mirrored in the signup form. Common/
+  breached-password checks (zxcvbn/HIBP) remain a possible follow-up.*
 
 - [ ] **3. Stored-XSS surface in the editor + zero security headers.**
   Note content (markdown/HTML, including imported `.md`/Joplin files) is fed straight into Tiptap
@@ -166,7 +173,7 @@
 
 | # | Item | Findings | Status |
 |---|------|----------|--------|
-| 1 | Login rate limiting + password policy | #1, #2 | ☐ |
+| 1 | Login rate limiting + password policy | #1, #2 | ✓ (`agent/login-throttling`, `agent/password-policy`) |
 | 2 | Security headers + CSP + link/HTML sanitization | #3 | ☐ |
 | 3 | Email normalization/validation + signup config flag | #4 | ☐ |
 | 4 | Fix body-size limit & import expansion caps | #5 | ☐ |
@@ -183,4 +190,5 @@
 
 | Date | Findings addressed | Branch / PR | Notes |
 |------|--------------------|-------------|-------|
-|      |                    |             |       |
+| 2026-10-18 | #1 | `agent/login-throttling` | Exponential backoff (1s doubling to 64s), lockout after 8 failures for 15 min, hourly per-IP caps (120 login / 30 signup → 429 Retry-After), Flyway `V1.1.4`, first unit tests |
+| 2026-10-18 | #2 | `agent/password-policy` | 8+ chars / uppercase / lowercase / digit enforced in `UserResource` create+update and signup form; specials `!@#$%^&*` optional; `PasswordPolicyTest` |
