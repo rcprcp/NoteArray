@@ -2,7 +2,6 @@ import { useState, useCallback } from 'react'
 import { Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import { Box, Container, Group, Button, Stack, Title } from '@mantine/core'
 import { IconUpload } from '@tabler/icons-react'
-import { IconNote } from '@tabler/icons-react'
 import LoginPage from './LoginPage'
 import NotesPanel from './NotesPanel'
 import UserMenu from './UserMenu'
@@ -29,14 +28,10 @@ export default function App({ themeColor, onThemeChange, currentUser, onLogin, o
             >
               NoteArray
             </Title>
-            <Button
-              variant="subtle"
-              leftSection={<IconNote size={16} />}
-              onClick={() => { navigate('/notes'); actions?.onReset?.(); }}
-            >
-              Notes
-            </Button>
             <Group gap={{ base: 'xs', sm: 'md' }} wrap="nowrap">
+              <Button variant="light" onClick={() => { navigate('/notes'); actions?.onReset?.(); }}>
+                List Notes
+              </Button>
               <Button variant="light" onClick={() => actions?.onCreate?.()}>Create note</Button>
               <Button variant={actions?.tagsOpen ? "filled" : "light"} onClick={() => actions?.onToggleTags?.()} aria-expanded={actions?.tagsOpen}>
                 Tag Search
