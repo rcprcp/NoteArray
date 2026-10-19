@@ -216,7 +216,7 @@ public class NoteResource {
         Note note = new Note();
         note.ownerId = user.id;
         note.title = req.title().trim();
-        note.content = req.content();
+        note.content = sanitizeContent(req.content());
         note.tags = (req.tags() != null) ? req.tags().trim() : "";
         note.pinned = Boolean.TRUE.equals(req.pinned());
         note.persist();
@@ -251,7 +251,7 @@ public class NoteResource {
             note.title = req.title().trim();
         }
         if (req.content() != null) {
-            note.content = req.content();
+            note.content = sanitizeContent(req.content());
         }
         if (req.tags() != null) {
             note.tags = req.tags().trim();
@@ -482,7 +482,7 @@ public class NoteResource {
             Note note = new Note();
             note.ownerId = user.id;
             note.title = title.isEmpty() ? "Untitled" : truncateTitle(title);
-            note.content = content;
+            note.content = sanitizeContent(content);
             note.tags = "markdown-import";
             note.persist();
             return Response.ok(note).build();
@@ -519,6 +519,27 @@ public class NoteResource {
         return !s.isEmpty() && s.charAt(0) == '\uFEFF' ? s.substring(1) : s;
     }
 
+    /**
+     * Strip dangerous HTML elements, inline event-handler attributes, and
+     * executable URI schemes ({@code javascript:}, {@code vbscript:},
+     * {@code data:text/html}) from note content on ingest.
+     */
+    public static String sanitizeContent(String content) {
+        if (content == null || content.isEmpty()) {
+            return content;
+        }
+        String sanitized = content;
+        // Strip <script>, <iframe>, <object>, <embed> blocks and self-closing tags
+        sanitized = sanitized.replaceAll("(?is)<(script|iframe|object|embed)\\b[^>]*>.*?</\\1\\s*>", "");
+        sanitized = sanitized.replaceAll("(?is)<(script|iframe|object|embed)\\b[^>]*/?>", "");
+        // Strip inline event handlers inside HTML tags (e.g. onerror=..., onclick=...)
+        sanitized = sanitized.replaceAll("(?i)\\s+on[a-z]+\\s*=\\s*(\"[^\"]*\"|'[^']*'|[^\\s>]+)", "");
+        // Neutralize javascript:, vbscript:, and data:text/html URIs in href/src attributes and markdown links
+        sanitized = sanitized.replaceAll("(?i)(href|src)\\s*=\\s*([\"']?)\\s*(javascript|vbscript|data\\s*:\\s*text/html)\\s*:[^\"'\\s>]*\\2", "$1=$2#$2");
+        sanitized = sanitized.replaceAll("(?i)\\]\\(\\s*(javascript|vbscript|data\\s*:\\s*text/html)\\s*:[^)]*\\)", "](#)");
+        return sanitized;
+    }
+
     private String readZipEntryAsString(ZipInputStream zis, byte[] buffer) throws IOException {
         return readEntryAsString(zis, buffer);
     }
@@ -553,7 +574,7 @@ public class NoteResource {
         Note note = new Note();
         note.ownerId = user.id;
         note.title = title.isEmpty() ? "Untitled" : truncateTitle(title);
-        note.content = content;
+        note.content = sanitizeContent(content);
 
         List<String> tagParts = new ArrayList<>(folderTags);
         if (!metaTags.isEmpty()) {

@@ -40,6 +40,12 @@ public class SpaResource {
     }
 
     @GET
+    @Produces(MediaType.TEXT_HTML)
+    public Response indexPage() {
+        return serveIndexHtml();
+    }
+
+    @GET
     @Path("/login")
     @Produces(MediaType.TEXT_HTML)
     public Response loginPage() {

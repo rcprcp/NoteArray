@@ -39,6 +39,24 @@ function writeStorage(key, value) {
 // Milliseconds of typing inactivity before an existing note is auto-saved.
 const AUTOSAVE_DELAY_MS = 2000
 
+const ALLOWED_LINK_PROTOCOLS = new Set(['http:', 'https:', 'mailto:'])
+
+function isAllowedLinkUri(url) {
+  if (!url || typeof url !== 'string') return false
+  const trimmed = url.trim().replace(/[\u0000-\u001F\u007F\s]+/g, '')
+  if (!trimmed) return false
+  // Allow same-page anchors and relative paths.
+  if (trimmed.startsWith('#') || trimmed.startsWith('/') || trimmed.startsWith('?')) {
+    return !trimmed.startsWith('//')
+  }
+  const schemeMatch = trimmed.match(/^([a-zA-Z][a-zA-Z0-9+.-]*:)/)
+  if (schemeMatch) {
+    return ALLOWED_LINK_PROTOCOLS.has(schemeMatch[1].toLowerCase())
+  }
+  // Bare hostnames/paths without an explicit scheme will get defaultProtocol ('https').
+  return true
+}
+
 function MarkdownEditor({ value, onChange }) {
   const editor = useEditor({
     // Tiptap 3 no longer re-renders the editor on every transaction by default;
@@ -52,8 +70,8 @@ function MarkdownEditor({ value, onChange }) {
         openOnClick: false,
         autolink: true,
         defaultProtocol: 'https',
-        // Only allow http, https, and mailto protocols
-        // The DOMPurify sanitization on render will also strip javascript: links
+        isAllowedUri: (url) => isAllowedLinkUri(url),
+        validate: (url) => isAllowedLinkUri(url),
       }),
       Highlight,
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
@@ -76,7 +94,7 @@ function MarkdownEditor({ value, onChange }) {
 
   useEffect(() => {
     if (!editor) return
-    const nextMarkdown = value || ''
+    const nextMarkdown = dompurify.sanitize(value || '') || ''
     const currentMarkdown = editor.storage.markdown?.getMarkdown ? editor.storage.markdown.getMarkdown() : editor.getText()
     if (currentMarkdown !== nextMarkdown) {
       editor.commands.setContent(nextMarkdown, { emitUpdate: false })

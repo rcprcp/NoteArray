@@ -38,7 +38,7 @@
   and password-changing update (400 lists each unmet rule) and mirrored in the signup form. Common/
   breached-password checks (zxcvbn/HIBP) remain a possible follow-up.*
 
-- [ ] **3. Stored-XSS surface in the editor + zero security headers.**
+- [x] **3. Stored-XSS surface in the editor + zero security headers.**
   Note content (markdown/HTML, including imported `.md`/Joplin files) is fed straight into Tiptap
   (`NotesPanel.jsx:42-118`). Verify and defend:
   - Link `href="javascript:..."` — the Link extension (`NotesPanel.jsx:51-55`) doesn't restrict protocols;
@@ -50,6 +50,12 @@
   Fixes: sanitize on ingest and on render (DOMPurify), configure `Link` to allow only `http/https/mailto`,
   and add a strict CSP + headers (`X-Content-Type-Options`, `frame-ancestors`, `Referrer-Policy`,
   `Permissions-Policy`, HSTS in prod) via a response filter. Currently *no* security headers are emitted.
+  *Done (branches `security-sanitization`, `agent/security-xss-headers`): DOMPurify sanitization on
+  initial editor mount and content updates (`NotesPanel.jsx`), Tiptap `Link` protocol whitelist
+  (`http:`, `https:`, `mailto:`, relative links), server-side ingest sanitization (`NoteResource`),
+  and `SecurityHeadersFilter` (`X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`,
+  `Permissions-Policy`, strict `Content-Security-Policy` with `script-src 'self'` and
+  `frame-ancestors 'none'`, plus HSTS when `notearray.session.cookie-secure=true`).*
 
 - [ ] **4. Email handling bugs enable duplicate accounts and enumeration**
   (`User.java:41`, `UserResource.java:131-136`). Emails are stored as typed and looked up
@@ -174,7 +180,7 @@
 | # | Item | Findings | Status |
 |---|------|----------|--------|
 | 1 | Login rate limiting + password policy | #1, #2 | ✓ (`agent/login-throttling`, `agent/password-policy`) |
-| 2 | Security headers + CSP + link/HTML sanitization | #3 | ☐ |
+| 2 | Security headers + CSP + link/HTML sanitization | #3 | ✓ (`security-sanitization`, `agent/security-xss-headers`) |
 | 3 | Email normalization/validation + signup config flag | #4 | ☐ |
 | 4 | Fix body-size limit & import expansion caps | #5 | ☐ |
 | 5 | Test suite + CI | #21, #22 | ☐ |
@@ -192,3 +198,4 @@
 |------|--------------------|-------------|-------|
 | 2026-10-18 | #1 | `agent/login-throttling` | Exponential backoff (1s doubling to 64s), lockout after 8 failures for 15 min, hourly per-IP caps (120 login / 30 signup → 429 Retry-After), Flyway `V1.1.4`, first unit tests |
 | 2026-10-18 | #2 | `agent/password-policy` | 8+ chars / uppercase / lowercase / digit enforced in `UserResource` create+update and signup form; specials `!@#$%^&*` optional; `PasswordPolicyTest` |
+| 2026-10-19 | #3 | `security-sanitization`, `agent/security-xss-headers` | DOMPurify on render + update, `Link` protocol whitelist (`http/https/mailto`), server-side ingest sanitization in `NoteResource`, `SecurityHeadersFilter` with strict CSP + prod HSTS, `SecurityHeadersFilterTest` |
