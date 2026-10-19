@@ -421,7 +421,7 @@ UPDATE users SET superuser = FALSE WHERE email = 'user@example.com';
 
 ## OpenAPI Documentation
 
-When the backend is running (`mvn quarkus:dev`), you can access the API documentation:
+When the backend is running in development mode (`mvn quarkus:dev`), you can access the API documentation and metrics (these endpoints are disabled by default in the `prod` profile):
 
 - **OpenAPI Spec (YAML):** http://localhost:8080/q/openapi
 - **OpenAPI Spec (JSON):** http://localhost:8080/q/openapi?format=json

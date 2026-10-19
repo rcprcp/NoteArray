@@ -42,4 +42,18 @@ class NoteArrayApplicationTest {
     void applicationCanBeInstantiated() {
         assertDoesNotThrow(() -> new NoteArrayApplication());
     }
+
+    @Test
+    void prodDisablesSwaggerOpenApiAndPrometheusMetrics() throws java.io.IOException {
+        java.util.Properties props = new java.util.Properties();
+        try (java.io.InputStream in = Thread.currentThread()
+                .getContextClassLoader()
+                .getResourceAsStream("application.properties")) {
+            props.load(in);
+        }
+        assertEquals(null, props.getProperty("quarkus.swagger-ui.always-include"));
+        assertEquals("false", props.getProperty("%prod.quarkus.swagger-ui.enable"));
+        assertEquals("false", props.getProperty("%prod.quarkus.smallrye-openapi.enable"));
+        assertEquals("false", props.getProperty("%prod.quarkus.micrometer.export.prometheus.enabled"));
+    }
 }

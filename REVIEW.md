@@ -78,9 +78,14 @@
   across thousands of entries. Set the body limit explicitly, cap total expansion + notes-per-import,
   and bound concurrent imports.
 
-- [ ] **6. Swagger UI, OpenAPI, and Prometheus metrics are public in prod**
+- [x] **6. Swagger UI, OpenAPI, and Prometheus metrics are public in prod**
   (`application.properties:26-31`, `always-include=true`; `quarkus-micrometer`). Disable Swagger/OpenAPI
   in `%prod` (or put behind auth) and protect `/q/metrics`.
+  *Done (branch `agent/disable-prod-openapi-metrics`): removed `quarkus.swagger-ui.always-include=true`
+  and disabled Swagger UI (`%prod.quarkus.swagger-ui.enable=false`), OpenAPI
+  (`%prod.quarkus.smallrye-openapi.enable=false`), and Prometheus metrics export
+  (`%prod.quarkus.micrometer.export.prometheus.enabled=false`) in the `prod` profile while keeping them
+  enabled in `dev`.*
 
 ### Medium
 
@@ -220,3 +225,4 @@
 | 2026-10-19 | #3 | `security-sanitization`, `agent/security-xss-headers` | DOMPurify on render + update, `Link` protocol whitelist (`http/https/mailto`), server-side ingest sanitization in `NoteResource`, `SecurityHeadersFilter` with strict CSP + prod HSTS, `SecurityHeadersFilterTest` |
 | 2026-10-19 | #8, #18, #21, #24 | `personal_settings`, `change_password` | Personal Settings view in main area with Light/Dark/Auto appearance selector, current-password-verified password change that invalidates sessions and logs out to `/login`, SPA route redirects, and 36 JUnit 5 unit tests |
 | 2026-10-19 | #4, #10 | `agent/email-validation` | Email trim+lowercase normalization and liberal `something@x.y` token/length validation + name validation on server (`EmailPolicy`, `UserResource`, `AuthenticationService`, `User`) and client (`LoginPage.jsx`); `EmailPolicyTest` |
+| 2026-10-19 | #6 | `agent/disable-prod-openapi-metrics` | Disabled Swagger UI, SmallRye OpenAPI, and Prometheus `/q/metrics` export in `%prod` (`application.properties`); verified in `NoteArrayApplicationTest` |
