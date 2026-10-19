@@ -17,7 +17,6 @@ const EMPTY_FORM = { title: '', content: '', tags: '' }
 const DEFAULT_SEARCH = { q: '', searchTitles: true, searchContent: true }
 
 const FILTERS_KEY = 'notearray.filters'
-const SAVED_SEARCHES_KEY = 'notearray.savedSearches'
 
 function readStorage(key, fallback) {
   try {
@@ -248,10 +247,9 @@ export default function NotesPanel({ registerActions } = {}) {
   const [editMode, setEditMode] = useState(false)
   const [searchExpanded, setSearchExpanded] = useState(false)
 
-  // Advanced filters (persisted), saved searches (persisted) and the unfiltered note list
+  // Advanced filters (persisted) and the unfiltered note list
   // used for tag options and smart collection counts.
   const [filters, setFilters] = useState(() => ({ ...DEFAULT_FILTERS, ...readStorage(FILTERS_KEY, {}) }))
-  const [savedSearches, setSavedSearches] = useState(() => readStorage(SAVED_SEARCHES_KEY, []))
   const [allNotes, setAllNotes] = useState([])
   const [filtersOpen, setFiltersOpen] = useState(false)
 
@@ -336,7 +334,6 @@ export default function NotesPanel({ registerActions } = {}) {
       })
     }
   }, [registerActions, searchVisible, tagsVisible, importModalOpened, activeSearch, filters])
-  useEffect(() => writeStorage(SAVED_SEARCHES_KEY, savedSearches), [savedSearches])
 
   const updateFilters = (patch) => {
     setFilters((f) => ({ ...f, ...patch }))
@@ -360,23 +357,6 @@ export default function NotesPanel({ registerActions } = {}) {
     pinned: notes.filter((n) => n.pinned).length,
     untagged: notes.filter((n) => !(n.tags || '').trim()).length,
   }), [notes])
-
-  const saveSearch = (name) => {
-    setSavedSearches((list) => [
-      ...list,
-      { id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, name, search: activeSearch || search, filters },
-    ])
-  }
-  const applySavedSearch = (saved) => {
-    const nextSearch = { ...DEFAULT_SEARCH, ...saved.search }
-    setSearch(nextSearch)
-    setActiveSearch(nextSearch.q && nextSearch.q.trim() ? nextSearch : null)
-    const nextFilters = { ...DEFAULT_FILTERS, ...saved.filters }
-    setFilters(nextFilters)
-    setFiltersOpen(false)
-    load(nextSearch.q && nextSearch.q.trim() ? nextSearch : null, nextFilters)
-  }
-  const deleteSavedSearch = (id) => setSavedSearches((list) => list.filter((x) => x.id !== id))
 
   const togglePin = async (note) => {
     try {
@@ -660,11 +640,6 @@ export default function NotesPanel({ registerActions } = {}) {
       onChange={updateFilters}
       allTags={allTags}
       collectionCounts={collectionCounts}
-      saved={savedSearches}
-      canSave={activeFilterCount > 0}
-      onSaveSearch={saveSearch}
-      onApplySaved={applySavedSearch}
-      onDeleteSaved={deleteSavedSearch}
     />
   )
 

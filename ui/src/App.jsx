@@ -44,7 +44,7 @@ export default function App({ themeColor, onThemeChange, currentUser, onLogin, o
               <Button variant="light" onClick={() => actions?.onSetPinned?.()}>Pinned</Button>
               <Button variant="light" onClick={() => actions?.onSetUntagged?.()}>Untagged</Button>
               <Button variant={actions?.tagsOpen ? "filled" : "light"} onClick={() => actions?.onToggleTags?.()} aria-expanded={actions?.tagsOpen}>
-                Tags
+                Tag Search
               </Button>
               <Button variant={actions?.importOpen ? "filled" : "light"} leftSection={<IconUpload size={16} />} onClick={() => actions?.onImport?.()}>
                 Import
