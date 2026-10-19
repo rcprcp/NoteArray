@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { ActionIcon, Button, Group, Menu } from '@mantine/core'
+import { ActionIcon, Box, Button, Group, Menu } from '@mantine/core'
 import { IconCheck, IconDots } from '@tabler/icons-react'
 
 // Gap between header items, kept in one place so measurement matches layout.
@@ -103,7 +103,13 @@ export default function HeaderActions({ items, userMenu, availableWidth = 0, onO
 
   return (
     <>
-      <Group ref={rowRef} gap={ITEM_GAP} wrap="nowrap" justify="flex-end" style={{ minWidth: 0, flex: 1 }}>
+      <Group
+        ref={rowRef}
+        gap={ITEM_GAP}
+        wrap="nowrap"
+        justify="space-between"
+        style={{ minWidth: 0, flex: 1 }}
+      >
         {visibleActions.map((item) => (
           <Button
             key={item.key}
@@ -119,31 +125,35 @@ export default function HeaderActions({ items, userMenu, availableWidth = 0, onO
 
         {showUserMenu && userMenu?.element}
 
-        {hasOverflow && (
-          <Menu shadow="md" width={240} position="bottom-end" opened={menuOpened} onChange={setMenuOpened}>
-            <Menu.Target>
-              <ActionIcon variant="light" size="lg" aria-label="More actions" style={{ flex: '0 0 auto' }}>
-                <IconDots size={18} />
-              </ActionIcon>
-            </Menu.Target>
-            <Menu.Dropdown>
-              {overflowActions.map((item) => (
-                <Menu.Item
-                  key={item.key}
-                  leftSection={item.icon ? <item.icon size={16} /> : null}
-                  rightSection={item.active ? <IconCheck size={16} /> : null}
-                  onClick={() => {
-                    item.onClick?.()
-                    setMenuOpened(false)
-                  }}
-                >
-                  {item.label}
-                </Menu.Item>
-              ))}
-              {overflowUser && userMenu?.menuItems?.()}
-            </Menu.Dropdown>
-          </Menu>
-        )}
+        {/* The overflow button always occupies its slot so the spacing reserved
+            for it stays constant whether or not the menu is currently shown. */}
+        <Box style={{ flex: '0 0 auto', width: OVERFLOW_WIDTH, display: 'flex', justifyContent: 'flex-end' }}>
+          {hasOverflow && (
+            <Menu shadow="md" width={240} position="bottom-end" opened={menuOpened} onChange={setMenuOpened}>
+              <Menu.Target>
+                <ActionIcon variant="light" size="lg" aria-label="More actions">
+                  <IconDots size={18} />
+                </ActionIcon>
+              </Menu.Target>
+              <Menu.Dropdown>
+                {overflowActions.map((item) => (
+                  <Menu.Item
+                    key={item.key}
+                    leftSection={item.icon ? <item.icon size={16} /> : null}
+                    rightSection={item.active ? <IconCheck size={16} /> : null}
+                    onClick={() => {
+                      item.onClick?.()
+                      setMenuOpened(false)
+                    }}
+                  >
+                    {item.label}
+                  </Menu.Item>
+                ))}
+                {overflowUser && userMenu?.menuItems?.()}
+              </Menu.Dropdown>
+            </Menu>
+          )}
+        </Box>
       </Group>
 
       {/* Hidden row used purely for measuring natural item widths. */}
