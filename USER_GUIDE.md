@@ -1,0 +1,431 @@
+# NoteArray User's Guide
+
+A practical guide to using NoteArray, a modern note-taking application that works on desktop, tablet, and mobile devices.
+
+**Last updated: October 2026**
+
+---
+
+## Contents
+
+1. [Getting Started](#1-getting-started)
+2. [Creating & Writing Notes](#2-creating--writing-notes)
+3. [Images & Attachments](#3-images--attachments)
+4. [Organizing: Tags & Pinning](#4-organizing-tags--pinning)
+5. [Searching Your Notes](#5-searching-your-notes)
+6. [Viewing, Sorting & Deleting](#6-viewing-sorting--deleting)
+7. [Importing Notes](#7-importing-notes)
+8. [Personal Settings & Appearance](#8-personal-settings--appearance)
+9. [Plans, Storage & Billing](#9-plans-storage--billing)
+10. [Privacy & Security](#10-privacy--security)
+11. [Troubleshooting & Error Messages](#11-troubleshooting--error-messages)
+
+---
+
+## 1. Getting Started
+
+### Creating an account
+
+1. Open NoteArray in your browser.
+2. On the login page, click **Sign up** ("Don't have an account? Sign up").
+3. Fill in **Name**, **Email**, **Password**, and **Confirm Password**.
+4. Click **Create Account**. You are signed in automatically.
+
+Your password must:
+
+- Be at least **8 characters** long
+- Contain at least **one uppercase letter**, **one lowercase letter**, and **one number**
+- (Optional) use special characters such as `!@#$%^&*`
+
+You'll see a hint under the password field, and the form checks the rules before submitting. If an email or name is already in use, you'll see **"Email already in use"** or **"Name already in use"** — pick another one.
+
+### Logging in
+
+Enter your **Email** and **Password** and submit the form (pressing **Enter** works). If the credentials are wrong you'll see a generic error — NoteArray never reveals whether the email or the password was incorrect.
+
+> **Too many attempts?** After several consecutive failed logins, NoteArray slows things down deliberately: the wait between attempts doubles each time (1s, 2s, 4s … up to 64s), and after **8 consecutive failures** the account is locked out for **15 minutes**. A successful login clears the count. You may also see **"too many attempts; try again in N seconds"** if the server is busy. Just wait and try again.
+
+### Staying signed in
+
+- You stay signed in for **7 days** on each device, even if the server restarts.
+- You can be signed in on **multiple devices at once**; logging out only signs out the *current* device.
+- If your session expires while you're using the app, you'll see **"Session expired. Please login again."** — just sign in again.
+
+### Getting to know the header
+
+Once signed in, the header at the top of every page is your control center:
+
+| Header item | What it does |
+|---|---|
+| **Create Note** | Opens the note editor to write a new note |
+| **List Notes** | Returns to your note list (clears active search/filters) |
+| **Search Text** | Toggles the search panel (List Notes view only) |
+| **Find by Tag** | Toggles the tag-filter panel (List Notes view only) |
+| **Pinned** | Filters the list to your pinned notes (List Notes view only) |
+| **Import** (upload icon) | Opens the Import notes modal (List Notes view only) |
+| **Help/About** | Dropdown with **FAQ**, **Privacy Policy**, and **Security Notes** pages |
+| **Your avatar** | Shows your initials; click it to open **Personal Settings** |
+
+Notes:
+
+- **Search Text**, **Find by Tag**, **Pinned**, and **Import** are only enabled while you're on the **List Notes** view. Switch to that view first, then toggle them.
+- On narrow screens, header items that don't fit collapse into a **More actions (…)** menu on the right.
+
+### Screen layouts
+
+- On wide screens (≥ 960 px) you're in **wide mode**: the NoteArray title shows in the header and the content is inset from the edges by a margin.
+- On narrower screens — or if the header runs out of room — **compact mode** hides the title and uses the full width.
+- On phones (≤ 768 px) the note list switches from a table to a **card grid**, with touch-friendly buttons and full-screen panels.
+
+---
+
+## 2. Creating & Writing Notes
+
+### Opening the editor
+
+Click **Create Note** in the header. The editor replaces the list and shows:
+
+- a **Title** field (required, up to **255 characters**)
+- a **Tags** field (see [Organizing](#4-organizing-tags--pinning))
+- the rich-text editor, with the placeholder *"Write your note here, or drag and drop an image or PDF…"*
+- an auto-save status line
+
+A **Created: …** line appears under the title once the note exists, and the button changes from **Cancel** (creating) to **Close** (editing).
+
+### Formatting toolbar
+
+| Toolbar buttons | What they do |
+|---|---|
+| **B / I / U / S / Clear formatting** | Bold, italic, underline, strikethrough, remove all formatting |
+| **H1, H2, H3** | Heading levels |
+| **Bullet list / Ordered list** | Unordered and numbered lists |
+| **Blockquote ("** ) | Quoted text |
+| **Code / Code block** | Inline code or a fenced multi-line code block |
+| **Link / Unlink** | Add a hyperlink to the selected text (http, https, or mailto) or remove one |
+
+Markdown shortcuts work while typing — for example `**bold**`, `*italic*`, starting a line with `# `, `- `, `1. `, or `> `. Text alignment (left/center/right) is supported for headings and paragraphs.
+
+### Click, link & HTML safety
+
+- Links you paste that are not `http:`, `https:`, or `mailto:` (including anchors and relative paths in your notes) are blocked from the link fields — this is a deliberate safety feature.
+- All note content is sanitized before storage, so scripts embedded in pasted HTML are stripped automatically. Nothing extra for you to do.
+
+### Auto-save (no save button!)
+
+There is **no manual save button** — NoteArray saves for you:
+
+- **After 2 seconds of typing inactivity**, changes are saved.
+- A brand-new note is **created automatically** on the first auto-save — you never need to press save first. The note only becomes real once the title (or a dropped file) gives it a non-blank name, so typing without a title yet won't create junk notes.
+- The status line tells you exactly where you stand:
+  - **"Changes are saved automatically."** — nothing pending
+  - **"Unsaved changes..."** — the 2-second timer is running
+  - **"Saving..."** — save in progress
+  - **"✓ Saved at HH:MM:SS"** — saved; the timestamp is when the save completed
+  - **"Auto-save failed…"** — your changes are *not* lost; continue editing and it retries automatically
+
+### Closing safely
+
+**Close/Cancel** is always safe: NoteArray waits for any save currently in flight and flushes remaining changes before the editor closes. Only changed fields are sent to the server, keeping saves quick.
+
+### Editing on two devices? Read this
+
+Each note carries a hidden version counter. If another window or device saved the same note while you were editing:
+
+- NoteArray **automatically merges changes that don't overlap** (e.g. you changed tags while the other session changed the content).
+- If both sessions changed the **same field**, you'll see: *"Note was modified in another session. Close and reopen the note to load the latest version."* Closing and reopening the note gives you the newest saved version — your overlapping change doesn't silently get overwritten *by you*, and vice versa.
+
+---
+
+## 3. Images & Attachments
+
+You can attach files directly inside a note by **drag-and-drop** or by **paste** (Ctrl/Cmd+V).
+
+### What's supported
+
+- **Images:** PNG, JPEG, GIF, WebP — inserted **inline** in the note content
+- **PDFs:** inserted as a **file link** (shown as `📄 filename.pdf`) with a preview; they are *not* base64-buried in the note text
+
+Each file can be at most **10 MB**. Unsupported types are rejected with: *"Only PNG, JPEG, GIF, WebP images and PDF files are supported."*
+
+### How to attach
+
+1. Open a note in the editor (or start a new one via **Create Note**).
+2. Drag files from your desktop onto the editor, or paste an image from your clipboard.
+3. Drop them anywhere in the note — a dashed outline shows the drop zone while dragging.
+
+What happens next:
+
+- **Images** appear inline in your note where you dropped them.
+- **PDFs** appear as a `📄` file link.
+- If the note has **no title yet**, the title is auto-filled from the **first dropped file's name** — so you can drop a file straight onto a fresh Create Note screen and skip typing a title.
+
+After dropping, the note auto-saves like normal (see [Auto-save](#auto-save-no-save-button)).
+
+### Viewing attachments
+
+- Click a `📄` file link (or any attachment link) inside a note: a **preview modal** opens showing the document in an embedded frame.
+- **Open in New Tab** opens it in a full browser tab (from there you can download it). **Close** returns to the note.
+
+### Storage accounting
+
+Attachments **count against your plan's storage quota** together with note text. Deleting a note deletes its attachments immediately and frees the space (see [Plans, Storage & Billing](#9-plans-storage--billing)).
+
+---
+
+## 4. Organizing: Tags & Pinning
+
+### Adding tags while writing
+
+In the editor's **Tags** field, type tags **separated by spaces** — for example:
+
+```
+joplin important work
+```
+
+- Tags are **auto-lowercased**.
+- Up to **10,000 characters** of tags per note.
+- While you type, tags preview as colored badges.
+- Tags show in the notes list as badges under each note's title.
+
+> **Why tags instead of folders?** Tags let a note belong to many categories at once. When you import from Joplin, your folder hierarchy is converted into tags automatically (see [Importing Notes](#7-importing-notes)).
+
+### Pinning notes
+
+Pin a note you use often:
+
+1. On the **List Notes** view (card or table), find the **pin icon** next to the note.
+2. Click it to pin (icon becomes filled). Click again to unpin.
+
+The header **Pinned** button is a *filter toggle* — click it to show **only pinned notes**; click again to show everything. Pinning does not change how the list is sorted (see [Sorting](#6-viewing-sorting--deleting) — sorting stays under your control).
+
+### Find by Tag panel
+
+Click **Find by Tag** in the header (List Notes view) to open the tag-filter panel:
+
+- **Search tags**: a searchable multi-select of the tags that exist across your notes. Pick one or more — only notes with **all** selected tags match (AND logic, not OR).
+- **"Find notes with no tags" checkbox**: shows only untagged notes. Checking it clears your tag selection; selecting a tag clears it, since the two are mutually exclusive.
+
+### Active filters
+
+Any active search/filters appear as **removable chips** above the list, plus an **"N active filter(s)"** badge and a **Clear all filters** button. Your filter state is remembered in your browser (localStorage), so reloading the page keeps your view. Use **List Notes** in the header to reset everything.
+
+---
+
+## 5. Searching Your Notes
+
+Click **Search Text** in the header:
+
+1. Type words into **"Search notes…"** and press **Enter** (or the **Search Text** button).
+2. Choose **where** to look — at least one must be checked:
+   - **Search Titles** — match words in note titles
+   - **Search Note Content** — match words in note text
+   - Both can be checked at once for a comprehensive search.
+3. **Clear** resets the search.
+
+If you try to search with neither box checked, a **"How to search your notes"** help modal opens explaining the two boxes. (The server also requires at least one — this is a safety net, not a bug.)
+
+### How search behaves
+
+- **Word-based** — it matches whole words, not arbitrary substrings.
+- **Case-insensitive** — "meeting" matches "Meeting" and "MEETING".
+- **Ignores common words** such as "the", which are too frequent to be useful.
+- **Word endings are normalized** — searching "running" also matches "run".
+- **Every word must appear** in the field you selected.
+
+### Combining search with filters
+
+You can pair a search with tag filters, the Untagged checkbox, the Pinned filter, and the Search Titles / Search Note Content options all at once — filters combine with AND logic for powerful, narrow results. Result counts are shown above the list: *"Search results for '…'"* / *"Found N result(s)."*
+
+---
+
+## 6. Viewing, Sorting & Deleting
+
+### The notes list
+
+The default view is **List Notes**. On desktop it's a table:
+
+- **Created / Updated / Title** columns
+- Tags shown as badges under the title
+- Untitled notes show as italic *"Untitled"*
+- Row actions: **Pin** (a pin/star icon button), **Edit**, and **Delete**
+
+On mobile, the list becomes **cards** with the created/updated dates, a 2-line-clamped title, tags, and the same Pin/Edit/Delete actions.
+
+### Sorting
+
+- **Default order:** Created, **newest first**.
+- Click any column header (desktop) to sort by it; click again to reverse. Clicking a date column defaults to newest-first, and the Title column to A→Z — an arrow shows the current direction.
+- Sorting is instant and client-side; no reload.
+
+### Deleting
+
+Clicking **Delete** asks for confirmation with the note's name: *"Delete note "TITLE"?"* — continue to delete it **permanently**. There is no undo and no trash folder, so be careful:
+
+- Deletion is immediate; the note's text and any attachments vanish and their storage is freed at once.
+- Deleting a note does **not** affect other notes.
+
+---
+
+## 7. Importing Notes
+
+Click **Import** in the header (List Notes view) to open the **Import notes** modal. Two formats are supported:
+
+### Joplin (.jex) — bring your whole notebook
+
+1. Export your notes from **Joplin** as a JEX archive (Joplin's native export format: a single `.jex` file).
+2. In NoteArray's Import modal, upload the `.jex` file (up to **50 MB**).
+3. Wait for the result alert.
+
+What you get:
+
+- **Folder hierarchy → tags**: Joplin notebooks and sub-notebooks become space-delimited tags.
+- **Metadata tags** (`tags:` lines in Joplin's footer) are picked up too.
+- **Title** comes from the first markdown heading, else the first content line.
+- **Content** stays markdown, with Joplin's trailing metadata block (id, parent_id, etc.) stripped.
+- Imports with no tags at all get a `joplin-import` tag automatically, so imported notes are easy to find.
+
+### Markdown (.md) — single files
+
+Upload one `.md` file (up to **10 MB**). The **first line becomes the title**, the rest becomes the note; it's tagged **`markdown-import`** so you can find it later and re-tag it.
+
+### Reading the result
+
+The modal shows *"Imported N note(s) [with N error(s)]."* — with a bulleted list of any per-note problems. If some imports failed, a special yellow alert lists them: re-run the import to try again. Imports respect your plan's storage limit and stop where the quota is reached (see the next section).
+
+---
+
+## 8. Personal Settings & Appearance
+
+Click **your avatar** in the header to open **Personal Settings**.
+
+### Your profile
+
+A card shows your **Name, Email, plan badge, theme, last login, created/updated dates**, and your account ID (usefully when contacting support or calling APIs directly).
+
+### Appearance: Light / Dark / Auto + colors
+
+- **Light / Dark / Auto** buttons — Auto follows your operating system's preference.
+- 14 **color palettes** (blue by default) — click any palette to apply instantly.
+
+Your appearance choice is saved to your account and follows you across devices and sessions. If the account save fails (e.g. a dropped connection), you'll get a *"Theme not saved"* warning — the color still applies locally, and simply re-clicking will retry the save.
+
+### Changing your password
+
+Open the **Security** card and click **Change Password**:
+
+1. Enter your **Current Password** — this is verified first, to protect you if someone else has your browser open.
+2. Enter a **New Password** and **Verify New Password** (same policy as signup: 8+ chars, upper + lower + a number).
+3. Submit.
+
+**Important:** On success, NoteArray **signs you out everywhere** (all sessions on all devices are invalidated) and returns you to the login page. Sign in again with your new password. This is deliberate — it protects you if your old password was exposed.
+
+### Logging out
+
+A **Logout** button sits in the upper area of Personal Settings. It clears your session on the current device. (Other devices remain signed in — a password change, however, signs out *all* sessions.)
+
+---
+
+## 9. Plans, Storage & Billing
+
+NoteArray has three tiers:
+
+| Plan | Storage | Price |
+|---|---|---|
+| **Free** | 100 MB | Free |
+| **Pro** | 1 GB | $2/month |
+| **Premium** | 5 GB | $4/month |
+
+Storage counts **note text + note attachments** combined.
+
+### Watching your usage
+
+The **Storage Used** card in Personal Settings shows:
+
+- A badge like **"1.45 MB / 100 MB (Free)"** above a progress bar
+- Your plan limit, the number of notes, and the percent used
+- The bar turns **red at 90% or more** — a good signal to clean up or upgrade
+
+### Upgrading or downgrading
+
+1. In Personal Settings, find the **Available Plans** cards.
+2. Click **Upgrade to Pro** (green), **Upgrade to Premium**, or **Downgrade** — each card shows a badge: **Current Plan**, **Pending Stripe**, **Upgrade ⬆**, or **Downgrade ⬇**.
+
+What happens next:
+
+- **Upgrading to Pro or Premium** sends you to a **Stripe checkout page** to enter payment. NoteArray marks your plan as *"Pending Stripe Checkout.*" Back in the app after payment, you'll see *"Pending Stripe Checkout for {PLAN}"* with a **Confirm Stripe Payment** button — click it to activate the plan. If you cancel at checkout, click **Cancel Checkout** to stay on your old plan.
+- **Downgrading to Free is instant** — no Stripe step, since there's nothing to pay. Billing stops on your current subscription.
+- If a payment falls behind (*past due*), a red alert appears asking you to update your payment method.
+
+Changing plans keeps all your notes; only your limit changes.
+
+### When you hit your storage limit
+
+If your notes reach your plan's limit:
+
+- A yellow **"Storage Limit Reached"** banner appears above the list showing your exact usage, with an **Upgrade Plan** button.
+- **Create Note** and **Import** are **disabled** in the header.
+- You can still: **delete notes or attachments** (freeing space immediately), **shrink existing notes** (making a note smaller is always allowed), and **upgrade your plan**.
+- The server enforces this limit too, so it's never just a UI suggestion.
+
+Going over quota is not an emergency: your existing notes are safe, you just can't add more until you free space or upgrade.
+
+### Deleting your account
+
+The red **Delete Account** card at the bottom of Personal Settings:
+
+- **Free users:** confirm, and your account and **all notes are permanently deleted**. You're signed out immediately.
+- **Pro/Premium users:** NoteArray cancels your **Stripe subscription first** and *waits for Stripe to confirm* the cancellation ("Awaiting Stripe subscription cancellation confirmation and deleting account…"), then deletes the account and signs you out. If Stripe can't confirm, the deletion refuses with an error so you're never left with an orphaned recurring charge — try again later.
+- If you have a **pending upgrade checkout**, you must complete or cancel it before deleting.
+- Deletion is permanent and cascades to all notes and attachments. There is no undo.
+
+---
+
+## 10. Privacy & Security
+
+NoteArray is designed to collect as little as possible and protect what it keeps. (Short version here; full pages under **Help/About** in the app.)
+
+### What we store (and don't)
+
+- **Stored:** your **name**, **email**, a **hashed password** (never readable by anyone, including operators), your **theme color**, your **subscription state**, and **your notes, tags and attachments**.
+- **Not stored:** no analytics, no telemetry, no advertising trackers, no third-party scripts.
+- **One cookie only:** `NOTEARRAY_SESSION`, which keeps you signed in. It can't be read by scripts (HttpOnly) and is never shared across sites (SameSite=Strict). Sessions are stored in the database only as a **SHA-256 hash** — a leaked database copy can't be replayed to hijack accounts.
+
+### How your notes are protected
+
+- **Sanitization** — anything that looks like a script (`<script>`, `<iframe>`, `on*=` handlers, `javascript:` links) is stripped from note content before it's stored or displayed, and the link types are restricted to `http`, `https`, and `mailto`.
+- **Login throttling** — brute-force attempts are slowed (exponential backoff up to 64 s) and accounts lock out for 15 minutes after 8 consecutive failures. Per-IP hourly budgets (120 logins, 30 signups) also apply. Throttling never reveals whether an email is registered.
+- **Self-hosting option** — since you can run NoteArray yourself, your data never has to leave infrastructure you control.
+
+### Your account deletions are real deletions
+
+Deleting a note or your account removes the underlying data immediately — there is no soft-delete or recovery window, and no "stale" copy on the server afterwards.
+
+---
+
+## 11. Troubleshooting & Error Messages
+
+Where messages come from and what to do:
+
+| What you see | What it means | What to do |
+|---|---|---|
+| *"Session expired. Please login again."* | Your 7-day session ran out. | Sign in again. |
+| *"invalid email or password"* | Wrong credentials. | Check for typos / Caps Lock. Wait out any throttle timer. |
+| *"too many attempts; try again in N seconds"* | Throttling after repeated failures or heavy traffic. | Wait the stated time (or 15 min after 8 consecutive failures). |
+| *"Note was modified in another session. Close and reopen the note to load the latest version."* | The same note was saved from another window/device while you edited. | Close and reopen the note to load the latest saved version. |
+| *"Storage quota exceeded for your {Plan} plan. Please upgrade your plan or delete notes to free up space."* | You hit your plan's storage limit. | Delete notes to recover space, or upgrade your plan. |
+| *"Only PNG, JPEG, GIF, WebP images and PDF files are supported"* | An attachment type outside the whitelist was dropped. | Convert the file, or link text describing it and attach a PDF where possible. |
+| *"Attachment exceeds the maximum size of 10 MB"* | A single file was too big. | Compress / split it. |
+| *"JEX file exceeds the maximum import size of 50 MB"* / *"Markdown file exceeds the maximum import size of 10 MB"* | Import file too large. | Split the Joplin export into multiple notebooks and import them separately. |
+| *"Imported N note(s) with N error(s)"* | Some notes failed during import (each listed in a bulleted message list). | Re-run the import to retry failures; check your source export. |
+| *"Email already in use"* / *"Name already in use"* | That email or name is already an account. | Pick a different one, or log in if it's yours. |
+| *"password must be at least 8 characters"* (and similar) | Password policy failure. | Follow the rules shown on the form. |
+| *"Current password is incorrect"* | The Current Password field didn't match. | Recheck the old password before changing it. |
+| *"Passwords do not match"* | The New Password and Verify fields differ. | Re-type both carefully. |
+| *"Auto-save failed…"* | A transient network/server error during auto-save. | Keep editing — it will retry. If it persists, copy your text somewhere safe and reload. |
+| *"Failed to load notes: …"* | Note list couldn't be fetched. | Usually transient. Reload the page; sign in again if it also says *"Session expired"*. |
+| *"Plan change failed"* / *"Stripe sync failed"* | The Stripe step couldn't complete. | Retry from Personal Settings; check your Stripe checkout session. |
+
+### Where to find more help
+
+- The in-app **Help/About** menu: **FAQ**, **Privacy Policy**, and **Security Notes**.
+- Operators and developers: see the project's `README.md` for setup, configuration, and the full REST API.
