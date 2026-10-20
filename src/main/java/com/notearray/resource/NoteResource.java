@@ -1,6 +1,7 @@
 package com.notearray.resource;
 
 import com.notearray.entity.Note;
+import com.notearray.entity.NoteAttachment;
 import com.notearray.entity.User;
 import com.notearray.service.SessionService;
 import com.notearray.service.StorageQuota;
@@ -216,6 +217,82 @@ public class NoteResource {
         long limitBytes = StorageQuota.limitBytesForPlan(user.plan);
         boolean overQuota = usedBytes >= limitBytes;
         return Response.ok(new StorageUsage(usedBytes, limitBytes, noteCount, overQuota)).build();
+    }
+
+    @POST
+    @Path("/{id}/attachments")
+    @Consumes(MediaType.WILDCARD)
+    @Produces(MediaType.APPLICATION_JSON)
+    @Transactional
+    public Response uploadAttachment(
+            @PathParam("id") UUID noteId,
+            @QueryParam("filename") String filenameParam,
+            InputStream bodyStream) {
+        User user = getAuthenticatedUser();
+        if (user == null) {
+            return Response.status(Response.Status.UNAUTHORIZED).build();
+        }
+        Note note = Note.findById(noteId);
+        if (note == null || !canAccessNote(user, note)) {
+            return Response.status(Response.Status.NOT_FOUND).build();
+        }
+
+        String rawContentType = headers.getHeaderString(HttpHeaders.CONTENT_TYPE);
+        String resolvedType = AttachmentResource.normalizeContentType(rawContentType, filenameParam);
+        if (resolvedType == null) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity("Only PNG, JPEG, GIF, WebP images and PDF files are supported")
+                    .build();
+        }
+
+        byte[] bytes;
+        try {
+            bytes = bodyStream.readNBytes(StorageQuota.MAX_ATTACHMENT_BYTES + 1);
+        } catch (IOException e) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity("Failed to read uploaded file")
+                    .build();
+        }
+        if (bytes.length == 0) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity("Uploaded file is empty")
+                    .build();
+        }
+        if (bytes.length > StorageQuota.MAX_ATTACHMENT_BYTES) {
+            return Response.status(Response.Status.REQUEST_ENTITY_TOO_LARGE)
+                    .entity("Attachment exceeds the maximum size of "
+                            + (StorageQuota.MAX_ATTACHMENT_BYTES / (1024 * 1024)) + " MB")
+                    .build();
+        }
+
+        long currentUsed = calculateTotalStorageBytes(note.ownerId);
+        User owner = User.findById(note.ownerId);
+        String plan = owner != null ? owner.plan : user.plan;
+        Response quotaError = StorageQuota.checkCanCreate(currentUsed, bytes.length, plan);
+        if (quotaError != null) {
+            return quotaError;
+        }
+
+        String cleanName = AttachmentResource.sanitizeFilename(filenameParam, resolvedType);
+        NoteAttachment attachment = new NoteAttachment();
+        attachment.noteId = note.id;
+        attachment.ownerId = note.ownerId;
+        attachment.filename = cleanName;
+        attachment.contentType = resolvedType;
+        attachment.byteSize = bytes.length;
+        attachment.data = bytes;
+        attachment.persist();
+
+        String url = "/api/attachments/" + attachment.id;
+        return Response.created(URI.create(url))
+                .entity(new AttachmentResource.AttachmentResponse(
+                        attachment.id,
+                        attachment.noteId,
+                        attachment.filename,
+                        attachment.contentType,
+                        attachment.byteSize,
+                        url))
+                .build();
     }
 
     public static long calculateTotalStorageBytes(UUID ownerId) {

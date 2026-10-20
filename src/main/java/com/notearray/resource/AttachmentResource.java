@@ -1,31 +1,27 @@
 package com.notearray.resource;
 
-import com.notearray.entity.Note;
 import com.notearray.entity.NoteAttachment;
 import com.notearray.entity.User;
 import com.notearray.service.SessionService;
-import com.notearray.service.StorageQuota;
 import jakarta.inject.Inject;
-import jakarta.transaction.Transactional;
-import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
-import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
-import jakarta.ws.rs.Produces;
-import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.HttpHeaders;
-import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
-import java.io.IOException;
-import java.io.InputStream;
-import java.net.URI;
 import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 
-@Path("/api")
+/**
+ * Attachment download endpoint ({@code GET /api/attachments/{id}}) and shared
+ * attachment helpers (MIME whitelist, filename sanitization). Note: the upload
+ * endpoint lives in {@link NoteResource} ({@code POST /api/notes/{id}/attachments})
+ * because all notes-subresource routes must belong to the resource class that owns
+ * the {@code /api/notes} root, or the routes will not match at runtime.
+ */
+@Path("/api/attachments")
 public class AttachmentResource {
 
     private static final Set<String> ALLOWED_CONTENT_TYPES = Set.of(
@@ -48,18 +44,6 @@ public class AttachmentResource {
             String contentType,
             long byteSize,
             String url) {}
-
-    private User getAuthenticatedUser() {
-        return sessions.resolve(headers.getCookies().get(SessionService.COOKIE_NAME));
-    }
-
-    private boolean canAccessNote(User caller, Note note) {
-        return caller.superuser || note.ownerId.equals(caller.id);
-    }
-
-    private boolean canAccessAttachment(User caller, NoteAttachment attachment) {
-        return caller.superuser || attachment.ownerId.equals(caller.id);
-    }
 
     public static boolean isAllowedContentType(String contentType) {
         if (contentType == null || contentType.isBlank()) {
@@ -98,86 +82,14 @@ public class AttachmentResource {
         return name;
     }
 
-    @POST
-    @Path("/notes/{noteId}/attachments")
-    @Consumes(MediaType.WILDCARD)
-    @Produces(MediaType.APPLICATION_JSON)
-    @Transactional
-    public Response upload(
-            @PathParam("noteId") UUID noteId,
-            @QueryParam("filename") String filenameParam,
-            InputStream bodyStream) {
-        User user = getAuthenticatedUser();
-        if (user == null) {
-            return Response.status(Response.Status.UNAUTHORIZED).build();
-        }
-        Note note = Note.findById(noteId);
-        if (note == null || !canAccessNote(user, note)) {
-            return Response.status(Response.Status.NOT_FOUND).build();
-        }
-
-        String rawContentType = headers.getHeaderString(HttpHeaders.CONTENT_TYPE);
-        String resolvedType = normalizeContentType(rawContentType, filenameParam);
-        if (resolvedType == null) {
-            return Response.status(Response.Status.BAD_REQUEST)
-                    .entity("Only PNG, JPEG, GIF, WebP images and PDF files are supported")
-                    .build();
-        }
-
-        byte[] bytes;
-        try {
-            bytes = bodyStream.readNBytes(StorageQuota.MAX_ATTACHMENT_BYTES + 1);
-        } catch (IOException e) {
-            return Response.status(Response.Status.BAD_REQUEST)
-                    .entity("Failed to read uploaded file")
-                    .build();
-        }
-        if (bytes.length == 0) {
-            return Response.status(Response.Status.BAD_REQUEST)
-                    .entity("Uploaded file is empty")
-                    .build();
-        }
-        if (bytes.length > StorageQuota.MAX_ATTACHMENT_BYTES) {
-            return Response.status(Response.Status.REQUEST_ENTITY_TOO_LARGE)
-                    .entity("Attachment exceeds the maximum size of "
-                            + (StorageQuota.MAX_ATTACHMENT_BYTES / (1024 * 1024)) + " MB")
-                    .build();
-        }
-
-        long currentUsed = NoteResource.calculateTotalStorageBytes(note.ownerId);
-        User owner = User.findById(note.ownerId);
-        String plan = owner != null ? owner.plan : user.plan;
-        Response quotaError = StorageQuota.checkCanCreate(currentUsed, bytes.length, plan);
-        if (quotaError != null) {
-            return quotaError;
-        }
-
-        String cleanName = sanitizeFilename(filenameParam, resolvedType);
-        NoteAttachment attachment = new NoteAttachment();
-        attachment.noteId = note.id;
-        attachment.ownerId = note.ownerId;
-        attachment.filename = cleanName;
-        attachment.contentType = resolvedType;
-        attachment.byteSize = bytes.length;
-        attachment.data = bytes;
-        attachment.persist();
-
-        String url = "/api/attachments/" + attachment.id;
-        return Response.created(URI.create(url))
-                .entity(new AttachmentResponse(
-                        attachment.id,
-                        attachment.noteId,
-                        attachment.filename,
-                        attachment.contentType,
-                        attachment.byteSize,
-                        url))
-                .build();
+    private boolean canAccessAttachment(User caller, NoteAttachment attachment) {
+        return caller.superuser || attachment.ownerId.equals(caller.id);
     }
 
     @GET
-    @Path("/attachments/{id}")
+    @Path("/{id}")
     public Response download(@PathParam("id") UUID id) {
-        User user = getAuthenticatedUser();
+        User user = sessions.resolve(headers.getCookies().get(SessionService.COOKIE_NAME));
         if (user == null) {
             return Response.status(Response.Status.UNAUTHORIZED).build();
         }
