@@ -476,6 +476,7 @@ export default function NotesPanel({ registerActions } = {}) {
       title: note.title || '',
       content: note.content || '',
       tags: (note.tags || '').toLowerCase(),
+      version: note.version ?? 0,
     }
     autoSavedRef.current = false
     setAutoSaveStatus('idle')
@@ -487,20 +488,66 @@ export default function NotesPanel({ registerActions } = {}) {
     setEditMode(true)
   }
 
-  // Persist pending changes of the note being edited (used by the debounce timer).
+  // Persist pending changes of the note being edited (serialized one request at a time).
   const performAutoSave = useCallback(async (noteId, values) => {
+    while (inFlightRef.current) {
+      try {
+        await inFlightRef.current
+      } catch (e) {
+        // previous error already handled
+      }
+    }
+
     const body = diffFromBaseline(values)
     if (Object.keys(body).length === 0) {
       setAutoSaveStatus('saved')
       return
     }
+    const expectedVersion = baselineRef.current?.version
+    const payload = expectedVersion != null ? { ...body, version: expectedVersion } : body
+
     setAutoSaveStatus('saving')
-    const request = notesApi.update(noteId, body)
+    const runUpdate = async () => {
+      try {
+        return await notesApi.update(noteId, payload)
+      } catch (err) {
+        if (err.status !== 409) throw err
+        // Optimistic lock conflict: fetch latest server state and merge if non-overlapping.
+        const latest = await notesApi.get(noteId)
+        const base = baselineRef.current || { title: '', content: '', tags: '' }
+        const serverTags = (latest.tags || '').trim().toLowerCase()
+        const baseTags = (base.tags || '').trim().toLowerCase()
+        const overlapping =
+          ('title' in body && (latest.title || '') !== base.title) ||
+          ('content' in body && (latest.content || '') !== base.content) ||
+          ('tags' in body && serverTags !== baseTags)
+        if (overlapping) {
+          const conflictErr = new Error(
+            'Note was modified in another session. Close and reopen the note to load the latest version.',
+          )
+          conflictErr.status = 409
+          throw conflictErr
+        }
+        baselineRef.current = {
+          title: latest.title || '',
+          content: latest.content || '',
+          tags: serverTags,
+          version: latest.version ?? 0,
+        }
+        return await notesApi.update(noteId, { ...body, version: latest.version })
+      }
+    }
+
+    const request = runUpdate()
     inFlightRef.current = request
     try {
-      await request
-      // Record what the server now has so later diffs are relative to it.
-      baselineRef.current = { ...(baselineRef.current || {}), ...body }
+      const updated = await request
+      // Record what the server now has (including the incremented version) so later diffs are relative to it.
+      baselineRef.current = {
+        ...(baselineRef.current || {}),
+        ...body,
+        version: updated?.version ?? baselineRef.current?.version,
+      }
       autoSavedRef.current = true
       setLastSaved(new Date())
       setAutoSaveError(null)
@@ -542,6 +589,7 @@ export default function NotesPanel({ registerActions } = {}) {
           title: created.title || form.title.trim() || '',
           content: created.content || form.content || '',
           tags: (created.tags || form.tags.trim().toLowerCase() || ''),
+          version: created.version ?? 0,
         }
         setEditingNote(created)
         // Keep the form as-is: the user may have kept typing while the request was
@@ -568,12 +616,14 @@ export default function NotesPanel({ registerActions } = {}) {
 
   // Wait for any in-flight auto-save so manual save/close don't race with it.
   const waitForInFlight = async () => {
-    if (inFlightRef.current) {
+    while (inFlightRef.current) {
+      const current = inFlightRef.current
       try {
-        await inFlightRef.current
+        await current
       } catch (e) {
         // error already surfaced via autoSaveStatus
       }
+      if (inFlightRef.current === current) break
     }
   }
 
@@ -593,7 +643,9 @@ export default function NotesPanel({ registerActions } = {}) {
       const body = diffFromBaseline(form)
       if (Object.keys(body).length > 0) {
         try {
-          await notesApi.update(editingNote.id, body)
+          const expectedVersion = baselineRef.current?.version
+          const payload = expectedVersion != null ? { ...body, version: expectedVersion } : body
+          await notesApi.update(editingNote.id, payload)
           autoSavedRef.current = true
         } catch (e) {
           setError(`Failed to save note: ${e.message}`)

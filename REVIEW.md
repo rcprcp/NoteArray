@@ -107,10 +107,14 @@
   current password first, enforces `PasswordPolicy` and confirmation matching on the new password,
   invalidates all active sessions for the user, expires the session cookie, and redirects to `/login`.*
 
-- [ ] **9. Lost updates between devices** (`NoteResource.update`, `NotesPanel.jsx:479-555`).
+- [x] **9. Lost updates between devices** (`NoteResource.update`, `NotesPanel.jsx:479-555`).
   No `@Version` column — concurrent edits are silent last-write-wins, and the debounced auto-saves aren't
   serialized, so a slow PUT can land *after* a newer one. Add optimistic locking (`@Version` → 409),
   queue auto-saves one-at-a-time, and retry-with-merge in the UI.
+  *Done (branch `agent/optimistic-locking-autosave`): added Flyway `V1.1.5__add_version_to_notes.sql` and
+  `@Version` on `Note`, checked expected `version` in `NoteResource.update` (mapping stale versions and
+  `OptimisticLockException` to `409 Conflict`), serialized auto-save `PUT`s in `NotesPanel.jsx` with
+  automatic non-overlapping field merge on `409`, and added `NoteVersionConflictTest`.*
 
 - [x] **10. Misleading 409 for oversized fields** (`UserResource.java:145-151`). Name/email lengths are
   never validated, so a 500-char name fails on flush and is mapped to **409 "name or email already in
@@ -213,7 +217,7 @@
 | 4 | Fix body-size limit & import expansion caps | #5 | ☐ |
 | 5 | Test suite + CI | #21, #22 | ☐ |
 | 6 | Paginated list + lightweight projection + tags endpoint | #12 | ☐ |
-| 7 | Optimistic locking + serialized autosave | #9 | ☐ |
+| 7 | Optimistic locking + serialized autosave | #9 | ✓ (`agent/optimistic-locking-autosave`) |
 | 8 | Trash/undo + note history | #15 | ☐ |
 | 9 | Export (MD/ZIP/JSON) | #14 | ☐ |
 | 10 | Prod config hardening + health/metrics | #6, #23 | ☐ |
@@ -231,3 +235,4 @@
 | 2026-10-19 | #4, #10 | `agent/email-validation` | Email trim+lowercase normalization and liberal `something@x.y` token/length validation + name validation on server (`EmailPolicy`, `UserResource`, `AuthenticationService`, `User`) and client (`LoginPage.jsx`); `EmailPolicyTest` |
 | 2026-10-19 | #6 | `agent/disable-prod-openapi-metrics` | Disabled Swagger UI, SmallRye OpenAPI, and Prometheus `/q/metrics` export in `%prod` (`application.properties`); verified in `NoteArrayApplicationTest` |
 | 2026-10-19 | #7 | `agent/csrf-protection` | Added `CsrfFilter` (`Sec-Fetch-Site` + `Origin` verification on state-changing requests → 403), documented 3-layer CSRF invariant in `SessionService`, `CsrfFilter`, and `README.md`; `CsrfFilterTest` |
+| 2026-10-19 | #9 | `agent/optimistic-locking-autosave` | Flyway `V1.1.5` (`notes.version`), `@Version` optimistic locking on `Note` → 409 Conflict in `NoteResource.update`, serialized auto-saves with non-overlapping merge-and-retry in `NotesPanel.jsx`; `NoteVersionConflictTest` |

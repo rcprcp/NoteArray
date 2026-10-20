@@ -157,6 +157,7 @@ UPDATE users SET superuser = TRUE WHERE email = 'you@example.com';
 - `content` (TEXT, stores markdown-formatted content, max ~10MB)
 - `tags` (VARCHAR 10000, space-delimited tags, default empty)
 - `pinned` (BOOLEAN, default: FALSE, for favorite/pinned notes)
+- `version` (BIGINT, default: 0, `@Version` optimistic locking counter incremented on each update)
 - `title_tsv` (tsvector, auto-generated full-text search index on title)
 - `content_tsv` (tsvector, auto-generated full-text search index on content, truncated to 500KB)
 - `created_at` (TIMESTAMP, set on insert)
@@ -345,11 +346,12 @@ UPDATE users SET superuser = FALSE WHERE email = 'user@example.com';
   - Note is always owned by the authenticated user (ownerId is not accepted in the request)
 
 - `PUT /api/notes/{id}` – Update a note
-  - **Request body:** `{ "title": "...", "content": "...", "tags": "...", "pinned": true|false }` or any combination
-  - **Response:** Updated note object
+  - **Request body:** `{ "title": "...", "content": "...", "tags": "...", "pinned": true|false, "version": 0 }` or any combination
+  - **Response:** Updated note object (with incremented `version`)
   - Returns 401 if not authenticated
   - Returns 404 if note doesn't exist or caller lacks permission
   - Returns 400 if title is blank
+  - Returns 409 if `version` is provided and does not match the current persisted version (optimistic lock conflict)
   - Superusers can update any note; regular users can only update their own
   - Content is stored as markdown
   - Tags are space-delimited

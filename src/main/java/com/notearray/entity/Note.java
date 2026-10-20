@@ -4,6 +4,7 @@ import io.quarkus.panache.common.Sort;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import java.util.List;
 import java.util.UUID;
 
@@ -27,6 +28,10 @@ public class Note extends BaseEntity {
 
     @Column(name = "pinned", nullable = false)
     public boolean pinned = false;
+
+    @Version
+    @Column(name = "version", nullable = false)
+    public long version = 0L;
 
     /** Notes of one owner (by user UUID), newest first. */
     public static List<Note> findByOwner(UUID ownerId) {

@@ -6,6 +6,8 @@ import com.notearray.service.SessionService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.inject.Inject;
+import jakarta.persistence.OptimisticLockException;
+import jakarta.persistence.PersistenceException;
 import jakarta.persistence.Query;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.Consumes;
@@ -65,7 +67,11 @@ public class NoteResource {
     ObjectMapper objectMapper;
 
     /** Request body. ownerId is ignored; owner is always the authenticated user. */
-    public record NoteRequest(String title, String content, String tags, Boolean pinned) {}
+    public record NoteRequest(String title, String content, String tags, Boolean pinned, Long version) {
+        public NoteRequest(String title, String content, String tags, Boolean pinned) {
+            this(title, content, tags, pinned, null);
+        }
+    }
 
     public record ImportResult(int imported, int errors, List<String> messages) {}
 
@@ -247,6 +253,10 @@ public class NoteResource {
         if (lengthError != null) {
             return Response.status(Response.Status.BAD_REQUEST).entity(lengthError).build();
         }
+        Response conflict = checkVersionConflict(note, req);
+        if (conflict != null) {
+            return conflict;
+        }
         if (req.title() != null) {
             note.title = req.title().trim();
         }
@@ -259,7 +269,32 @@ public class NoteResource {
         if (req.pinned() != null) {
             note.pinned = req.pinned();
         }
+        try {
+            note.flush();
+        } catch (OptimisticLockException e) {
+            return Response.status(Response.Status.CONFLICT)
+                    .entity("Note was modified in another session; please reload").build();
+        } catch (PersistenceException e) {
+            if (e.getCause() instanceof OptimisticLockException) {
+                return Response.status(Response.Status.CONFLICT)
+                        .entity("Note was modified in another session; please reload").build();
+            }
+            throw e;
+        }
         return Response.ok(note).build();
+    }
+
+    /**
+     * Returns a 409 Conflict response when the caller supplied an expected
+     * {@code version} that does not match the persisted note's current version,
+     * or {@code null} when there is no conflict.
+     */
+    static Response checkVersionConflict(Note note, NoteRequest req) {
+        if (req != null && req.version() != null && req.version().longValue() != note.version) {
+            return Response.status(Response.Status.CONFLICT)
+                    .entity("Note was modified in another session; please reload").build();
+        }
+        return null;
     }
 
     /** Null if the request fields fit the notes table column limits, else a 400 message. */
