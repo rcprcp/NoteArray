@@ -35,9 +35,9 @@ function formatBytes(bytes) {
 }
 
 const PLANS = [
-  { key: 'free', tier: 0, name: 'Free', storage: '1 GB of storage', limitLabel: '1 GB', limitBytes: 1 * 1024 * 1024 * 1024, price: 'Free' },
-  { key: 'pro', tier: 1, name: 'Pro', storage: '2 GB of note storage', limitLabel: '2 GB', limitBytes: 2 * 1024 * 1024 * 1024, price: '$2/mo' },
-  { key: 'premium', tier: 2, name: 'Premium', storage: '10 GB of note storage', limitLabel: '10 GB', limitBytes: 10 * 1024 * 1024 * 1024, price: '$4/mo' },
+  { key: 'free', tier: 0, name: 'Free', storage: '100 MB of storage', limitLabel: '100 MB', limitBytes: 100 * 1024 * 1024, price: 'Free' },
+  { key: 'pro', tier: 1, name: 'Pro', storage: '1 GB of note storage', limitLabel: '1 GB', limitBytes: 1 * 1024 * 1024 * 1024, price: '$2/mo' },
+  { key: 'premium', tier: 2, name: 'Premium', storage: '5 GB of note storage', limitLabel: '5 GB', limitBytes: 5 * 1024 * 1024 * 1024, price: '$4/mo' },
 ]
 
 function ProfileRow({ label, value }) {
@@ -258,7 +258,7 @@ export default function PersonalSettings({
           return (
             <Stack gap="sm">
               <Group justify="space-between" align="center">
-                <Title order={3} size="h5">Note Storage Used</Title>
+                <Title order={3} size="h5">Storage Used</Title>
                 <Badge variant="light" color={themeColor}>
                   {formatBytes(storageUsage.usedBytes)} / {currentPlan.limitLabel} ({currentPlan.name})
                 </Badge>

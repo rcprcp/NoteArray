@@ -167,64 +167,76 @@ export default function LoginPage({ onLogin }) {
           </Alert>
         )}
 
-        <Stack>
-          {mode === 'signup' && (
-            <TextInput
-              label="Name"
-              required
-              value={name}
-              error={fieldErrors.name}
-              onChange={(e) => setName(e.currentTarget.value)}
-            />
-          )}
-
-          <TextInput
-            label="Email"
-            type="email"
-            required
-            value={email}
-            error={fieldErrors.email}
-            onChange={(e) => setEmail(e.currentTarget.value)}
-            onBlur={() => setEmail((v) => normalizeEmail(v))}
-          />
-
-          <PasswordInput
-            label="Password"
-            required
-            value={password}
-            error={fieldErrors.password}
-            onChange={(e) => setPassword(e.currentTarget.value)}
-          />
-
-          {mode === 'signup' && (
-            <>
-              <PasswordInput
-                label="Confirm Password"
+        <form
+          noValidate
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (mode === 'login') {
+              handleLogin()
+            } else {
+              handleSignup()
+            }
+          }}
+        >
+          <Stack>
+            {mode === 'signup' && (
+              <TextInput
+                label="Name"
                 required
-                value={passwordConfirm}
-                error={fieldErrors.passwordConfirm}
-                onChange={(e) => setPasswordConfirm(e.currentTarget.value)}
+                value={name}
+                error={fieldErrors.name}
+                onChange={(e) => setName(e.currentTarget.value)}
               />
+            )}
 
-              <Text size="xs" c="dimmed" mt={-4}>
-                Password must be at least 8 characters and include at least one uppercase letter, one lowercase letter, and one number. Special characters (!@#$%^&*) are optional.
+            <TextInput
+              label="Email"
+              type="email"
+              required
+              value={email}
+              error={fieldErrors.email}
+              onChange={(e) => setEmail(e.currentTarget.value)}
+              onBlur={() => setEmail((v) => normalizeEmail(v))}
+            />
+
+            <PasswordInput
+              label="Password"
+              required
+              value={password}
+              error={fieldErrors.password}
+              onChange={(e) => setPassword(e.currentTarget.value)}
+            />
+
+            {mode === 'signup' && (
+              <>
+                <PasswordInput
+                  label="Confirm Password"
+                  required
+                  value={passwordConfirm}
+                  error={fieldErrors.passwordConfirm}
+                  onChange={(e) => setPasswordConfirm(e.currentTarget.value)}
+                />
+
+                <Text size="xs" c="dimmed" mt={-4}>
+                  Password must be at least 8 characters and include at least one uppercase letter, one lowercase letter, and one number. Special characters (!@#$%^&*) are optional.
+                </Text>
+              </>
+            )}
+
+            <Button type="submit" loading={loading} fullWidth color="red">
+              {mode === 'login' ? 'Login' : 'Create Account'}
+            </Button>
+
+            <Group justify="center">
+              <Text size="sm">
+                {mode === 'login' ? "Don't have an account? " : 'Already have an account? '}
+                <Button type="button" variant="subtle" size="xs" onClick={toggleMode}>
+                  {mode === 'login' ? 'Sign up' : 'Login'}
+                </Button>
               </Text>
-            </>
-          )}
-
-          <Button onClick={mode === 'login' ? handleLogin : handleSignup} loading={loading} fullWidth color="red">
-            {mode === 'login' ? 'Login' : 'Create Account'}
-          </Button>
-
-          <Group justify="center">
-            <Text size="sm">
-              {mode === 'login' ? "Don't have an account? " : 'Already have an account? '}
-              <Button variant="subtle" size="xs" onClick={toggleMode}>
-                {mode === 'login' ? 'Sign up' : 'Login'}
-              </Button>
-            </Text>
-          </Group>
-        </Stack>
+            </Group>
+          </Stack>
+        </form>
       </Card>
     </Container>
   )
