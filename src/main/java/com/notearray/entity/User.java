@@ -15,6 +15,7 @@ public class User extends BaseEntity {
     public static final String DEFAULT_PLAN = "free";
     public static final String PLAN_STATUS_ACTIVE = "active";
     public static final String PLAN_STATUS_PENDING_CHECKOUT = "pending_checkout";
+    public static final String PLAN_STATUS_PENDING_CANCELLATION = "pending_cancellation";
     public static final String PLAN_STATUS_PAST_DUE = "past_due";
     public static final String PLAN_STATUS_CANCELED = "canceled";
 

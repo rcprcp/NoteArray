@@ -3,6 +3,7 @@ package com.notearray.resource;
 import com.notearray.entity.Note;
 import com.notearray.entity.User;
 import com.notearray.service.SessionService;
+import com.notearray.service.StorageQuota;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.inject.Inject;
@@ -75,7 +76,7 @@ public class NoteResource {
 
     public record ImportResult(int imported, int errors, List<String> messages) {}
 
-    public record StorageUsage(long usedBytes, long noteCount) {}
+    public record StorageUsage(long usedBytes, long limitBytes, long noteCount, boolean overQuota) {}
 
     /** Get the authenticated user from the session cookie. Returns null if not logged in. */
     private User getAuthenticatedUser() {
@@ -192,8 +193,8 @@ public class NoteResource {
     }
 
     /**
-     * Return the total UTF-8 byte size of the {@code content} column across all
-     * notes owned by the authenticated user.
+     * Return the total storage (note markdown bytes + binary attachment bytes)
+     * across all notes owned by the authenticated user.
      */
     @GET
     @Path("/storage")
@@ -204,12 +205,28 @@ public class NoteResource {
         }
         Object[] row = (Object[]) Note.getEntityManager()
                 .createNativeQuery(
-                        "SELECT COALESCE(SUM(OCTET_LENGTH(content)), 0), COUNT(*) FROM notes WHERE owner_id = :owner")
+                        "SELECT "
+                                + "COALESCE((SELECT SUM(OCTET_LENGTH(content)) FROM notes WHERE owner_id = :owner), 0) "
+                                + "+ COALESCE((SELECT SUM(byte_size) FROM note_attachments WHERE owner_id = :owner), 0), "
+                                + "(SELECT COUNT(*) FROM notes WHERE owner_id = :owner)")
                 .setParameter("owner", user.id)
                 .getSingleResult();
         long usedBytes = ((Number) row[0]).longValue();
         long noteCount = ((Number) row[1]).longValue();
-        return Response.ok(new StorageUsage(usedBytes, noteCount)).build();
+        long limitBytes = StorageQuota.limitBytesForPlan(user.plan);
+        boolean overQuota = usedBytes >= limitBytes;
+        return Response.ok(new StorageUsage(usedBytes, limitBytes, noteCount, overQuota)).build();
+    }
+
+    public static long calculateTotalStorageBytes(UUID ownerId) {
+        Number total = (Number) Note.getEntityManager()
+                .createNativeQuery(
+                        "SELECT "
+                                + "COALESCE((SELECT SUM(OCTET_LENGTH(content)) FROM notes WHERE owner_id = :owner), 0) "
+                                + "+ COALESCE((SELECT SUM(byte_size) FROM note_attachments WHERE owner_id = :owner), 0)")
+                .setParameter("owner", ownerId)
+                .getSingleResult();
+        return total != null ? total.longValue() : 0L;
     }
 
     @GET
@@ -242,10 +259,16 @@ public class NoteResource {
         if (lengthError != null) {
             return Response.status(Response.Status.BAD_REQUEST).entity(lengthError).build();
         }
+        String sanitizedContent = sanitizeContent(req.content());
+        long deltaBytes = sanitizedContent.getBytes(StandardCharsets.UTF_8).length;
+        Response quotaError = StorageQuota.checkCanCreate(calculateTotalStorageBytes(user.id), deltaBytes, user.plan);
+        if (quotaError != null) {
+            return quotaError;
+        }
         Note note = new Note();
         note.ownerId = user.id;
         note.title = req.title().trim();
-        note.content = sanitizeContent(req.content());
+        note.content = sanitizedContent;
         note.tags = (req.tags() != null) ? req.tags().trim() : "";
         note.pinned = Boolean.TRUE.equals(req.pinned());
         note.persist();
@@ -284,7 +307,21 @@ public class NoteResource {
             note.title = req.title().trim();
         }
         if (req.content() != null) {
-            note.content = sanitizeContent(req.content());
+            String sanitizedContent = sanitizeContent(req.content());
+            long oldBytes = note.content != null ? note.content.getBytes(StandardCharsets.UTF_8).length : 0L;
+            long newBytes = sanitizedContent.getBytes(StandardCharsets.UTF_8).length;
+            if (newBytes > oldBytes) {
+                User owner = User.findById(note.ownerId);
+                String plan = owner != null ? owner.plan : user.plan;
+                Response quotaError = StorageQuota.checkQuota(
+                        calculateTotalStorageBytes(note.ownerId),
+                        newBytes - oldBytes,
+                        plan);
+                if (quotaError != null) {
+                    return quotaError;
+                }
+            }
+            note.content = sanitizedContent;
         }
         if (req.tags() != null) {
             note.tags = req.tags().trim();
@@ -374,6 +411,11 @@ public class NoteResource {
         User user = getAuthenticatedUser();
         if (user == null) {
             return Response.status(Response.Status.UNAUTHORIZED).build();
+        }
+        long currentUsed = calculateTotalStorageBytes(user.id);
+        Response initialQuotaError = StorageQuota.checkCanCreate(currentUsed, 0L, user.plan);
+        if (initialQuotaError != null) {
+            return initialQuotaError;
         }
 
         List<String> messages = new ArrayList<>();
@@ -537,10 +579,16 @@ public class NoteResource {
                     title = lines[0].trim();
                 }
             }
+            String sanitizedContent = sanitizeContent(content);
+            long deltaBytes = sanitizedContent.getBytes(StandardCharsets.UTF_8).length;
+            Response quotaError = StorageQuota.checkCanCreate(calculateTotalStorageBytes(user.id), deltaBytes, user.plan);
+            if (quotaError != null) {
+                return quotaError;
+            }
             Note note = new Note();
             note.ownerId = user.id;
             note.title = title.isEmpty() ? "Untitled" : truncateTitle(title);
-            note.content = sanitizeContent(content);
+            note.content = sanitizedContent;
             note.tags = "markdown-import";
             note.persist();
             return Response.ok(note).build();

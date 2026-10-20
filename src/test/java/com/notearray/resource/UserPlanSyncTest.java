@@ -8,6 +8,7 @@ import com.notearray.entity.User;
 import com.notearray.resource.UserResource.PlanCheckoutRequest;
 import com.notearray.resource.UserResource.PlanCheckoutResponse;
 import com.notearray.resource.UserResource.PlanSyncRequest;
+import com.notearray.service.StripeBillingService;
 import jakarta.ws.rs.core.Response;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -93,35 +94,33 @@ class UserPlanSyncTest {
     }
 
     @Test
-    void onlyAllowsDeletingFreeAccountsAndBlocksPendingUpgrades() {
-        assertNull(UserResource.validateAccountDeletion(user));
+    void deleteAccountAwaitsStripeCancellationForPaidPlansAndBlocksPendingUpgrades() {
+        StripeBillingService billing = new StripeBillingService();
+        assertNull(UserResource.cancelSubscriptionAndValidateDeletion(user, billing));
 
-        // Free user who is in the middle of upgrading to Pro (pending_checkout) is blocked
+        // Free user who is in the middle of upgrading to Pro (pending_checkout) is blocked until resolved
         UserResource.applyPlanCheckout(user, new PlanCheckoutRequest("pro"), null, null);
-        Response pendingRes = UserResource.validateAccountDeletion(user);
+        Response pendingRes = UserResource.cancelSubscriptionAndValidateDeletion(user, billing);
         assertNotNull(pendingRes);
         assertEquals(400, pendingRes.getStatus());
 
         // Canceling the pending checkout on Free re-enables account deletion
         UserResource.applyPlanSync(user, new PlanSyncRequest("cancel", null, null, null));
-        assertNull(UserResource.validateAccountDeletion(user));
+        assertNull(UserResource.cancelSubscriptionAndValidateDeletion(user, billing));
 
+        // Pro and Premium users cancel their Stripe subscription and confirm before deletion
         user.plan = "pro";
-        Response proRes = UserResource.validateAccountDeletion(user);
-        assertNotNull(proRes);
-        assertEquals(400, proRes.getStatus());
-        assertEquals(
-                "To prevent being charged for our service, you may only delete free accounts. "
-                        + "Please convert your account to Free to stop the recurring charges.",
-                proRes.getEntity());
+        user.stripeSubscriptionId = "sub_pro_123";
+        assertNull(UserResource.cancelSubscriptionAndValidateDeletion(user, billing));
+        assertEquals("free", user.plan);
+        assertEquals(User.PLAN_STATUS_CANCELED, user.planStatus);
+        assertNull(user.stripeSubscriptionId);
 
         user.plan = "premium";
-        Response premiumRes = UserResource.validateAccountDeletion(user);
-        assertNotNull(premiumRes);
-        assertEquals(400, premiumRes.getStatus());
-
-        // Downgrading from Premium back to Free re-enables account deletion
-        UserResource.applyPlanCheckout(user, new PlanCheckoutRequest("free"), null, null);
-        assertNull(UserResource.validateAccountDeletion(user));
+        user.stripeSubscriptionId = "sub_premium_456";
+        assertNull(UserResource.cancelSubscriptionAndValidateDeletion(user, billing));
+        assertEquals("free", user.plan);
+        assertEquals(User.PLAN_STATUS_CANCELED, user.planStatus);
+        assertNull(user.stripeSubscriptionId);
     }
 }

@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { ActionIcon, Alert, Box, Button, Collapse, Checkbox, Group, List, Modal, Stack, Table, Text, TextInput, Title, UnstyledButton, Badge, FileInput, Loader, Card, SimpleGrid } from '@mantine/core'
 import { IconCheck, IconChevronDown, IconChevronUp, IconPin, IconSearch, IconSelector, IconUpload, IconMenu2, IconX } from '@tabler/icons-react'
 import { useMediaQuery } from '@mantine/hooks'
 import { RichTextEditor } from '@mantine/tiptap'
+import { Node, mergeAttributes } from '@tiptap/core'
 import { useEditor } from '@tiptap/react'
 import dompurify from 'dompurify'
 import StarterKit from '@tiptap/starter-kit'
@@ -57,7 +59,59 @@ function isAllowedLinkUri(url) {
   return true
 }
 
-function MarkdownEditor({ value, onChange }) {
+const ImageNode = Node.create({
+  name: 'image',
+  inline: false,
+  group: 'block',
+  draggable: true,
+  addAttributes() {
+    return {
+      src: { default: null },
+      alt: { default: null },
+      title: { default: null },
+    }
+  },
+  parseHTML() {
+    return [{ tag: 'img[src]' }]
+  },
+  renderHTML({ HTMLAttributes }) {
+    return [
+      'img',
+      mergeAttributes(
+        { style: 'max-width: 100%; height: auto; border-radius: 6px; margin: 8px 0; display: block;' },
+        HTMLAttributes,
+      ),
+    ]
+  },
+})
+
+function isSupportedAttachmentFile(file) {
+  if (!file) return false
+  const type = (file.type || '').toLowerCase()
+  if (
+    type === 'image/png' ||
+    type === 'image/jpeg' ||
+    type === 'image/gif' ||
+    type === 'image/webp' ||
+    type === 'application/pdf'
+  ) {
+    return true
+  }
+  const name = (file.name || '').toLowerCase()
+  return /\.(png|jpe?g|gif|webp|pdf)$/.test(name)
+}
+
+function deriveTitleFromFilename(filename) {
+  if (!filename) return 'Untitled Attachment'
+  const base = filename.replace(/\.[^/.]+$/, '').trim()
+  return (base || filename).slice(0, 255)
+}
+
+function MarkdownEditor({ value, onChange, onDropFiles, onPreviewAttachment }) {
+  const [dragOver, setDragOver] = useState(false)
+  const dropHandlerRef = useRef(onDropFiles)
+  dropHandlerRef.current = onDropFiles
+
   const editor = useEditor({
     // Tiptap 3 no longer re-renders the editor on every transaction by default;
     // Mantine's toolbar controls rely on it to reflect the active marks.
@@ -66,6 +120,7 @@ function MarkdownEditor({ value, onChange }) {
       // StarterKit 3 bundles link/underline extensions. Keep underline, but use
       // Mantine's Link so RichTextEditor.Link/Unlink controls can manage it.
       (StarterKit.default || StarterKit).configure({ link: false }),
+      ImageNode,
       Link.configure({
         openOnClick: false,
         autolink: true,
@@ -76,7 +131,7 @@ function MarkdownEditor({ value, onChange }) {
       Highlight,
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
       Placeholder.configure({
-        placeholder: 'Write your note here...',
+        placeholder: 'Write your note here, or drag and drop an image or PDF...',
       }),
       Markdown,
     ],
@@ -88,6 +143,33 @@ function MarkdownEditor({ value, onChange }) {
     editorProps: {
       attributes: {
         spellcheck: 'true',
+      },
+      handleClick: (view, pos, event) => {
+        const target = event?.target
+        const anchor = target?.closest ? target.closest('a[href]') : null
+        const href = anchor?.getAttribute('href')
+        if (href && href.startsWith('/api/attachments/')) {
+          event.preventDefault()
+          onPreviewAttachment?.(href, anchor.textContent || 'Attachment')
+          return true
+        }
+        return false
+      },
+      handleDrop: (view, event, _slice, moved) => {
+        if (moved) return false
+        const files = Array.from(event?.dataTransfer?.files || []).filter(isSupportedAttachmentFile)
+        if (files.length === 0) return false
+        event.preventDefault()
+        setDragOver(false)
+        dropHandlerRef.current?.(files, editor)
+        return true
+      },
+      handlePaste: (_view, event) => {
+        const files = Array.from(event?.clipboardData?.files || []).filter(isSupportedAttachmentFile)
+        if (files.length === 0) return false
+        event.preventDefault()
+        dropHandlerRef.current?.(files, editor)
+        return true
       },
     },
   })
@@ -102,38 +184,67 @@ function MarkdownEditor({ value, onChange }) {
   }, [editor, value])
 
   return (
-    <RichTextEditor editor={editor} style={{ width: "100%" }}>
-      <RichTextEditor.Toolbar sticky stickyOffset={60}>
-        <RichTextEditor.ControlsGroup>
-          <RichTextEditor.Bold />
-          <RichTextEditor.Italic />
-          <RichTextEditor.Underline />
-          <RichTextEditor.Strikethrough />
-          <RichTextEditor.ClearFormatting />
-        </RichTextEditor.ControlsGroup>
+    <div
+      onDragOver={(e) => {
+        if (e.dataTransfer?.types?.includes('Files')) {
+          e.preventDefault()
+          setDragOver(true)
+        }
+      }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={(e) => {
+        setDragOver(false)
+        const files = Array.from(e.dataTransfer?.files || []).filter(isSupportedAttachmentFile)
+        if (files.length > 0 && !e.defaultPrevented) {
+          e.preventDefault()
+          dropHandlerRef.current?.(files, editor)
+        }
+      }}
+      style={{ width: '100%' }}
+    >
+      <RichTextEditor editor={editor} style={{ width: "100%" }}>
+        <RichTextEditor.Toolbar sticky stickyOffset={60}>
+          <RichTextEditor.ControlsGroup>
+            <RichTextEditor.Bold />
+            <RichTextEditor.Italic />
+            <RichTextEditor.Underline />
+            <RichTextEditor.Strikethrough />
+            <RichTextEditor.ClearFormatting />
+          </RichTextEditor.ControlsGroup>
 
-        <RichTextEditor.ControlsGroup>
-          <RichTextEditor.H1 />
-          <RichTextEditor.H2 />
-          <RichTextEditor.H3 />
-        </RichTextEditor.ControlsGroup>
+          <RichTextEditor.ControlsGroup>
+            <RichTextEditor.H1 />
+            <RichTextEditor.H2 />
+            <RichTextEditor.H3 />
+          </RichTextEditor.ControlsGroup>
 
-        <RichTextEditor.ControlsGroup>
-          <RichTextEditor.BulletList />
-          <RichTextEditor.OrderedList />
-          <RichTextEditor.Blockquote />
-          <RichTextEditor.Code />
-          <RichTextEditor.CodeBlock />
-        </RichTextEditor.ControlsGroup>
+          <RichTextEditor.ControlsGroup>
+            <RichTextEditor.BulletList />
+            <RichTextEditor.OrderedList />
+            <RichTextEditor.Blockquote />
+            <RichTextEditor.Code />
+            <RichTextEditor.CodeBlock />
+          </RichTextEditor.ControlsGroup>
 
-        <RichTextEditor.ControlsGroup>
-          <RichTextEditor.Link />
-          <RichTextEditor.Unlink />
-        </RichTextEditor.ControlsGroup>
-      </RichTextEditor.Toolbar>
+          <RichTextEditor.ControlsGroup>
+            <RichTextEditor.Link />
+            <RichTextEditor.Unlink />
+          </RichTextEditor.ControlsGroup>
+        </RichTextEditor.Toolbar>
 
-      <RichTextEditor.Content style={{ minHeight: 400, maxHeight: '70vh', overflowY: 'auto', border: '1px solid var(--mantine-color-gray-3)', width: '100%' }} />
-    </RichTextEditor>
+        <RichTextEditor.Content
+          style={{
+            minHeight: 400,
+            maxHeight: '70vh',
+            overflowY: 'auto',
+            border: dragOver
+              ? '2px dashed var(--mantine-primary-color-filled)'
+              : '1px solid var(--mantine-color-gray-3)',
+            width: '100%',
+          }}
+        />
+      </RichTextEditor>
+    </div>
   )
 }
 
@@ -234,6 +345,7 @@ const TEXT_FIELDS = ['title']
 
 // Notes of the authenticated user. No owner selection needed.
 export default function NotesPanel({ registerActions } = {}) {
+  const navigate = useNavigate()
   const isMobile = useMediaQuery('(max-width: 768px)')
   const controlSize = isMobile ? 'xs' : 'sm'
   const inputSize = isMobile ? 'sm' : 'md'
@@ -280,16 +392,34 @@ export default function NotesPanel({ registerActions } = {}) {
   const [tagsVisible, setTagsVisible] = useState(false)
   const [importLoading, setImportLoading] = useState(false)
   const [importResult, setImportResult] = useState(null)
+  const [previewAttachment, setPreviewAttachment] = useState(null)
+  const [storageInfo, setStorageInfo] = useState({
+    usedBytes: 0,
+    limitBytes: 100 * 1024 * 1024,
+    noteCount: 0,
+    overQuota: false,
+  })
 
   const load = useCallback(async (searchParams, filterState) => {
     try {
       const apiFilters = buildApiFilters(filterState)
-      const [filtered, everything] = await Promise.all([
+      const [filtered, everything, storage] = await Promise.all([
         notesApi.list(searchParams, apiFilters),
         notesApi.list(),
+        notesApi.storage().catch(() => null),
       ])
       setNotes(filtered)
       setAllNotes(everything)
+      if (storage) {
+        const used = Number(storage.usedBytes) || 0
+        const limit = Number(storage.limitBytes) || 100 * 1024 * 1024
+        setStorageInfo({
+          usedBytes: used,
+          limitBytes: limit,
+          noteCount: Number(storage.noteCount) || 0,
+          overQuota: storage.overQuota != null ? !!storage.overQuota : used >= limit,
+        })
+      }
       setError(null)
     } catch (e) {
       if (e.status === 401) {
@@ -322,6 +452,12 @@ export default function NotesPanel({ registerActions } = {}) {
   }
 
   const openCreate = () => {
+    if (storageInfo.overQuota) {
+      setError(
+        'You have reached your plan storage limit. Please delete unneeded notes to free up space or upgrade your plan in Personal Settings.',
+      )
+      return
+    }
     clearAutoSaveTimer()
     baselineRef.current = null
     autoSavedRef.current = false
@@ -343,7 +479,15 @@ export default function NotesPanel({ registerActions } = {}) {
       registerActions({
         onCreate: openCreate,
         onRefresh: reload,
-        onImport: () => setImportModalOpened(true),
+        onImport: () => {
+          if (storageInfo.overQuota) {
+            setError(
+              'You have reached your plan storage limit. Please delete unneeded notes to free up space or upgrade your plan in Personal Settings.',
+            )
+            return
+          }
+          setImportModalOpened(true)
+        },
         onToggleSearch: () => setSearchVisible((v) => !v),
         onToggleTags: () => setTagsVisible((v) => !v),
         onSetPinned: () => {
@@ -363,9 +507,10 @@ export default function NotesPanel({ registerActions } = {}) {
         tagsOpen: tagsVisible,
         pinnedActive: filters.collection === 'pinned',
         importOpen: importModalOpened,
+        overQuota: storageInfo.overQuota,
       })
     }
-  }, [registerActions, createMode, editMode, searchVisible, tagsVisible, importModalOpened, activeSearch, filters])
+  }, [registerActions, createMode, editMode, searchVisible, tagsVisible, importModalOpened, activeSearch, filters, storageInfo.overQuota])
 
   const updateFilters = (patch) => {
     setFilters((f) => ({ ...f, ...patch }))
@@ -676,6 +821,88 @@ export default function NotesPanel({ registerActions } = {}) {
     }
   }
 
+  const handleDropFiles = async (files, editorInstance) => {
+    if (!files || files.length === 0) return
+    setFormError(null)
+    clearAutoSaveTimer()
+
+    let targetNote = editingNote
+    if (!targetNote) {
+      // If the note has no title yet, derive the title from the first dropped filename.
+      const resolvedTitle = form.title.trim() || deriveTitleFromFilename(files[0].name)
+      const resolvedTags = form.tags.trim().toLowerCase()
+      if (!form.title.trim()) {
+        setForm((prev) => ({ ...prev, title: resolvedTitle }))
+      }
+      setAutoSaveStatus('saving')
+      try {
+        const created = await notesApi.create({
+          title: resolvedTitle,
+          content: form.content || '',
+          tags: resolvedTags,
+        })
+        baselineRef.current = {
+          title: created.title || resolvedTitle,
+          content: created.content || form.content || '',
+          tags: created.tags || resolvedTags,
+          version: created.version ?? 0,
+        }
+        targetNote = created
+        setEditingNote(created)
+        autoSavedRef.current = true
+        setCreateMode(false)
+        setEditMode(true)
+      } catch (e) {
+        setAutoSaveError(e.message || 'Failed to create note for attachment')
+        setAutoSaveStatus('error')
+        setFormError(e.message || 'Failed to create note for attachment')
+        return
+      }
+    }
+
+    setAutoSaveStatus('saving')
+    try {
+      for (const file of files) {
+        const uploaded = await notesApi.uploadAttachment(targetNote.id, file)
+        if (!uploaded) continue
+        if (editorInstance) {
+          if ((uploaded.contentType || '').startsWith('image/')) {
+            editorInstance
+              .chain()
+              .focus()
+              .insertContent({
+                type: 'image',
+                attrs: { src: uploaded.url, alt: uploaded.filename, title: uploaded.filename },
+              })
+              .run()
+          } else {
+            editorInstance
+              .chain()
+              .focus()
+              .insertContent(
+                `<p><a href="${uploaded.url}">📄 ${uploaded.filename}</a></p>`,
+              )
+              .run()
+          }
+        }
+      }
+      const nextMarkdown = editorInstance?.storage?.markdown?.getMarkdown
+        ? editorInstance.storage.markdown.getMarkdown()
+        : form.content
+      setForm((prev) => ({ ...prev, content: nextMarkdown }))
+      await performAutoSave(targetNote.id, {
+        ...form,
+        title: form.title.trim() || targetNote.title,
+        content: nextMarkdown,
+      })
+      await reload()
+    } catch (e) {
+      setAutoSaveError(e.message || 'Failed to upload attachment')
+      setAutoSaveStatus('error')
+      setFormError(e.message || 'Failed to upload attachment')
+    }
+  }
+
   const handleImportJoplin = async (file) => {
     if (!file) return
     setImportLoading(true)
@@ -788,6 +1015,18 @@ export default function NotesPanel({ registerActions } = {}) {
       )}
 
       {/* Alerts */}
+      {storageInfo.overQuota && (
+        <Alert color="yellow" title="Storage Limit Reached">
+          <Group justify="space-between" align="center" wrap="wrap" gap="xs">
+            <Text size="sm">
+              You have reached your plan&apos;s storage limit ({(storageInfo.usedBytes / (1024 * 1024)).toFixed(2)} MB of {(storageInfo.limitBytes / (1024 * 1024)).toFixed(0)} MB used). Delete unneeded notes to free up space, or upgrade your plan to create new notes.
+            </Text>
+            <Button size="xs" variant="light" onClick={() => navigate('/settings')}>
+              Upgrade Plan
+            </Button>
+          </Group>
+        </Alert>
+      )}
       {error && (
         <Alert color="red" withCloseButton onClose={() => setError(null)}>
           {error}
@@ -824,8 +1063,15 @@ export default function NotesPanel({ registerActions } = {}) {
             )}
           </div>
           <div style={{ width: "100%" }}>
-            <Text fw={500} size="sm" mb={6}>Content</Text>
-            <div style={{ width: "100%" }}><MarkdownEditor value={form.content} onChange={(c) => setForm((prev) => ({ ...prev, content: c }))} /></div>
+            <Text fw={500} size="sm" mb={6}>Content (drag and drop images or PDFs into the editor)</Text>
+            <div style={{ width: "100%" }}>
+              <MarkdownEditor
+                value={form.content}
+                onChange={(c) => setForm((prev) => ({ ...prev, content: c }))}
+                onDropFiles={handleDropFiles}
+                onPreviewAttachment={(url, label) => setPreviewAttachment({ url, label })}
+              />
+            </div>
           </div>
           <AutoSaveStatus status={autoSaveStatus} lastSaved={lastSaved} errorMessage={autoSaveError} />
           <Group justify={isMobile ? 'flex-end' : 'space-between'} gap="xs">
@@ -984,6 +1230,39 @@ export default function NotesPanel({ registerActions } = {}) {
             <Button onClick={() => setHelpOpened(false)} size="sm">Got it</Button>
           </Group>
         </Stack>
+      </Modal>
+
+      {/* Attachment / PDF Preview Modal */}
+      <Modal
+        opened={!!previewAttachment}
+        onClose={() => setPreviewAttachment(null)}
+        title={previewAttachment?.label || 'Attachment Preview'}
+        size="xl"
+      >
+        {previewAttachment && (
+          <Stack gap="sm">
+            <iframe
+              src={previewAttachment.url}
+              title={previewAttachment.label || 'Attachment'}
+              style={{ width: '100%', height: '70vh', border: '1px solid var(--mantine-color-default-border)', borderRadius: 6 }}
+            />
+            <Group justify="flex-end">
+              <Button
+                component="a"
+                href={previewAttachment.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                variant="light"
+                size="sm"
+              >
+                Open in New Tab
+              </Button>
+              <Button onClick={() => setPreviewAttachment(null)} size="sm">
+                Close
+              </Button>
+            </Group>
+          </Stack>
+        )}
       </Modal>
     </Stack>
   )

@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.notearray.resource.AttachmentResource;
 import com.notearray.resource.NoteResource;
 import com.notearray.resource.SpaResource;
 import com.notearray.resource.UserResource;
@@ -21,6 +22,8 @@ class NoteArrayApplicationTest {
         NoteArrayApplication app = new NoteArrayApplication();
         Set<Class<?>> classes = app.getClasses();
 
+        assertTrue(classes.contains(AttachmentResource.class),
+            "AttachmentResource should be registered in NoteArrayApplication");
         assertTrue(classes.contains(UserResource.class),
             "UserResource should be registered in NoteArrayApplication");
         assertTrue(classes.contains(NoteResource.class),

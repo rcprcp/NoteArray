@@ -93,11 +93,14 @@ export default function PersonalSettings({
 
   const isFreePlan = (user.plan || 'free').toLowerCase() === 'free'
   const hasPendingUpgrade = user.planStatus === 'pending_checkout' || !!user.pendingPlan
-  const canDeleteAccount = isFreePlan && !hasPendingUpgrade
+  const canDeleteAccount = !hasPendingUpgrade
 
   const handleDeleteAccount = async () => {
     if (!canDeleteAccount) return
-    if (!window.confirm('Are you sure you want to permanently delete your account and all of your notes?')) {
+    const confirmMsg = isFreePlan
+      ? 'Are you sure you want to permanently delete your account and all of your notes?'
+      : 'Deleting your account will cancel your recurring Stripe subscription, await confirmation from Stripe, and permanently delete your account and all of your notes. Continue?'
+    if (!window.confirm(confirmMsg)) {
       return
     }
     setDeleteError(null)
@@ -514,10 +517,20 @@ export default function PersonalSettings({
               {deleteError}
             </Alert>
           )}
-          {!canDeleteAccount && (
+          {hasPendingUpgrade && (
             <Alert color="yellow">
-              To prevent being charged for our service, you may only delete free accounts. Please convert your account to Free to stop the recurring charges.
+              Please complete or cancel your pending Stripe checkout above before deleting your account.
             </Alert>
+          )}
+          {!isFreePlan && !hasPendingUpgrade && (
+            <Alert color="yellow">
+              You are currently on the <b style={{ textTransform: 'capitalize' }}>{user.plan}</b> plan. Clicking <b>Delete my account</b> will cancel your recurring Stripe subscription, await confirmation from Stripe, and then permanently delete your account and all notes.
+            </Alert>
+          )}
+          {deletingAccount && !isFreePlan && (
+            <Text size="xs" c="dimmed">
+              Awaiting Stripe subscription cancellation confirmation and deleting account...
+            </Text>
           )}
           <Group justify="flex-start">
             <Button

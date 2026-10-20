@@ -7,6 +7,7 @@ import com.notearray.service.EmailPolicy;
 import com.notearray.service.LoginThrottleService;
 import com.notearray.service.PasswordPolicy;
 import com.notearray.service.SessionService;
+import com.notearray.service.StripeBillingService;
 import io.quarkus.elytron.security.common.BcryptUtil;
 import io.vertx.core.http.HttpServerRequest;
 import jakarta.inject.Inject;
@@ -61,6 +62,9 @@ public class UserResource {
 
     @Inject
     LoginThrottleService throttle;
+
+    @Inject
+    StripeBillingService stripeBilling;
 
     /**
      * Trust the X-Forwarded-For header when resolving the client IP. Enable only
@@ -494,26 +498,38 @@ public class UserResource {
         if (target == null) {
             return Response.status(Response.Status.NOT_FOUND).build();
         }
-        Response planCheck = validateAccountDeletion(target);
-        if (planCheck != null) {
-            return planCheck;
+        Response deleteError = cancelSubscriptionAndValidateDeletion(target, stripeBilling);
+        if (deleteError != null) {
+            return deleteError;
         }
+        sessions.invalidateAllForUser(target.id);
         target.delete();
         return Response.noContent()
                 .header("Set-Cookie", sessions.expiredCookieHeader())
                 .build();
     }
 
-    static Response validateAccountDeletion(User target) {
-        String plan = target != null && target.plan != null ? target.plan.trim().toLowerCase() : "free";
-        boolean pendingUpgrade = target != null
-                && (User.PLAN_STATUS_PENDING_CHECKOUT.equalsIgnoreCase(target.planStatus)
-                        || !isBlank(target.pendingPlan));
-        if (!"free".equals(plan) || pendingUpgrade) {
+    static Response cancelSubscriptionAndValidateDeletion(User target, StripeBillingService billing) {
+        if (target == null) {
+            return Response.status(Response.Status.NOT_FOUND).build();
+        }
+        boolean pendingUpgrade = User.PLAN_STATUS_PENDING_CHECKOUT.equalsIgnoreCase(target.planStatus)
+                || !isBlank(target.pendingPlan);
+        if (pendingUpgrade) {
             return Response.status(Response.Status.BAD_REQUEST)
-                    .entity("To prevent being charged for our service, you may only delete free accounts. "
-                            + "Please convert your account to Free to stop the recurring charges.")
+                    .entity("Please cancel or complete your pending Stripe checkout before deleting your account.")
                     .build();
+        }
+        String plan = target.plan != null ? target.plan.trim().toLowerCase() : "free";
+        if (!"free".equals(plan) || !isBlank(target.stripeSubscriptionId)) {
+            StripeBillingService service = billing != null ? billing : new StripeBillingService();
+            boolean confirmed = service.awaitSubscriptionCancellation(target);
+            if (!confirmed) {
+                return Response.status(Response.Status.BAD_GATEWAY)
+                        .entity("Could not confirm subscription cancellation with Stripe. "
+                                + "Your account was not deleted to prevent recurring charges.")
+                        .build();
+            }
         }
         return null;
     }

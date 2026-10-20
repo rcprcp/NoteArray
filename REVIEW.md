@@ -156,8 +156,13 @@
 - [ ] **16. Joplin folders are flattened to tags** (`NoteResource.java:394-402`) — hierarchy is lost on
   import. Preserve folders as a real nesting structure (or nested tag convention).
 
-- [ ] **17. No images/attachments** — rich text editor with no way to insert an image. Add upload
+- [x] **17. No images/attachments** — rich text editor with no way to insert an image. Add upload
   endpoint + storage with size quotas, or at minimum paste-an-image.
+  *Done (branch `agent/attachments-drop-target`): added `note_attachments` table (`V1.1.8`) with
+  `BYTEA` storage and `ON DELETE CASCADE` on both `note_id` and `owner_id`, `AttachmentResource`
+  (`POST /api/notes/{noteId}/attachments`, `GET /api/attachments/{id}`), `StorageQuota` enforcing
+  per-plan quotas (100 MB Free / 1 GB Pro / 5 GB Premium) and 10 MB per-attachment limit, and Tiptap
+  drag-and-drop + paste support for images and PDFs (`NotesPanel.jsx`).*
 
 - [x] **18. No dark mode** — theme picker changes hue only; `MantineProvider` has no `forceColorScheme`.
   Also theme is read from localStorage first, then server (`main.jsx:15-26`) → flicker; prefer the server

@@ -84,4 +84,13 @@ export const notesApi = {
       credentials: 'include',
     })
   },
+  uploadAttachment: (noteId, file) => {
+    const qs = new URLSearchParams({ filename: file.name || 'attachment' }).toString()
+    return request(`/api/notes/${noteId}/attachments?${qs}`, {
+      method: 'POST',
+      headers: { 'Content-Type': file.type || 'application/octet-stream' },
+      body: file,
+      credentials: 'include',
+    })
+  },
 }
