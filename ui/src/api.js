@@ -35,6 +35,8 @@ export const usersApi = {
   logout: () => request('/api/users/logout', { method: 'POST' }),
   create: (user) => request('/api/users', { method: 'POST', body: JSON.stringify(user) }),
   update: (id, user) => request(`/api/users/${id}`, { method: 'PUT', body: JSON.stringify(user) }),
+  checkoutPlan: (id, plan) => request(`/api/users/${id}/plan/checkout`, { method: 'POST', body: JSON.stringify({ plan }) }),
+  syncPlan: (id, payload) => request(`/api/users/${id}/plan/sync`, { method: 'POST', body: JSON.stringify(payload) }),
   remove: (id) => request(`/api/users/${id}`, { method: 'DELETE' }),
   list: () => request('/api/users'),
 }
@@ -62,6 +64,7 @@ export const notesApi = {
     return request(qs ? `/api/notes?${qs}` : '/api/notes')
   },
   get: (id) => request(`/api/notes/${id}`),
+  storage: () => request('/api/notes/storage'),
   create: (note) => request('/api/notes', { method: 'POST', body: JSON.stringify(note) }),
   update: (id, note) => request(`/api/notes/${id}`, { method: 'PUT', body: JSON.stringify(note) }),
   remove: (id) => request(`/api/notes/${id}`, { method: 'DELETE' }),

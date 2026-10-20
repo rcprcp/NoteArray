@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { ActionIcon, Box, Button, Group, Menu } from '@mantine/core'
-import { IconCheck, IconDots } from '@tabler/icons-react'
+import { IconCheck, IconChevronDown, IconDots } from '@tabler/icons-react'
 
 // Gap between header items, kept in one place so measurement matches layout.
 const ITEM_GAP = 8
@@ -13,18 +13,6 @@ const OVERFLOW_WIDTH = 40
 // next one to its left, and so on. The split is measured at runtime, so it
 // adapts to the viewport, zoom level and label lengths rather than a fixed
 // breakpoint.
-//
-// Props:
-//   items      — action descriptors in left-to-right order:
-//                { key, label, icon?, active?, toggle?, onClick }
-//   userMenu   — descriptor for the user menu, treated as the rightmost item:
-//                { element, measureElement, menuItems }
-//                `element` renders inline when it fits, `measureElement` is the
-//                width probe and `menuItems()` renders it in the dropdown.
-//   availableWidth — the width this row may occupy, measured by the parent from
-//                an element whose size does not depend on how many items are
-//                currently shown. Falls back to the row's own width.
-//   onOverflowChange — called with true when at least one item is pushed off.
 export default function HeaderActions({ items, userMenu, availableWidth = 0, onOverflowChange }) {
   const rowRef = useRef(null)
   const measureRef = useRef(null)
@@ -110,53 +98,103 @@ export default function HeaderActions({ items, userMenu, availableWidth = 0, onO
         justify="space-between"
         style={{ minWidth: 0, flex: 1 }}
       >
-        {visibleActions.map((item) => (
-          <Button
-            key={item.key}
-            variant={item.active && !item.disabled ? 'filled' : 'light'}
-            leftSection={item.icon ? <item.icon size={16} /> : null}
-            disabled={item.disabled}
-            onClick={item.onClick}
-            aria-expanded={item.toggle ? item.active : undefined}
-            style={{ flex: '0 0 auto' }}
-          >
-            {item.label}
-          </Button>
-        ))}
-
-        {showUserMenu && userMenu?.element}
-
-        {/* The overflow button always occupies its slot so the spacing reserved
-            for it stays constant whether or not the menu is currently shown. */}
-        <Box style={{ flex: '0 0 auto', width: OVERFLOW_WIDTH, display: 'flex', justifyContent: 'flex-end' }}>
-          {hasOverflow && (
-            <Menu shadow="md" width={240} position="bottom-end" opened={menuOpened} onChange={setMenuOpened}>
-              <Menu.Target>
-                <ActionIcon variant="light" size="lg" aria-label="More actions">
-                  <IconDots size={18} />
-                </ActionIcon>
-              </Menu.Target>
-              <Menu.Dropdown>
-                {overflowActions.map((item) => (
-                  <Menu.Item
-                    key={item.key}
-                    disabled={item.disabled}
+        {/* Left-justified action buttons */}
+        <Group gap={ITEM_GAP} wrap="nowrap" style={{ minWidth: 0 }}>
+          {visibleActions.map((item) =>
+            item.menu ? (
+              <Menu key={item.key} shadow="md" width={200} position="bottom-start">
+                <Menu.Target>
+                  <Button
+                    variant={item.active && !item.disabled ? 'filled' : 'light'}
                     leftSection={item.icon ? <item.icon size={16} /> : null}
-                    rightSection={item.active && !item.disabled ? <IconCheck size={16} /> : null}
-                    onClick={() => {
-                      if (item.disabled) return
-                      item.onClick?.()
-                      setMenuOpened(false)
-                    }}
+                    rightSection={<IconChevronDown size={14} />}
+                    disabled={item.disabled}
+                    style={{ flex: '0 0 auto' }}
                   >
                     {item.label}
-                  </Menu.Item>
-                ))}
-                {overflowUser && userMenu?.menuItems?.()}
-              </Menu.Dropdown>
-            </Menu>
+                  </Button>
+                </Menu.Target>
+                <Menu.Dropdown>
+                  {item.menu.map((sub) => (
+                    <Menu.Item
+                      key={sub.key}
+                      rightSection={sub.active ? <IconCheck size={16} /> : null}
+                      onClick={sub.onClick}
+                    >
+                      {sub.label}
+                    </Menu.Item>
+                  ))}
+                </Menu.Dropdown>
+              </Menu>
+            ) : (
+              <Button
+                key={item.key}
+                variant={item.active && !item.disabled ? 'filled' : 'light'}
+                leftSection={item.icon ? <item.icon size={16} /> : null}
+                disabled={item.disabled}
+                onClick={item.onClick}
+                aria-expanded={item.toggle ? item.active : undefined}
+                style={{ flex: '0 0 auto' }}
+              >
+                {item.label}
+              </Button>
+            ),
           )}
-        </Box>
+        </Group>
+
+        {/* Right-justified avatar and overflow (…) menu */}
+        <Group gap={ITEM_GAP} wrap="nowrap" justify="flex-end" style={{ flex: '0 0 auto', marginLeft: 'auto' }}>
+          {showUserMenu && userMenu?.element}
+
+          {hasOverflow && (
+            <Box style={{ flex: '0 0 auto', width: OVERFLOW_WIDTH, display: 'flex', justifyContent: 'flex-end' }}>
+              <Menu shadow="md" width={240} position="bottom-end" opened={menuOpened} onChange={setMenuOpened}>
+                <Menu.Target>
+                  <ActionIcon variant="light" size="lg" aria-label="More actions">
+                    <IconDots size={18} />
+                  </ActionIcon>
+                </Menu.Target>
+                <Menu.Dropdown>
+                  {overflowActions.map((item) =>
+                    item.menu ? (
+                      <Fragment key={item.key}>
+                        <Menu.Divider />
+                        <Menu.Label>{item.label}</Menu.Label>
+                        {item.menu.map((sub) => (
+                          <Menu.Item
+                            key={sub.key}
+                            rightSection={sub.active ? <IconCheck size={16} /> : null}
+                            onClick={() => {
+                              sub.onClick?.()
+                              setMenuOpened(false)
+                            }}
+                          >
+                            {sub.label}
+                          </Menu.Item>
+                        ))}
+                      </Fragment>
+                    ) : (
+                      <Menu.Item
+                        key={item.key}
+                        disabled={item.disabled}
+                        leftSection={item.icon ? <item.icon size={16} /> : null}
+                        rightSection={item.active && !item.disabled ? <IconCheck size={16} /> : null}
+                        onClick={() => {
+                          if (item.disabled) return
+                          item.onClick?.()
+                          setMenuOpened(false)
+                        }}
+                      >
+                        {item.label}
+                      </Menu.Item>
+                    ),
+                  )}
+                  {overflowUser && userMenu?.menuItems?.()}
+                </Menu.Dropdown>
+              </Menu>
+            </Box>
+          )}
+        </Group>
       </Group>
 
       {/* Hidden row used purely for measuring natural item widths. */}
@@ -180,6 +218,7 @@ export default function HeaderActions({ items, userMenu, availableWidth = 0, onO
             key={item.key}
             variant={item.active ? 'filled' : 'light'}
             leftSection={item.icon ? <item.icon size={16} /> : null}
+            rightSection={item.menu ? <IconChevronDown size={14} /> : null}
             style={{ flex: '0 0 auto' }}
             tabIndex={-1}
             aria-hidden="true"

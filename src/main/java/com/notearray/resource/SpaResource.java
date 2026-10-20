@@ -60,7 +60,11 @@ public class SpaResource {
         if (user == null) {
             return Response.seeOther(URI.create("/login")).build();
         }
-        if ("notes".equals(path) || "settings".equals(path)) {
+        if ("notes".equals(path)
+                || "settings".equals(path)
+                || "help/faq".equals(path)
+                || "help/privacy".equals(path)
+                || "help/security".equals(path)) {
             return serveIndexHtml();
         }
         return Response.seeOther(URI.create("/notes")).build();

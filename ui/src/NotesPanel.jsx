@@ -834,7 +834,7 @@ export default function NotesPanel({ registerActions } = {}) {
           </Group>
         </Stack>
       ) : notes.length === 0 ? (
-        <Text c="dimmed" ta="center" py="xl">{activeFilterCount > 0 ? 'No notes match your search or filters.' : 'You have no notes yet.'}</Text>
+        <Text c="dimmed" ta="center" py="xl">{activeFilterCount > 0 ? 'No notes match your search or filters.' : 'You have no notes yet. Use Create Note or Import some notes from a backup.'}</Text>
       ) : isMobile ? (
         // Mobile: Card view
         <SimpleGrid cols={1} spacing="md" style={{ width: "100%" }}>

@@ -6,6 +6,13 @@ import LoginPage from './LoginPage'
 import NotesPanel from './NotesPanel'
 import HeaderActions from './HeaderActions'
 import PersonalSettings from './PersonalSettings'
+import HelpPage from './HelpPage'
+
+// Adjustable breakpoint (in px) and side margin for switching between
+// wideMode (NoteArray title shown + 10% side margins on all pages) and
+// compactMode (NoteArray title hidden + full-width pages).
+export const WIDE_MODE_MIN_WIDTH = 960
+export const WIDE_MODE_SIDE_MARGIN = '10%'
 
 function initials(name) {
   const parts = (name || '').trim().split(/\s+/).filter(Boolean)
@@ -13,7 +20,7 @@ function initials(name) {
   return (parts[0][0] + (parts[1]?.[0] || '')).toUpperCase()
 }
 
-export default function App({ themeColor, onThemeChange, currentUser, onLogin, onLogout }) {
+export default function App({ themeColor, onThemeChange, onPlanChange, onPlanSync, currentUser, onLogin, onLogout }) {
   const navigate = useNavigate()
   const location = useLocation()
   const [actions, setActions] = useState(null)
@@ -48,6 +55,8 @@ export default function App({ themeColor, onThemeChange, currentUser, onLogin, o
   // because items were moved into the overflow menu.
   const headerInner = Math.max(0, headerWidth - 32) // p="md" => 16px padding each side
   const availableActionsWidth = Math.max(0, headerInner - titleWidth - 8)
+  const wideMode = !headerOverflow && (headerWidth === 0 || headerWidth >= WIDE_MODE_MIN_WIDTH)
+  const compactMode = !wideMode
 
   const handleLoginSuccess = async () => {
     await onLogin()
@@ -81,6 +90,16 @@ export default function App({ themeColor, onThemeChange, currentUser, onLogin, o
     { key: 'tags', label: 'Find by Tag', active: actions?.tagsOpen, toggle: true, disabled: listOnlyDisabled, onClick: () => actions?.onToggleTags?.() },
     { key: 'pinned', label: 'Pinned', active: actions?.pinnedActive, toggle: true, disabled: listOnlyDisabled, onClick: () => actions?.onSetPinned?.() },
     { key: 'import', label: 'Import', icon: IconUpload, active: actions?.importOpen, toggle: true, disabled: listOnlyDisabled, onClick: () => actions?.onImport?.() },
+    {
+      key: 'help',
+      label: 'Help/About',
+      active: location.pathname.startsWith('/help/'),
+      menu: [
+        { key: 'faq', label: 'FAQ', active: location.pathname === '/help/faq', onClick: () => navigate('/help/faq') },
+        { key: 'privacy', label: 'Privacy Policy', active: location.pathname === '/help/privacy', onClick: () => navigate('/help/privacy') },
+        { key: 'security', label: 'Security Notes', active: location.pathname === '/help/security', onClick: () => navigate('/help/security') },
+      ],
+    },
   ]
 
   return (
@@ -100,11 +119,11 @@ export default function App({ themeColor, onThemeChange, currentUser, onLogin, o
               cursor: 'pointer',
               flex: '0 0 auto',
               whiteSpace: 'nowrap',
-              visibility: headerOverflow ? 'hidden' : 'visible',
-              width: headerOverflow ? 0 : undefined,
+              visibility: compactMode ? 'hidden' : 'visible',
+              width: compactMode ? 0 : undefined,
               overflow: 'hidden',
             }}
-            aria-hidden={headerOverflow}
+            aria-hidden={compactMode}
             onClick={goToList}
           >
             NoteArray
@@ -145,9 +164,19 @@ export default function App({ themeColor, onThemeChange, currentUser, onLogin, o
         </Group>
       </Box>
 
-      <Container fluid my="md" style={{ flex: 1, width: '100%', maxWidth: '100%' }}>
+      <Container
+        fluid
+        my="md"
+        style={{
+          flex: 1,
+          width: '100%',
+          maxWidth: '100%',
+          paddingLeft: wideMode ? WIDE_MODE_SIDE_MARGIN : undefined,
+          paddingRight: wideMode ? WIDE_MODE_SIDE_MARGIN : undefined,
+        }}
+      >
         <Routes>
-          <Route path="/notes" element={<NotesPanel registerActions={handleRegister} />} />
+          <Route path="/notes" element={<NotesPanel registerActions={handleRegister} wideMode={wideMode} />} />
           <Route
             path="/settings"
             element={
@@ -155,10 +184,16 @@ export default function App({ themeColor, onThemeChange, currentUser, onLogin, o
                 user={currentUser}
                 themeColor={themeColor}
                 onThemeChange={onThemeChange}
+                onPlanChange={onPlanChange}
+                onPlanSync={onPlanSync}
                 onLogout={onLogout}
+                wideMode={wideMode}
               />
             }
           />
+          <Route path="/help/faq" element={<HelpPage pageKey="faq" wideMode={wideMode} />} />
+          <Route path="/help/privacy" element={<HelpPage pageKey="privacy" wideMode={wideMode} />} />
+          <Route path="/help/security" element={<HelpPage pageKey="security" wideMode={wideMode} />} />
           <Route path="*" element={<Navigate to="/notes" replace />} />
         </Routes>
       </Container>

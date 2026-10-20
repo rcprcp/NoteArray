@@ -25,6 +25,8 @@ import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import java.net.URI;
+import java.time.Instant;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
@@ -41,6 +43,8 @@ public class UserResource {
     private static final Set<String> THEME_COLORS = Set.of(
             "dark", "gray", "red", "pink", "grape", "violet", "indigo", "blue",
             "cyan", "teal", "green", "lime", "yellow", "orange");
+
+    private static final Set<String> PLANS = Set.of("free", "pro", "premium");
 
     @Context
     HttpHeaders headers;
@@ -65,6 +69,12 @@ public class UserResource {
     @ConfigProperty(name = "notearray.rate-limit.trust-proxy", defaultValue = "false")
     boolean trustProxy;
 
+    @ConfigProperty(name = "notearray.stripe.pro-checkout-url")
+    Optional<String> stripeProCheckoutUrl;
+
+    @ConfigProperty(name = "notearray.stripe.premium-checkout-url")
+    Optional<String> stripePremiumCheckoutUrl;
+
     /** Request body for create/update. For update, every field is optional. */
     public record UserRequest(
             String name,
@@ -72,18 +82,42 @@ public class UserResource {
             String password,
             String currentPassword,
             String confirmPassword,
-            String themeColor) {
+            String themeColor,
+            String plan) {
         public UserRequest(String name, String email, String password, String themeColor) {
-            this(name, email, password, null, null, themeColor);
+            this(name, email, password, null, null, themeColor, null);
         }
 
         public UserRequest(String name, String email, String password, String currentPassword, String themeColor) {
-            this(name, email, password, currentPassword, null, themeColor);
+            this(name, email, password, currentPassword, null, themeColor, null);
+        }
+
+        public UserRequest(
+                String name,
+                String email,
+                String password,
+                String currentPassword,
+                String confirmPassword,
+                String themeColor) {
+            this(name, email, password, currentPassword, confirmPassword, themeColor, null);
         }
     }
 
     /** Request body for login. */
     public record LoginRequest(String email, String password) {}
+
+    /** Request body for initiating a plan change / Stripe Checkout session. */
+    public record PlanCheckoutRequest(String plan) {}
+
+    /** Response returned when initiating a plan change or Stripe Checkout session. */
+    public record PlanCheckoutResponse(User user, String checkoutUrl, String status) {}
+
+    /** Request body for synchronizing plan state after Stripe Checkout or webhook events. */
+    public record PlanSyncRequest(
+            String action,
+            String plan,
+            String stripeCustomerId,
+            String stripeSubscriptionId) {}
 
     /** Get the authenticated user from the session cookie. Returns null if not logged in. */
     private User getAuthenticatedUser() {
@@ -179,6 +213,9 @@ public class UserResource {
         if (!isBlank(req.themeColor()) && !THEME_COLORS.contains(req.themeColor())) {
             return Response.status(Response.Status.BAD_REQUEST).entity("invalid themeColor").build();
         }
+        if (!isBlank(req.plan()) && !PLANS.contains(req.plan().trim().toLowerCase())) {
+            return Response.status(Response.Status.BAD_REQUEST).entity("invalid plan").build();
+        }
         if (User.findByName(normalizedName) != null) {
             return Response.status(Response.Status.CONFLICT).entity("name already in use").build();
         }
@@ -195,6 +232,9 @@ public class UserResource {
         user.passwordHash = BcryptUtil.bcryptHash(req.password());
         if (!isBlank(req.themeColor())) {
             user.themeColor = req.themeColor();
+        }
+        if (!isBlank(req.plan())) {
+            user.plan = req.plan().trim().toLowerCase();
         }
         user.persist();
         try {
@@ -255,6 +295,9 @@ public class UserResource {
         if (!isBlank(req.themeColor()) && !THEME_COLORS.contains(req.themeColor())) {
             return Response.status(Response.Status.BAD_REQUEST).entity("invalid themeColor").build();
         }
+        if (!isBlank(req.plan()) && !PLANS.contains(req.plan().trim().toLowerCase())) {
+            return Response.status(Response.Status.BAD_REQUEST).entity("invalid plan").build();
+        }
         if (!isBlank(req.name())) {
             String normalizedName = EmailPolicy.normalizeName(req.name());
             String nameError = EmailPolicy.validateName(normalizedName);
@@ -294,6 +337,9 @@ public class UserResource {
         if (!isBlank(req.themeColor())) {
             user.themeColor = req.themeColor();
         }
+        if (!isBlank(req.plan())) {
+            user.plan = req.plan().trim().toLowerCase();
+        }
 
         try {
             user.flush();
@@ -314,6 +360,125 @@ public class UserResource {
         return response.build();
     }
 
+    @POST
+    @Path("/{id}/plan/checkout")
+    @Transactional
+    public Response checkoutPlan(@PathParam("id") UUID id, PlanCheckoutRequest req) {
+        User caller = getAuthenticatedUser();
+        if (caller == null) {
+            return Response.status(Response.Status.UNAUTHORIZED).build();
+        }
+        if (!canAccessUser(caller, id)) {
+            return Response.status(Response.Status.NOT_FOUND).build();
+        }
+        User user = User.findById(id);
+        if (user == null) {
+            return Response.status(Response.Status.NOT_FOUND).build();
+        }
+        return applyPlanCheckout(
+                user,
+                req,
+                stripeProCheckoutUrl != null ? stripeProCheckoutUrl.orElse(null) : null,
+                stripePremiumCheckoutUrl != null ? stripePremiumCheckoutUrl.orElse(null) : null);
+    }
+
+    @POST
+    @Path("/{id}/plan/sync")
+    @Transactional
+    public Response syncPlan(@PathParam("id") UUID id, PlanSyncRequest req) {
+        User caller = getAuthenticatedUser();
+        if (caller == null) {
+            return Response.status(Response.Status.UNAUTHORIZED).build();
+        }
+        if (!canAccessUser(caller, id)) {
+            return Response.status(Response.Status.NOT_FOUND).build();
+        }
+        User user = User.findById(id);
+        if (user == null) {
+            return Response.status(Response.Status.NOT_FOUND).build();
+        }
+        return applyPlanSync(user, req);
+    }
+
+    static Response applyPlanCheckout(
+            User user,
+            PlanCheckoutRequest req,
+            String proCheckoutUrl,
+            String premiumCheckoutUrl) {
+        if (req == null || isBlank(req.plan())) {
+            return Response.status(Response.Status.BAD_REQUEST).entity("plan is required").build();
+        }
+        String targetPlan = req.plan().trim().toLowerCase();
+        if (!PLANS.contains(targetPlan)) {
+            return Response.status(Response.Status.BAD_REQUEST).entity("invalid plan").build();
+        }
+        if ("free".equals(targetPlan)) {
+            user.plan = "free";
+            user.planStatus = User.PLAN_STATUS_ACTIVE;
+            user.pendingPlan = null;
+            user.stripeSubscriptionId = null;
+            user.planUpdatedAt = Instant.now();
+            return Response.ok(new PlanCheckoutResponse(user, null, user.planStatus)).build();
+        }
+        // Paid tier ('pro' or 'premium'): record pending Stripe checkout state.
+        user.pendingPlan = targetPlan;
+        user.planStatus = User.PLAN_STATUS_PENDING_CHECKOUT;
+        user.planUpdatedAt = Instant.now();
+        String checkoutUrl = "pro".equals(targetPlan) ? proCheckoutUrl : premiumCheckoutUrl;
+        return Response.ok(new PlanCheckoutResponse(user, checkoutUrl, user.planStatus)).build();
+    }
+
+    static Response applyPlanSync(User user, PlanSyncRequest req) {
+        if (req == null || isBlank(req.action())) {
+            return Response.status(Response.Status.BAD_REQUEST).entity("action is required").build();
+        }
+        String action = req.action().trim().toLowerCase();
+        switch (action) {
+            case "confirm": {
+                String resolvedPlan = !isBlank(req.plan())
+                        ? req.plan().trim().toLowerCase()
+                        : user.pendingPlan;
+                if (isBlank(resolvedPlan) || !PLANS.contains(resolvedPlan)) {
+                    return Response.status(Response.Status.BAD_REQUEST)
+                            .entity("valid target plan is required to confirm").build();
+                }
+                user.plan = resolvedPlan;
+                user.pendingPlan = null;
+                user.planStatus = User.PLAN_STATUS_ACTIVE;
+                if (!isBlank(req.stripeCustomerId())) {
+                    user.stripeCustomerId = req.stripeCustomerId().trim();
+                }
+                if (!isBlank(req.stripeSubscriptionId())) {
+                    user.stripeSubscriptionId = req.stripeSubscriptionId().trim();
+                }
+                user.planUpdatedAt = Instant.now();
+                return Response.ok(user).build();
+            }
+            case "cancel": {
+                user.pendingPlan = null;
+                user.planStatus = User.PLAN_STATUS_ACTIVE;
+                user.planUpdatedAt = Instant.now();
+                return Response.ok(user).build();
+            }
+            case "past_due": {
+                user.planStatus = User.PLAN_STATUS_PAST_DUE;
+                user.planUpdatedAt = Instant.now();
+                return Response.ok(user).build();
+            }
+            case "subscription_deleted": {
+                user.plan = "free";
+                user.pendingPlan = null;
+                user.planStatus = User.PLAN_STATUS_CANCELED;
+                user.stripeSubscriptionId = null;
+                user.planUpdatedAt = Instant.now();
+                return Response.ok(user).build();
+            }
+            default:
+                return Response.status(Response.Status.BAD_REQUEST)
+                        .entity("invalid sync action").build();
+        }
+    }
+
     @DELETE
     @Path("/{id}")
     @Transactional
@@ -325,9 +490,32 @@ public class UserResource {
         if (!canAccessUser(caller, id)) {
             return Response.status(Response.Status.NOT_FOUND).build();
         }
-        return User.deleteById(id)
-                ? Response.noContent().build()
-                : Response.status(Response.Status.NOT_FOUND).build();
+        User target = User.findById(id);
+        if (target == null) {
+            return Response.status(Response.Status.NOT_FOUND).build();
+        }
+        Response planCheck = validateAccountDeletion(target);
+        if (planCheck != null) {
+            return planCheck;
+        }
+        target.delete();
+        return Response.noContent()
+                .header("Set-Cookie", sessions.expiredCookieHeader())
+                .build();
+    }
+
+    static Response validateAccountDeletion(User target) {
+        String plan = target != null && target.plan != null ? target.plan.trim().toLowerCase() : "free";
+        boolean pendingUpgrade = target != null
+                && (User.PLAN_STATUS_PENDING_CHECKOUT.equalsIgnoreCase(target.planStatus)
+                        || !isBlank(target.pendingPlan));
+        if (!"free".equals(plan) || pendingUpgrade) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity("To prevent being charged for our service, you may only delete free accounts. "
+                            + "Please convert your account to Free to stop the recurring charges.")
+                    .build();
+        }
+        return null;
     }
 
     private static boolean isBlank(String s) {

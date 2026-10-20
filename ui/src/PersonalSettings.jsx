@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import {
   Alert,
   Badge,
@@ -7,6 +8,7 @@ import {
   Collapse,
   Group,
   PasswordInput,
+  Progress,
   SimpleGrid,
   Stack,
   Table,
@@ -14,15 +16,29 @@ import {
   Title,
   useMantineColorScheme,
 } from '@mantine/core'
-import { IconKey, IconLogout, IconMoon, IconSun, IconSunMoon } from '@tabler/icons-react'
+import { IconArrowDown, IconArrowUp, IconCheck, IconKey, IconLogout, IconMoon, IconSun, IconSunMoon, IconTrash } from '@tabler/icons-react'
 import { THEME_COLORS } from './ThemeButton'
-import { usersApi } from './api'
+import { notesApi, usersApi } from './api'
 
 function formatDate(value) {
   if (!value) return '—'
   const d = new Date(value)
   return Number.isNaN(d.getTime()) ? String(value) : d.toLocaleString()
 }
+
+function formatBytes(bytes) {
+  const n = Number(bytes) || 0
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(2)} KB`
+  if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(2)} MB`
+  return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`
+}
+
+const PLANS = [
+  { key: 'free', tier: 0, name: 'Free', storage: '1 GB of storage', limitLabel: '1 GB', limitBytes: 1 * 1024 * 1024 * 1024, price: 'Free' },
+  { key: 'pro', tier: 1, name: 'Pro', storage: '2 GB of note storage', limitLabel: '2 GB', limitBytes: 2 * 1024 * 1024 * 1024, price: '$2/mo' },
+  { key: 'premium', tier: 2, name: 'Premium', storage: '10 GB of note storage', limitLabel: '10 GB', limitBytes: 10 * 1024 * 1024 * 1024, price: '$4/mo' },
+]
 
 function ProfileRow({ label, value }) {
   return (
@@ -37,9 +53,14 @@ export default function PersonalSettings({
   user,
   themeColor,
   onThemeChange,
+  onPlanChange,
+  onPlanSync,
   onLogout,
 }) {
   const { colorScheme, setColorScheme } = useMantineColorScheme()
+  const location = useLocation()
+  const navigate = useNavigate()
+  const [planSyncing, setPlanSyncing] = useState(false)
   const [passwordOpen, setPasswordOpen] = useState(false)
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
@@ -48,6 +69,88 @@ export default function PersonalSettings({
   const [passwordError, setPasswordError] = useState(null)
   const [passwordSuccess, setPasswordSuccess] = useState(null)
   const [savingPassword, setSavingPassword] = useState(false)
+  const [deleteError, setDeleteError] = useState(null)
+  const [deletingAccount, setDeletingAccount] = useState(false)
+  const [storageUsage, setStorageUsage] = useState({ usedBytes: 0, noteCount: 0 })
+
+  useEffect(() => {
+    let active = true
+    notesApi
+      .storage()
+      .then((res) => {
+        if (active && res) {
+          setStorageUsage({
+            usedBytes: Number(res.usedBytes) || 0,
+            noteCount: Number(res.noteCount) || 0,
+          })
+        }
+      })
+      .catch(() => {})
+    return () => {
+      active = false
+    }
+  }, [user.id])
+
+  const isFreePlan = (user.plan || 'free').toLowerCase() === 'free'
+  const hasPendingUpgrade = user.planStatus === 'pending_checkout' || !!user.pendingPlan
+  const canDeleteAccount = isFreePlan && !hasPendingUpgrade
+
+  const handleDeleteAccount = async () => {
+    if (!canDeleteAccount) return
+    if (!window.confirm('Are you sure you want to permanently delete your account and all of your notes?')) {
+      return
+    }
+    setDeleteError(null)
+    setDeletingAccount(true)
+    try {
+      await usersApi.remove(user.id)
+      await onLogout()
+    } catch (e) {
+      setDeleteError(e.message || 'Failed to delete account')
+    } finally {
+      setDeletingAccount(false)
+    }
+  }
+
+  // Handle return redirects from Stripe Checkout (?stripe=success&plan=... or ?stripe=cancel)
+  useEffect(() => {
+    const params = new URLSearchParams(location.search)
+    const stripeResult = params.get('stripe')
+    if (!stripeResult || !onPlanSync) return
+    const returnedPlan = params.get('plan')
+    const customerId = params.get('customer_id')
+    const subscriptionId = params.get('subscription_id')
+
+    if (stripeResult === 'success') {
+      onPlanSync({
+        action: 'confirm',
+        plan: returnedPlan || user.pendingPlan,
+        stripeCustomerId: customerId,
+        stripeSubscriptionId: subscriptionId,
+      })
+    } else if (stripeResult === 'cancel') {
+      onPlanSync({ action: 'cancel' })
+    }
+    navigate('/settings', { replace: true })
+  }, [location.search, navigate, onPlanSync, user.pendingPlan])
+
+  const handlePlanSelect = async (planKey) => {
+    setPlanSyncing(true)
+    try {
+      await onPlanChange?.(planKey)
+    } finally {
+      setPlanSyncing(false)
+    }
+  }
+
+  const handleStripeSync = async (payload) => {
+    setPlanSyncing(true)
+    try {
+      await onPlanSync?.(payload)
+    } finally {
+      setPlanSyncing(false)
+    }
+  }
 
   const resetPasswordForm = () => {
     setCurrentPassword('')
@@ -120,6 +223,23 @@ export default function PersonalSettings({
           <Table.Tbody>
             <ProfileRow label="Name" value={user.name} />
             <ProfileRow label="Email" value={user.email} />
+            <ProfileRow
+              label="Plan"
+              value={
+                <Group gap="xs">
+                  <Badge color={themeColor} style={{ textTransform: 'capitalize' }}>
+                    {user.plan || 'free'}
+                  </Badge>
+                  {user.planStatus && user.planStatus !== 'active' && (
+                    <Badge color={user.planStatus === 'pending_checkout' ? 'yellow' : 'red'} variant="outline">
+                      {user.planStatus === 'pending_checkout'
+                        ? `Stripe checkout pending (${user.pendingPlan})`
+                        : user.planStatus.replace('_', ' ')}
+                    </Badge>
+                  )}
+                </Group>
+              }
+            />
             <ProfileRow label="Theme" value={<Badge color={themeColor}>{user.themeColor || themeColor}</Badge>} />
             <ProfileRow label="Last login" value={formatDate(user.lastLogin)} />
             <ProfileRow label="Created" value={formatDate(user.createdAt)} />
@@ -127,6 +247,143 @@ export default function PersonalSettings({
             <ProfileRow label="ID" value={<Text size="xs" ff="monospace">{user.id}</Text>} />
           </Table.Tbody>
         </Table>
+      </Card>
+
+      <Card withBorder shadow="sm" p="lg" radius="md">
+        {(() => {
+          const currentPlanKey = (user.plan || 'free').toLowerCase()
+          const currentPlan = PLANS.find((p) => p.key === currentPlanKey) || PLANS[0]
+          const rawPct = (storageUsage.usedBytes / currentPlan.limitBytes) * 100
+          const displayPct = storageUsage.usedBytes > 0 ? Math.max(2, Math.min(100, rawPct)) : 0
+          return (
+            <Stack gap="sm">
+              <Group justify="space-between" align="center">
+                <Title order={3} size="h5">Note Storage Used</Title>
+                <Badge variant="light" color={themeColor}>
+                  {formatBytes(storageUsage.usedBytes)} / {currentPlan.limitLabel} ({currentPlan.name})
+                </Badge>
+              </Group>
+
+              <div>
+                <Group justify="space-between" mb={4}>
+                  <Text size="xs" fw={600}>
+                    {currentPlan.name} Plan Limit ({currentPlan.limitLabel})
+                  </Text>
+                  <Text size="xs" c="dimmed">
+                    {formatBytes(storageUsage.usedBytes)} of {currentPlan.limitLabel} ({rawPct < 0.01 && storageUsage.usedBytes > 0 ? '<0.01' : rawPct.toFixed(2)}%) · {storageUsage.noteCount} note{storageUsage.noteCount === 1 ? '' : 's'}
+                  </Text>
+                </Group>
+                <Progress
+                  value={displayPct}
+                  color={rawPct >= 90 ? 'red' : themeColor}
+                  size="lg"
+                  radius="xl"
+                />
+              </div>
+            </Stack>
+          )
+        })()}
+      </Card>
+
+      <Card withBorder shadow="sm" p="lg" radius="md">
+        <Title order={3} size="h5" mb="sm">Available Plans</Title>
+
+        {user.planStatus === 'pending_checkout' && user.pendingPlan && (
+          <Alert color="yellow" mb="md" title={`Pending Stripe Checkout for ${user.pendingPlan.toUpperCase()}`}>
+            <Stack gap="xs">
+              <Text size="sm">
+                Complete your Stripe checkout session to activate the <b>{user.pendingPlan.toUpperCase()}</b> plan, or cancel to stay on your current plan.
+              </Text>
+              <Group gap="xs">
+                <Button
+                  size="xs"
+                  color="green"
+                  loading={planSyncing}
+                  onClick={() => handleStripeSync({ action: 'confirm', plan: user.pendingPlan })}
+                >
+                  Confirm Stripe Payment
+                </Button>
+                <Button
+                  size="xs"
+                  variant="default"
+                  loading={planSyncing}
+                  onClick={() => handleStripeSync({ action: 'cancel' })}
+                >
+                  Cancel Checkout
+                </Button>
+              </Group>
+            </Stack>
+          </Alert>
+        )}
+
+        {user.planStatus === 'past_due' && (
+          <Alert color="red" mb="md" title="Stripe Payment Past Due">
+            Your subscription payment is past due in Stripe. Please update your payment method or confirm payment sync.
+          </Alert>
+        )}
+
+        <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">
+          {(() => {
+            const currentPlanKey = (user.plan || 'free').toLowerCase()
+            const currentTier = PLANS.find((p) => p.key === currentPlanKey)?.tier ?? 0
+            return PLANS.map((plan) => {
+              const isCurrent = plan.key === currentPlanKey
+              const isPendingTarget = user.planStatus === 'pending_checkout' && user.pendingPlan === plan.key
+              const isUpgrade = plan.tier > currentTier
+              const badgeLabel = isCurrent
+                ? 'Current Plan'
+                : isPendingTarget
+                  ? 'Pending Stripe'
+                  : isUpgrade
+                    ? 'Upgrade'
+                    : 'Downgrade'
+              const badgeColor = isCurrent
+                ? themeColor
+                : isPendingTarget
+                  ? 'yellow'
+                  : isUpgrade
+                    ? 'green'
+                    : 'gray'
+              const buttonLabel = isCurrent
+                ? 'Current Plan'
+                : isPendingTarget
+                  ? `Awaiting Stripe (${plan.name})`
+                  : isUpgrade
+                    ? `Upgrade to ${plan.name}`
+                    : `Downgrade to ${plan.name}`
+              const ButtonIcon = isCurrent ? IconCheck : isUpgrade ? IconArrowUp : IconArrowDown
+
+              return (
+                <Card key={plan.key} withBorder padding="md" radius="md">
+                  <Stack gap="xs" justify="space-between" style={{ height: '100%' }}>
+                    <Stack gap="xs">
+                      <Group justify="space-between" align="center">
+                        <Text fw={600} size="md">{plan.name}</Text>
+                        <Badge color={badgeColor} variant={isCurrent ? 'filled' : 'light'}>
+                          {badgeLabel}
+                        </Badge>
+                      </Group>
+                      <Text size="sm" c="dimmed">{plan.storage}</Text>
+                      <Text fw={700} size="lg">{plan.price}</Text>
+                    </Stack>
+                    <Button
+                      variant={isCurrent ? 'filled' : 'light'}
+                      color={isUpgrade ? 'green' : themeColor}
+                      leftSection={<ButtonIcon size={16} />}
+                      fullWidth
+                      mt="xs"
+                      disabled={isCurrent}
+                      loading={planSyncing && isPendingTarget}
+                      onClick={() => handlePlanSelect(plan.key)}
+                    >
+                      {buttonLabel}
+                    </Button>
+                  </Stack>
+                </Card>
+              )
+            })
+          })()}
+        </SimpleGrid>
       </Card>
 
       <Card withBorder shadow="sm" p="lg" radius="md">
@@ -247,6 +504,34 @@ export default function PersonalSettings({
             </Group>
           </Stack>
         </Collapse>
+      </Card>
+
+      <Card withBorder shadow="sm" p="lg" radius="md">
+        <Stack gap="sm">
+          <Title order={3} size="h5" c="red">Delete Account</Title>
+          {deleteError && (
+            <Alert color="red" withCloseButton onClose={() => setDeleteError(null)}>
+              {deleteError}
+            </Alert>
+          )}
+          {!canDeleteAccount && (
+            <Alert color="yellow">
+              To prevent being charged for our service, you may only delete free accounts. Please convert your account to Free to stop the recurring charges.
+            </Alert>
+          )}
+          <Group justify="flex-start">
+            <Button
+              color="red"
+              variant="filled"
+              leftSection={<IconTrash size={16} />}
+              disabled={!canDeleteAccount}
+              loading={deletingAccount}
+              onClick={handleDeleteAccount}
+            >
+              Delete my account
+            </Button>
+          </Group>
+        </Stack>
       </Card>
     </Stack>
   )

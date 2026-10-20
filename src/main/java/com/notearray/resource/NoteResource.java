@@ -75,6 +75,8 @@ public class NoteResource {
 
     public record ImportResult(int imported, int errors, List<String> messages) {}
 
+    public record StorageUsage(long usedBytes, long noteCount) {}
+
     /** Get the authenticated user from the session cookie. Returns null if not logged in. */
     private User getAuthenticatedUser() {
         return sessions.resolve(headers.getCookies().get(SessionService.COOKIE_NAME));
@@ -187,6 +189,27 @@ public class NoteResource {
 
     private static Instant parseInstant(String value) {
         return value == null || value.isBlank() ? null : Instant.parse(value.trim());
+    }
+
+    /**
+     * Return the total UTF-8 byte size of the {@code content} column across all
+     * notes owned by the authenticated user.
+     */
+    @GET
+    @Path("/storage")
+    public Response storageUsage() {
+        User user = getAuthenticatedUser();
+        if (user == null) {
+            return Response.status(Response.Status.UNAUTHORIZED).build();
+        }
+        Object[] row = (Object[]) Note.getEntityManager()
+                .createNativeQuery(
+                        "SELECT COALESCE(SUM(OCTET_LENGTH(content)), 0), COUNT(*) FROM notes WHERE owner_id = :owner")
+                .setParameter("owner", user.id)
+                .getSingleResult();
+        long usedBytes = ((Number) row[0]).longValue();
+        long noteCount = ((Number) row[1]).longValue();
+        return Response.ok(new StorageUsage(usedBytes, noteCount)).build();
     }
 
     @GET

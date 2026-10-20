@@ -97,6 +97,41 @@ function Root() {
     }
   }
 
+  const changePlan = async (plan) => {
+    if (!currentUser) return
+    try {
+      const res = await usersApi.checkoutPlan(currentUser.id, plan)
+      if (res?.user) {
+        setCurrentUser(res.user)
+      }
+      if (res?.checkoutUrl) {
+        window.location.href = res.checkoutUrl
+      }
+    } catch (e) {
+      notifications.show({
+        color: 'red',
+        title: 'Plan change failed',
+        message: e.message || 'Your plan selection could not be processed.',
+      })
+    }
+  }
+
+  const syncPlan = async (payload) => {
+    if (!currentUser) return
+    try {
+      const updated = await usersApi.syncPlan(currentUser.id, payload)
+      if (updated) {
+        setCurrentUser(updated)
+      }
+    } catch (e) {
+      notifications.show({
+        color: 'red',
+        title: 'Stripe sync failed',
+        message: e.message || 'Could not synchronize subscription state.',
+      })
+    }
+  }
+
   if (isLoading) {
     return <div>Loading...</div>
   }
@@ -108,6 +143,8 @@ function Root() {
         <App
           themeColor={themeColor}
           onThemeChange={changeTheme}
+          onPlanChange={changePlan}
+          onPlanSync={syncPlan}
           currentUser={currentUser}
           onLogin={handleLogin}
           onLogout={handleLogout}
