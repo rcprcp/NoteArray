@@ -330,7 +330,7 @@ function NoteCard({ note, onEdit, onDelete, onTogglePin }) {
           </Group>
         </Group>
         <div>
-          <Text fw={600} size="md" lineClamp={2}>
+          <Text fw={600} size="md" style={{ overflowWrap: 'anywhere' }}>
             {note.title || <Text c="dimmed" fs="italic">Untitled</Text>}
           </Text>
           {note.tags && (
