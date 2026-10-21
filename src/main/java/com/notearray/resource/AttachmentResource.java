@@ -98,13 +98,20 @@ public class AttachmentResource {
         if (attachment == null || !canAccessAttachment(user, attachment)) {
             return Response.status(Response.Status.NOT_FOUND).build();
         }
-        // Inline when previewing in the app; attachment (download prompt with the
-        // stored filename) when ?download is set. Any non-"false" request parameter
-        // value (e.g. ?download=1 or ?download=true) enables the download mode.
+        // Inline when previewing in the app; download mode when ?download is set.
+        // Any non-"false" request parameter value (e.g. ?download=1 or ?download=true)
+        // enables the download mode. In download mode the body is served as
+        // application/octet-stream on purpose: Firefox's built-in PDF handling
+        // ("Open in Firefox" / browser.download.open_pdf_attachments_inline) hijacks
+        // anything typed application/pdf — including Content-Disposition: attachment
+        // and JS blob downloads — saving it AND re-opening it in the viewer
+        // (Bugzilla 1756980). An octet-stream body is beyond that handler's reach,
+        // so the browser performs a plain save.
         boolean forceDownload = downloadParam != null
                 && !"false".equalsIgnoreCase(downloadParam.trim());
         String disposition = forceDownload ? "attachment" : "inline";
-        return Response.ok(attachment.data, attachment.contentType)
+        String bodyContentType = forceDownload ? "application/octet-stream" : attachment.contentType;
+        return Response.ok(attachment.data, bodyContentType)
                 .header("Content-Disposition",
                         disposition + "; filename=\"" + attachment.filename + "\"")
                 .header("Cache-Control", "private, max-age=86400")

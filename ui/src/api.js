@@ -100,7 +100,12 @@ export const notesApi = {
    * the server's Content-Disposition or the browser's PDF viewer settings.
    */
   download: async (url, fallbackName) => {
-    const res = await fetch(url, { credentials: 'include' })
+    // Force download mode on the server so the body arrives as
+    // application/octet-stream (see AttachmentResource.download): Firefox's
+    // built-in PDF handling otherwise saves AND re-opens even blob downloads
+    // typed application/pdf (Bugzilla 1756980).
+    const fetchUrl = url.includes('?') ? `${url}&download=1` : `${url}?download=1`
+    const res = await fetch(fetchUrl, { credentials: 'include' })
     if (!res.ok) {
       let message = `${res.status} ${res.statusText}`
       try {
@@ -113,7 +118,10 @@ export const notesApi = {
       err.status = res.status
       throw err
     }
-    const blob = await res.blob()
+    // Client-side backstop: mark the Blob octet-stream even if a proxy or old
+    // server rewrote the content type, so no browser routes it to a PDF viewer.
+    const buffer = await res.arrayBuffer()
+    const blob = new Blob([buffer], { type: 'application/octet-stream' })
     // Prefer the filename from Content-Disposition, else the caller's label.
     let filename = typeof fallbackName === 'string' && fallbackName.trim() ? fallbackName.trim() : 'attachment'
     try {
