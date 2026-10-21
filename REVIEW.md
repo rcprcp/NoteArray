@@ -1,6 +1,6 @@
 # NoteArray — Security & Functionality Review
 
-> Captured: 2026-10-18. Working document: findings are checked off as they are implemented.
+> Captured: 2026-10-18. Last reviewed: 2026-10-21. Working document: findings are checked off as they are implemented.
 > Use this as the backlog for making NoteArray a world-class note-taking application.
 > Priority order lives in the "Top-10 roadmap" at the end; each item links back to its finding.
 
@@ -14,7 +14,18 @@
 - **Secrets in JSON**: `passwordHash` and `superuser` are `@JsonIgnore` (`User.java:21,37`).
 - **Import hardening**: per-entry 10 MB cap, BOM handling, surrogate-safe title truncation, archive type sniffing.
 - **Unique-constraint race handling** mapped to 409 instead of 500 (with the caveat in finding #10).
-- **Cascading FKs**: `notes` and `sessions` both `ON DELETE CASCADE` from `users`.
+- **Cascading FKs**: `notes` and `sessions` both `ON DELETE CASCADE` from `users` (attachments too, via `V1.1.8`).
+- **Attachment authorization**: both upload (`POST /api/notes/{id}/attachments`) and download
+  (`GET /api/attachments/{id}`) check owner/superuser; uploads are whitelisted to PNG/JPEG/GIF/WebP/PDF
+  and filenames are sanitized (`AttachmentResource.java`).
+- **Storage quota enforced server-side** on every write path (note create/update, both imports,
+  attachment upload) via `StorageQuota` — but this is only as strong as plan assignment, which
+  currently is user-controlled (see finding #26).
+- **Request body limit is explicit** now: `quarkus.http.limits.max-body-size=55M`
+  (`application.properties:17`), so legitimate 10–50 MB JEX uploads no longer 413 before app code.
+- **Framing exception is narrow and documented**: only `api/attachments/*` responses permit same-origin
+  framing (PDF preview), everything else stays `DENY`/`frame-ancestors 'none'`
+  (`SecurityHeadersFilter.java:10-20,82-91`).
 
 ---
 
@@ -77,6 +88,11 @@
   there is no cap on **total uncompressed bytes or entry count** — a zip bomb can expand far past 50 MB
   across thousands of entries. Set the body limit explicitly, cap total expansion + notes-per-import,
   and bound concurrent imports.
+  *Partially done: `quarkus.http.limits.max-body-size=55M` is now set explicitly
+  (`application.properties:17`), so the >10 MB 413 is fixed, and each archive entry is still capped at
+  10 MB (`readEntryAsString`). Still outstanding: no cap on total uncompressed bytes or entry count
+  (thousands of ≤10 MB entries still buffer and persist on the heap in one transaction) and no
+  concurrency bound — up to 55 MB buffered per in-flight import request.*
 
 - [x] **6. Swagger UI, OpenAPI, and Prometheus metrics are public in prod**
   (`application.properties:26-31`, `always-include=true`; `quarkus-micrometer`). Disable Swagger/OpenAPI
@@ -86,6 +102,19 @@
   (`%prod.quarkus.smallrye-openapi.enable=false`), and Prometheus metrics export
   (`%prod.quarkus.micrometer.export.prometheus.enabled=false`) in the `prod` profile while keeping them
   enabled in `dev`.*
+
+- [ ] **26. Any authenticated user can grant themselves any plan — Stripe state is trusted from the
+  client** (`UserResource.java:220-222,240-242,344-346,435-484`). `POST /api/users` and
+  `PUT /api/users/{id}` accept a client-supplied `plan` field and write it straight to the user row,
+  and `POST /api/users/{id}/plan/sync` with `{"action":"confirm"}` accepts
+  `plan`/`stripeCustomerId`/`stripeSubscriptionId` from the request body with **no Stripe
+  verification** — there is no webhook endpoint, no signature check, and no server-side
+  subscription/Checkout-Session lookup. One request upgrades an account to `premium`, lifting the
+  storage quota to 5 GB (`StorageQuota.java`), bypassing payment entirely. The DELETE-time Stripe
+  cancellation check can't fix this because the client never proves it paid. Fix: remove `plan` (and
+  the Stripe identifiers) from user-writable request fields; activate paid plans only from a signed
+  Stripe webhook (or a server-side Checkout Session / subscription status lookup tied to the
+  authenticated billing user); keep the client display-only.
 
 ### Medium
 
@@ -126,12 +155,22 @@
   whole import runs in one transaction with all entities in one Hibernate session. Batch it, and
   skip-identical on re-import.
 
+- [ ] **27. Destructive account deletion requires only the session cookie**
+  (`UserResource.java:486-535`). `DELETE /api/users/{id}` permanently deletes the account and all
+  notes/attachments (explicitly framed in the UI as irreversible) but, unlike the password change,
+  does **not re-verify the password** — a stolen, shared, or forgotten-logged-in session destroys
+  everything irreversibly. Require the current password (and/or an email confirmation step) before
+  destructive deletion. Also note the Stripe HTTP confirmation (15 s timeout) runs synchronously
+  inside the `@Transactional` delete request, so a Stripe outage stalls or fails deletions;
+  consider an async/outbox confirmation instead.
+
 ---
 
 ## Functionality & performance
 
 - [ ] **12. `GET /api/notes` returns every note with full content, and the UI calls it twice per load**
-  (`NotesPanel.jsx:265-274` — one filtered, one "everything" just for tag lists/counts). With 10 MB notes
+  (`NotesPanel.jsx:412-440` — one filtered, one "everything" just for tag lists/counts, plus a cheap
+  new `/api/notes/storage` usage call). With 10 MB notes
   this collapses at scale. Biggest engineering gap:
   - Add pagination (`page`/`size`) + server-side sorting (sort is client-side today).
   - Return a list projection without `content` (e.g. first ~300 chars preview).
@@ -162,7 +201,11 @@
   `BYTEA` storage and `ON DELETE CASCADE` on both `note_id` and `owner_id`, `AttachmentResource`
   (`POST /api/notes/{noteId}/attachments`, `GET /api/attachments/{id}`), `StorageQuota` enforcing
   per-plan quotas (100 MB Free / 1 GB Pro / 5 GB Premium) and 10 MB per-attachment limit, and Tiptap
-  drag-and-drop + paste support for images and PDFs (`NotesPanel.jsx`).*
+  drag-and-drop + paste support for images and PDFs (`NotesPanel.jsx`). Extended 2026-10-20
+  (`85f9849`–`2b4561f`): upload endpoint lives in `NoteResource` (route-matching fix), attachment
+  preview modal renders PDFs in a same-origin iframe (narrow `frame-ancestors 'self'` exception in
+  `SecurityHeadersFilter`), `?download=1` prompt mode, and usage surfaced via `/api/notes/storage`
+  (`AttachmentQuotaTest`).*
 
 - [x] **18. No dark mode** — theme picker changes hue only; `MantineProvider` has no `forceColorScheme`.
   Also theme is read from localStorage first, then server (`main.jsx:15-26`) → flicker; prefer the server
@@ -174,10 +217,16 @@
 - [ ] **19. UX polish for a world-class feel**: keyboard shortcuts + command palette (⌘K search, ⌘S save,
   ⌘N new), click-a-tag-badge-to-filter, tag autocomplete from existing tags, multi-select/bulk delete &
   retag, note preview on hover, in-note search term highlighting.
+  *Partially done (2026-10-19/20): removable search/filter badges, untagged/pinned smart collections,
+  result counts, card/list view toggle with responsive two-column grid, inline card actions, Enter
+  submits login (`bb30e08`), search help modal, storage usage bar, Help/About pages, `wideMode`
+  layout. Still outstanding: keyboard shortcuts/command palette, tag autocomplete, multi-select/bulk
+  operations, hover preview, in-note highlighting, click-a-badge-to-filter.*
 
 - [ ] **20. Accessibility**: table rows are click-to-edit but not keyboard-focusable
-  (`NotesPanel.jsx:800`) — make the title a button or add `tabIndex`/`onKeyDown`.
-  (Icon buttons already have good `aria-label`s.)
+  (`NotesPanel.jsx:1139`) — make the title a button or add `tabIndex`/`onKeyDown`. The card view
+  (`NotesPanel.jsx:319`) has the same click-only pattern. (Icon buttons already have good
+  `aria-label`s, and sortable headers now expose `aria-sort`.)
 
 ---
 
@@ -189,11 +238,13 @@
     anonymous), session expiry/revocation, import edge cases (zip bomb, malformed, >limit),
     validation → status-code mapping.
   - Vitest + React Testing Library for autosave/search flows; Playwright for login→edit→search E2E.
-  *Done, unit test suite established (`src/test`): 36 JUnit 5 tests across `LoginThrottlePolicyTest`,
-  `ClientIpTest`, `PasswordPolicyTest`, `NoteArrayApplicationTest`, `UserPasswordChangeTest`, and
-  `SecurityHeadersFilterTest` covering throttling, client IP resolution, password policy, JAX-RS
-  resource registration & SPA redirects, password change validation order, and security headers +
-  ingest XSS sanitization.*
+  *Done, unit test suite established (`src/test`) and grown through 2026-10-20: 62 JUnit 5 tests
+  across 11 classes (`LoginThrottlePolicyTest`, `ClientIpTest`, `PasswordPolicyTest`,
+  `NoteArrayApplicationTest`, `UserPasswordChangeTest`, `EmailPolicyTest`, `SecurityHeadersFilterTest`,
+  `CsrfFilterTest`, `NoteVersionConflictTest`, `AttachmentQuotaTest`, `UserPlanSyncTest`) covering
+  throttling, client IP resolution, password policy, JAX-RS resource registration & SPA redirects,
+  password change validation order, security headers + ingest XSS sanitization, CSRF filtering,
+  optimistic-lock conflict handling, attachment quotas, and plan checkout/sync state transitions.*
 
 - [ ] **22. No CI and no linter/formatter config** (no `.github/`, no ESLint/Prettier for `ui/`, no
   Checkstyle/Spotless). Add a pipeline that builds, tests, `npm audit`, and lints.
@@ -202,6 +253,10 @@
   - `%prod` should *require* env vars (no `bob/bob` dev defaults that silently work) (`:7-9`).
   - `com.notearray` logging is `DEBUG` in prod (`:35`) → set INFO.
   - Add `quarkus-smallrye-health` for liveness/readiness, structured access logs with request IDs.
+  *Partially done: HSTS (`%prod`) and an explicit body-size limit are in `application.properties`, but
+  the datasource `${NOTEARRAY_DB_*:...bob}` dev fallbacks still resolve silently in prod (`:7-9`),
+  `com.notearray` is still logged at `DEBUG` (`:46`), and smallrye-health/structured access logs are
+  still absent (`pom.xml`).*
 
 - [x] **24. Doc drift**: README:85 still says Flyway "will insert an initial test user" — removed in
   `V1.1.2`.
@@ -219,13 +274,13 @@
 | 1 | Login rate limiting + password policy | #1, #2 | ✓ (`agent/login-throttling`, `agent/password-policy`) |
 | 2 | Security headers + CSP + link/HTML sanitization | #3 | ✓ (`security-sanitization`, `agent/security-xss-headers`) |
 | 3 | Email normalization/validation + signup config flag | #4, #10 | ✓ (`agent/email-validation`) |
-| 4 | Fix body-size limit & import expansion caps | #5 | ☐ |
-| 5 | Test suite + CI | #21, #22 | ☐ |
+| 4 | Fix body-size limit & import expansion caps | #5 | ◐ (body limit fixed in `application.properties:17`; total-expansion/entry-count/concurrency caps outstanding) |
+| 5 | Test suite + CI | #21, #22 | ◐ (unit suite done — 62 tests/11 classes; CI & lint/formatter config outstanding) |
 | 6 | Paginated list + lightweight projection + tags endpoint | #12 | ☐ |
 | 7 | Optimistic locking + serialized autosave | #9 | ✓ (`agent/optimistic-locking-autosave`) |
 | 8 | Trash/undo + note history | #15 | ☐ |
 | 9 | Export (MD/ZIP/JSON) | #14 | ☐ |
-| 10 | Prod config hardening + health/metrics | #6, #23 | ☐ |
+| 10 | Prod config hardening + health/metrics | #6, #23 | ◐ (#6 done; #23 partial — HSTS + body limit done, dev-default creds / DEBUG log / health endpoints outstanding) |
 
 ---
 
@@ -241,3 +296,5 @@
 | 2026-10-19 | #6 | `agent/disable-prod-openapi-metrics` | Disabled Swagger UI, SmallRye OpenAPI, and Prometheus `/q/metrics` export in `%prod` (`application.properties`); verified in `NoteArrayApplicationTest` |
 | 2026-10-19 | #7 | `agent/csrf-protection` | Added `CsrfFilter` (`Sec-Fetch-Site` + `Origin` verification on state-changing requests → 403), documented 3-layer CSRF invariant in `SessionService`, `CsrfFilter`, and `README.md`; `CsrfFilterTest` |
 | 2026-10-19 | #9 | `agent/optimistic-locking-autosave` | Flyway `V1.1.5` (`notes.version`), `@Version` optimistic locking on `Note` → 409 Conflict in `NoteResource.update`, serialized auto-saves with non-overlapping merge-and-retry in `NotesPanel.jsx`; `NoteVersionConflictTest` |
+| 2026-10-20 | #19 (partial) | `e26d09b`, `bb30e08`, `6d1f9b4`, `b41d046`, `403d778`, `5d19cae` | Untagged filter + removable filter badges, result counts, Enter submits login, card/list view toggle with responsive two-column grid, inline card actions, title wrapping |
+| 2026-10-20 | new: attachments, storage, billing, help | `85f9849`, `bb30e08`, `ceef6b1`, `deb76bb`, `8375086`, `0f9c784`, `2b4561f` | `/api/notes/storage` usage endpoint + UI bar, Stripe plan checkout/sync endpoints (`V1.1.6`, `V1.1.7`) and plan badges, account deletion gated on Stripe cancellation confirmation (`StripeBillingService`; `UserPlanSyncTest`), attachment upload route fix, same-origin framing exception for PDF preview, `?download` mode, Help/About pages, `USER_GUIDE.md`; suite grown to 62 tests / 11 classes (`AttachmentQuotaTest`, `UserPlanSyncTest`). NOTE: this work introduced findings #26 (plan self-escalation via API) and #27 (deletion without password re-verification) |
