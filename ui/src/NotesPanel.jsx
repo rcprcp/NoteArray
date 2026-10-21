@@ -815,6 +815,27 @@ export default function NotesPanel({ registerActions } = {}) {
     }
   }
 
+  const previewAttachmentRef = useRef(null)
+  previewAttachmentRef.current = previewAttachment
+  const [downloadError, setDownloadError] = useState(null)
+  const [downloading, setDownloading] = useState(false)
+
+  // Download from the preview modal: fetch the bytes as a Blob and save via the
+  // DOM `download` attribute, so the browser never opens a viewer instead.
+  const handleDownloadAttachment = async () => {
+    const target = previewAttachmentRef.current
+    if (!target || downloading) return
+    setDownloadError(null)
+    setDownloading(true)
+    try {
+      await notesApi.download(target.url, target.label)
+    } catch (e) {
+      setDownloadError(e.message || 'Failed to download attachment')
+    } finally {
+      setDownloading(false)
+    }
+  }
+
   const remove = async (note) => {
     if (!window.confirm(`Delete note "${note.title || 'Untitled'}"?`)) return
     try {
@@ -1270,7 +1291,10 @@ export default function NotesPanel({ registerActions } = {}) {
       {/* Attachment / PDF Preview Modal */}
       <Modal
         opened={!!previewAttachment}
-        onClose={() => setPreviewAttachment(null)}
+        onClose={() => {
+          setPreviewAttachment(null)
+          setDownloadError(null)
+        }}
         title={previewAttachment?.label || 'Attachment Preview'}
         size="xl"
       >
@@ -1281,13 +1305,18 @@ export default function NotesPanel({ registerActions } = {}) {
               title={previewAttachment.label || 'Attachment'}
               style={{ width: '100%', height: '70vh', border: '1px solid var(--mantine-color-default-border)', borderRadius: 6 }}
             />
+            {downloadError && (
+              <Alert color="red" withCloseButton onClose={() => setDownloadError(null)}>
+                Download failed: {downloadError}
+              </Alert>
+            )}
             <Group justify="flex-end">
               <Button
-                component="a"
-                href={`${previewAttachment.url}?download=1`}
                 leftSection={<IconDownload size={14} />}
                 variant="light"
                 size="sm"
+                loading={downloading}
+                onClick={handleDownloadAttachment}
               >
                 Download
               </Button>

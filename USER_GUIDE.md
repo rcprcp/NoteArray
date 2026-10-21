@@ -164,7 +164,8 @@ After dropping, the note auto-saves like normal (see [Auto-save](#auto-save-no-s
 ### Viewing attachments
 
 - Click a `📄` file link (or any attachment link) inside a note: a **preview modal** opens showing the document in an embedded frame.
-- **Open in New Tab** opens it in a full browser tab (from there you can download it). **Close** returns to the note.
+- **Download** saves the file directly to your Downloads folder — it always saves, never opens a viewer, even in browsers whose PDF viewer intercepts navigations.
+- **Open in New Tab** opens it in a full browser tab. **Close** returns to the note.
 
 ### Storage accounting
 

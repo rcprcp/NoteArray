@@ -93,4 +93,45 @@ export const notesApi = {
       credentials: 'include',
     })
   },
+  /**
+   * Download an attachment as a file, never a viewer navigation.
+   * Fetches the bytes as a Blob and triggers a save via an anchor with the
+   * `download` attribute — behavior identical across browsers, regardless of
+   * the server's Content-Disposition or the browser's PDF viewer settings.
+   */
+  download: async (url, fallbackName) => {
+    const res = await fetch(url, { credentials: 'include' })
+    if (!res.ok) {
+      let message = `${res.status} ${res.statusText}`
+      try {
+        const text = await res.text()
+        if (text) message = text
+      } catch (e) {
+        // ignore body read errors
+      }
+      const err = new Error(message)
+      err.status = res.status
+      throw err
+    }
+    const blob = await res.blob()
+    // Prefer the filename from Content-Disposition, else the caller's label.
+    let filename = typeof fallbackName === 'string' && fallbackName.trim() ? fallbackName.trim() : 'attachment'
+    try {
+      const cd = res.headers.get('Content-Disposition') || ''
+      const m = cd.match(/filename="?([^";]+)"?/i)
+      if (m && m[1].trim()) filename = m[1].trim()
+    } catch (e) {
+      // header not accessible — keep the fallback name
+    }
+    // Never let server-controlled text smuggle quotes/newlines into the DOM attribute.
+    filename = filename.replace(/[^A-Za-z0-9._ -]/g, '_').trim() || 'attachment'
+    const objectUrl = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = objectUrl
+    anchor.download = filename
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+    URL.revokeObjectURL(objectUrl)
+  },
 }
