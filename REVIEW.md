@@ -245,7 +245,7 @@
     anonymous), session expiry/revocation, import edge cases (zip bomb, malformed, >limit),
     validation → status-code mapping.
   - Vitest + React Testing Library for autosave/search flows; Playwright for login→edit→search E2E.
-  *Done, unit test suite established (`src/test`) and grown through 2026-10-21: 67 JUnit 5 tests
+  *Done, unit test suite established (`src/test`) and grown through 2026-10-21: 72 JUnit 5 tests
   across 12 classes (`LoginThrottlePolicyTest`, `ClientIpTest`, `PasswordPolicyTest`,
   `NoteArrayApplicationTest`, `UserPasswordChangeTest`, `EmailPolicyTest`, `SecurityHeadersFilterTest`,
   `CsrfFilterTest`, `NoteVersionConflictTest`, `AttachmentQuotaTest`, `UserPlanSyncTest`,
@@ -257,14 +257,23 @@
 - [ ] **22. No CI and no linter/formatter config** (no `.github/`, no ESLint/Prettier for `ui/`, no
   Checkstyle/Spotless). Add a pipeline that builds, tests, `npm audit`, and lints.
 
-- [ ] **23. Prod config hygiene** (`application.properties`):
+- [x] **23. Prod config hygiene** (`application.properties`):
   - `%prod` should *require* env vars (no `bob/bob` dev defaults that silently work) (`:7-9`).
   - `com.notearray` logging is `DEBUG` in prod (`:35`) → set INFO.
   - Add `quarkus-smallrye-health` for liveness/readiness, structured access logs with request IDs.
-  *Partially done: HSTS (`%prod`) and an explicit body-size limit are in `application.properties`, but
-  the datasource `${NOTEARRAY_DB_*:...bob}` dev fallbacks still resolve silently in prod (`:7-9`),
-  `com.notearray` is still logged at `DEBUG` (`:46`), and smallrye-health/structured access logs are
-  still absent (`pom.xml`).*
+  *Done (branch `agent/prod-config-hygiene`): `%prod.quarkus.datasource.{jdbc.url,username,password}`
+  now expand `${NOTEARRAY_DB_*}` with **no defaults** — a packaged jar refuses to start unless all
+  three are set (defaults only remain for non-prod profiles); `com.notearray` DEBUG moved to
+  `%dev` only (prod stays INFO); added `quarkus-smallrye-health` (`/q/health`, `/q/health/ready`,
+  with the PostgreSQL datasource readiness check — verified live) and
+  `quarkus.http.access-log` with a pattern including the `X-Request-Id` emitted by
+  `SecurityHeadersFilter` (generated/sanitized per request, caller-supplied ids echoed).
+  Also removed the stale, ignored `quarkus.http.cookie.same-site-cookie*` keys that Quarkus
+  warned about at startup. Minor follow-ups left as-is: deprecated
+  `quarkus.hibernate-orm.database.generation` / `.enable` keys still work but could migrate to
+  their newer names; JSON log formatting (e.g. `quarkus.log.*.format`) not yet enabled.*
+  *Verified in `NoteArrayApplicationTest.prodConfigHygiene` and
+  `SecurityHeadersFilterTest` request-id tests.*
 
 - [x] **24. Doc drift**: README:85 still says Flyway "will insert an initial test user" — removed in
   `V1.1.2`.
@@ -283,12 +292,12 @@
 | 2 | Security headers + CSP + link/HTML sanitization | #3 | ✓ (`security-sanitization`, `agent/security-xss-headers`) |
 | 3 | Email normalization/validation + signup config flag | #4, #10 | ✓ (`agent/email-validation`) |
 | 4 | Fix body-size limit & import expansion caps | #5 | ◐ (body limit fixed in `application.properties:17`; total-expansion/entry-count/concurrency caps outstanding) |
-| 5 | Test suite + CI | #21, #22 | ◐ (unit suite done — 67 tests/12 classes; CI & lint/formatter config outstanding) |
+| 5 | Test suite + CI | #21, #22 | ◐ (unit suite done — 72 tests/12 classes; CI & lint/formatter config outstanding) |
 | 6 | Paginated list + lightweight projection + tags endpoint | #12 | ☐ |
 | 7 | Optimistic locking + serialized autosave | #9 | ✓ (`agent/optimistic-locking-autosave`) |
 | 8 | Trash/undo + note history | #15 | ☐ |
 | 9 | Export (MD/ZIP/JSON) | #14 | ☐ |
-| 10 | Prod config hardening + health/metrics | #6, #23 | ◐ (#6 done; #23 partial — HSTS + body limit done, dev-default creds / DEBUG log / health endpoints outstanding) |
+| 10 | Prod config hardening + health/metrics | #6, #23 | ✓ (`agent/disable-prod-openapi-metrics`, `agent/prod-config-hygiene`) |
 
 ---
 
@@ -307,3 +316,4 @@
 | 2026-10-20 | #19 (partial) | `e26d09b`, `bb30e08`, `6d1f9b4`, `b41d046`, `403d778`, `5d19cae` | Untagged filter + removable filter badges, result counts, Enter submits login, card/list view toggle with responsive two-column grid, inline card actions, title wrapping |
 | 2026-10-20 | new: attachments, storage, billing, help | `85f9849`, `bb30e08`, `ceef6b1`, `deb76bb`, `8375086`, `0f9c784`, `2b4561f` | `/api/notes/storage` usage endpoint + UI bar, Stripe plan checkout/sync endpoints (`V1.1.6`, `V1.1.7`) and plan badges, account deletion gated on Stripe cancellation confirmation (`StripeBillingService`; `UserPlanSyncTest`), attachment upload route fix, same-origin framing exception for PDF preview, `?download` mode, Help/About pages, `USER_GUIDE.md`; suite grown to 62 tests / 11 classes (`AttachmentQuotaTest`, `UserPlanSyncTest`). NOTE: this work introduced findings #26 (plan self-escalation via API) and #27 (deletion without password re-verification) |
 | 2026-10-21 | #27 | `agent/delete-password-verification` | `DELETE /api/users/{id}` requires the current password (`DeleteRequest` → `validateDeleteConfirmation`, verified before Stripe calls), password field in the Personal Settings delete card with Delete disabled until entered, doc updates; `UserDeleteVerificationTest` (5 tests) |
+| 2026-10-21 | #23 | `agent/prod-config-hygiene` | `%prod` datasource requires `NOTEARRAY_DB_*` env vars (no dev fallbacks — verified jar refuses to start without them), `com.notearray` DEBUG moved to `%dev` only, `quarkus-smallrye-health` added (`/q/health` + DB readiness verified live + 200), access log enabled with `X-Request-Id` (generated/sanitized in `SecurityHeadersFilter`, caller-supplied ids echoed; verified in log), removed stale ignored `quarkus.http.cookie.same-site-cookie*` keys; 72 tests/12 classes |

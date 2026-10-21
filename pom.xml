@@ -82,6 +82,13 @@
             <artifactId>quarkus-scheduler</artifactId>
         </dependency>
 
+        <!-- Liveness/readiness endpoints at /q/health (REVIEW finding #23);
+             the PostgreSQL datasource contributes a readiness check automatically. -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-smallrye-health</artifactId>
+        </dependency>
+
 
         <!-- JSON processing for JEX import -->
         <dependency>

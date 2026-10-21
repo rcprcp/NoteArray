@@ -2,6 +2,7 @@ package com.notearray.security;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -19,6 +20,10 @@ import org.junit.jupiter.api.Test;
 class SecurityHeadersFilterTest {
 
     private static ContainerRequestContext requestContextWithPath(String path) {
+        return requestContext(path, (String) null);
+    }
+
+    private static ContainerRequestContext requestContext(String path, String requestIdHeader) {
         UriInfo uriInfo = (UriInfo) Proxy.newProxyInstance(
                 UriInfo.class.getClassLoader(),
                 new Class<?>[] { UriInfo.class },
@@ -34,6 +39,9 @@ class SecurityHeadersFilterTest {
                 (proxy, method, args) -> {
                     if ("getUriInfo".equals(method.getName())) {
                         return uriInfo;
+                    }
+                    if ("getHeaderString".equals(method.getName())) {
+                        return requestIdHeader;
                     }
                     return null;
                 });
@@ -116,5 +124,63 @@ class SecurityHeadersFilterTest {
         assertFalse(cleaned.toLowerCase().contains("javascript:"));
         assertTrue(cleaned.contains("[good](https://example.com)"));
         assertTrue(cleaned.contains("[mail](mailto:user@example.com)"));
+    }
+
+    @Test
+    void generatesRequestIdWhenCallerSendsNone() throws IOException {
+        MultivaluedMap<String, Object> headers = new MultivaluedHashMap<>();
+        // null request context (unit test) must not throw; header is still generated.
+        new SecurityHeadersFilter(false).filter(null, responseContextWithHeaders(headers));
+        Object generated = headers.getFirst(SecurityHeadersFilter.REQUEST_ID_HEADER);
+        assertNotNull(generated, "X-Request-Id must always be emitted");
+        assertTrue(((String) generated).matches("[A-Za-z0-9._-]{18}"),
+                "generated id should be 18 url-safe chars, was: " + generated);
+
+        // Same for a request context with no X-Request-Id header.
+        MultivaluedMap<String, Object> headers2 = new MultivaluedHashMap<>();
+        new SecurityHeadersFilter(false)
+                .filter(requestContextWithPath("api/notes"), responseContextWithHeaders(headers2));
+        assertNotNull(headers2.getFirst(SecurityHeadersFilter.REQUEST_ID_HEADER));
+    }
+
+    @Test
+    void echoesCallerRequestIdWhenWellFormed() throws IOException {
+        MultivaluedMap<String, Object> headers = new MultivaluedHashMap<>();
+        new SecurityHeadersFilter(false).filter(
+                requestContext("api/notes", "req_abc123.def-456"),
+                responseContextWithHeaders(headers));
+        assertEquals("req_abc123.def-456", headers.getFirst(SecurityHeadersFilter.REQUEST_ID_HEADER));
+    }
+
+    @Test
+    void sanitizesMaliciousRequestId_untrustedHeaderCannotInjectOrForge() throws IOException {
+        // CR/LF header-injection attempt: the reported value must be a single,
+        // injection-free token.
+        MultivaluedMap<String, Object> headers = new MultivaluedHashMap<>();
+        new SecurityHeadersFilter(false).filter(
+                requestContext("api/notes", "abc\r\nSet-Cookie: x=1<script>%20"),
+                responseContextWithHeaders(headers));
+        String reported = (String) headers.getFirst(SecurityHeadersFilter.REQUEST_ID_HEADER);
+        assertFalse(reported.contains("\r") || reported.contains("\n"),
+                "CR/LF must be stripped from the echoed request id");
+        assertFalse(headers.containsKey("Set-Cookie"));
+        for (char c : reported.toCharArray()) {
+            assertTrue(c == '-' || c == '_' || c == '.' || Character.isLetterOrDigit(c),
+                    "unexpected character in reported id: " + reported);
+        }
+    }
+
+    @Test
+    void capsRequestIdLength() {
+        StringBuilder longId = new StringBuilder("0123456789");
+        for (int i = 0; i < 20; i++) {
+            longId.append("abcdefghij");
+        }
+        String capped = SecurityHeadersFilter.requestIdFor(
+                requestContext("api/notes", longId.toString()));
+        assertEquals(SecurityHeadersFilter.MAX_REQUEST_ID_LENGTH, capped.length());
+        for (char c : capped.toCharArray()) {
+            assertTrue(c == '-' || c == '_' || c == '.' || Character.isLetterOrDigit(c));
+        }
     }
 }

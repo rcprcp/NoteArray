@@ -5,10 +5,13 @@ import jakarta.ws.rs.container.ContainerResponseContext;
 import jakarta.ws.rs.container.ContainerResponseFilter;
 import jakarta.ws.rs.ext.Provider;
 import java.io.IOException;
+import java.util.UUID;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 /**
- * Applies security headers to every REST response.
+ * Applies security headers to every REST response, and echoes or generates an
+ * {@code X-Request-Id} so every API request can be traced in the access log
+ * ({@code quarkus.http.access-log.pattern} references it).
  *
  * <p>Tight anti-framing defaults ({@code X-Frame-Options: DENY} and
  * {@code frame-ancestors 'none'}) protect HTML documents and endpoints from
@@ -20,6 +23,11 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
  */
 @Provider
 public class SecurityHeadersFilter implements ContainerResponseFilter {
+
+    public static final String REQUEST_ID_HEADER = "X-Request-Id";
+
+    /** Length cap for caller-supplied request ids (defends against log abuse). */
+    static final int MAX_REQUEST_ID_LENGTH = 128;
 
     /** Default Content-Security-Policy: nothing may frame our responses. */
     public static final String CSP_VALUE = "default-src 'self'; "
@@ -73,10 +81,33 @@ public class SecurityHeadersFilter implements ContainerResponseFilter {
         containerResponseContext.getHeaders().putSingle("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()");
         containerResponseContext.getHeaders().putSingle("Content-Security-Policy",
                 embeddable ? CSP_SELF_EMBEDDABLE_VALUE : CSP_VALUE);
+        containerResponseContext.getHeaders().putSingle(REQUEST_ID_HEADER, requestIdFor(containerRequestContext));
 
         if (hstsEnabled) {
             containerResponseContext.getHeaders().putSingle("Strict-Transport-Security", HSTS_VALUE);
         }
+    }
+
+    /**
+     * The request id to report for this request: the caller's {@code X-Request-Id}
+     * header when present (sanitized and length-capped so it can neither inject
+     * response headers nor forge arbitrary log lines), else a generated id.
+     */
+    static String requestIdFor(ContainerRequestContext requestContext) {
+        String incoming = requestContext == null ? null : requestContext.getHeaderString(REQUEST_ID_HEADER);
+        String id = incoming == null || incoming.isBlank() ? randomRequestId() : incoming.trim();
+        // Keep only url/UUID-safe characters; strips CR/LF and control characters
+        // that could smuggle extra headers or pollute log lines.
+        id = id.replaceAll("[^A-Za-z0-9._-]", "");
+        if (id.isEmpty()) {
+            id = randomRequestId();
+        }
+        return id.length() > MAX_REQUEST_ID_LENGTH ? id.substring(0, MAX_REQUEST_ID_LENGTH) : id;
+    }
+
+    /** Short, collision-practically-impossible opaque request id (first 18 chars of a UUID). */
+    static String randomRequestId() {
+        return UUID.randomUUID().toString().substring(0, 18);
     }
 
     static boolean isEmbeddableAttachmentPath(ContainerRequestContext requestContext) {
