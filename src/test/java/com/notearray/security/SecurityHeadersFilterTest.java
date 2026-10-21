@@ -6,14 +6,38 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.notearray.resource.NoteResource;
+import jakarta.ws.rs.container.ContainerRequestContext;
 import jakarta.ws.rs.container.ContainerResponseContext;
 import jakarta.ws.rs.core.MultivaluedHashMap;
 import jakarta.ws.rs.core.MultivaluedMap;
+import jakarta.ws.rs.core.UriInfo;
 import java.io.IOException;
 import java.lang.reflect.Proxy;
+import java.net.URI;
 import org.junit.jupiter.api.Test;
 
 class SecurityHeadersFilterTest {
+
+    private static ContainerRequestContext requestContextWithPath(String path) {
+        UriInfo uriInfo = (UriInfo) Proxy.newProxyInstance(
+                UriInfo.class.getClassLoader(),
+                new Class<?>[] { UriInfo.class },
+                (proxy, method, args) -> {
+                    if ("getPath".equals(method.getName())) {
+                        return path;
+                    }
+                    return null;
+                });
+        return (ContainerRequestContext) Proxy.newProxyInstance(
+                ContainerRequestContext.class.getClassLoader(),
+                new Class<?>[] { ContainerRequestContext.class },
+                (proxy, method, args) -> {
+                    if ("getUriInfo".equals(method.getName())) {
+                        return uriInfo;
+                    }
+                    return null;
+                });
+    }
 
     private static ContainerResponseContext responseContextWithHeaders(MultivaluedMap<String, Object> headers) {
         return (ContainerResponseContext) Proxy.newProxyInstance(
@@ -47,6 +71,23 @@ class SecurityHeadersFilterTest {
 
         // HSTS should not be emitted when hstsEnabled is false (dev HTTP)
         assertNull(headers.getFirst("Strict-Transport-Security"));
+    }
+
+    @Test
+    void allowsSelfFramingOnlyForAttachmentDownloadPath() throws IOException {
+        MultivaluedMap<String, Object> headers = new MultivaluedHashMap<>();
+        SecurityHeadersFilter filter = new SecurityHeadersFilter(false);
+
+        filter.filter(requestContextWithPath("api/attachments/d1cfd292"), responseContextWithHeaders(headers));
+        assertEquals("SAMEORIGIN", headers.getFirst("X-Frame-Options"));
+        assertTrue(((String) headers.getFirst("Content-Security-Policy")).contains("frame-ancestors 'self'"));
+        assertFalse(((String) headers.getFirst("Content-Security-Policy")).contains("frame-ancestors 'none'"));
+
+        // Any other path keeps the strict anti-framing default
+        MultivaluedMap<String, Object> strict = new MultivaluedHashMap<>();
+        filter.filter(requestContextWithPath("api/notes/abc"), responseContextWithHeaders(strict));
+        assertEquals("DENY", strict.getFirst("X-Frame-Options"));
+        assertTrue(((String) strict.getFirst("Content-Security-Policy")).contains("frame-ancestors 'none'"));
     }
 
     @Test

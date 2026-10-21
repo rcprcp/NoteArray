@@ -568,7 +568,7 @@ The interactive Swagger UI allows you to test all endpoints directly from your b
 ### XSS Protection & Security Headers
 - **Render & Link Sanitization**: Note content is sanitized with **DOMPurify** on initial editor load and content updates, and the Tiptap `Link` extension restricts link protocols to `http:`, `https:`, `mailto:`, and relative URLs.
 - **Ingest Sanitization**: `NoteResource` strips `<script>`, `<iframe>`, `<object>`, `<embed>` elements, inline `on*=` attributes, and `javascript:`/`vbscript:`/`data:text/html` URIs on note create, update, and import.
-- **HTTP Security Headers**: `SecurityHeadersFilter` and `application.properties` emit `Content-Security-Policy` (`default-src 'self'; script-src 'self'; ... frame-ancestors 'none'`), `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy`, and `Strict-Transport-Security` (when `notearray.session.cookie-secure=true` in `prod`).
+- **HTTP Security Headers**: `SecurityHeadersFilter` and `application.properties` emit `Content-Security-Policy` (`default-src 'self'; script-src 'self'; ... frame-ancestors 'none'`), `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy`, and `Strict-Transport-Security` (when `notearray.session.cookie-secure=true` in `prod`). The one deliberate exception: attachment downloads (`GET /api/attachments/{id}`) allow same-origin framing (`X-Frame-Options: SAMEORIGIN`, `frame-ancestors 'self'`) so the note preview modal can render PDFs in an `<iframe>`; no other site can embed them.
 
 ### Superuser Features (if applicable)
 - If you are a superuser, `GET /api/notes` returns all notes from all users
