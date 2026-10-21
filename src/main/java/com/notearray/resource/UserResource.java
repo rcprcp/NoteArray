@@ -123,6 +123,9 @@ public class UserResource {
             String stripeCustomerId,
             String stripeSubscriptionId) {}
 
+    /** Request body for account deletion. The current password must be re-verified. */
+    public record DeleteRequest(String currentPassword) {}
+
     /** Get the authenticated user from the session cookie. Returns null if not logged in. */
     private User getAuthenticatedUser() {
         return sessions.resolve(headers.getCookies().get(SessionService.COOKIE_NAME));
@@ -486,7 +489,7 @@ public class UserResource {
     @DELETE
     @Path("/{id}")
     @Transactional
-    public Response delete(@PathParam("id") UUID id) {
+    public Response delete(@PathParam("id") UUID id, DeleteRequest req) {
         User caller = getAuthenticatedUser();
         if (caller == null) {
             return Response.status(Response.Status.UNAUTHORIZED).build();
@@ -498,6 +501,13 @@ public class UserResource {
         if (target == null) {
             return Response.status(Response.Status.NOT_FOUND).build();
         }
+        // Destructive deletion requires the current password, mirroring the
+        // password-change flow: a stolen or shared session alone can no longer
+        // irreversibly destroy the account and all of its notes/attachments.
+        Response passwordError = validateDeleteConfirmation(target, req);
+        if (passwordError != null) {
+            return passwordError;
+        }
         Response deleteError = cancelSubscriptionAndValidateDeletion(target, stripeBilling);
         if (deleteError != null) {
             return deleteError;
@@ -507,6 +517,25 @@ public class UserResource {
         return Response.noContent()
                 .header("Set-Cookie", sessions.expiredCookieHeader())
                 .build();
+    }
+
+    /**
+     * Validate the password re-verification for account deletion: the current
+     * password must be supplied and match the stored hash. Runs before any
+     * Stripe interaction so a wrong password never triggers billing calls.
+     * Returns a 400 response on failure, or {@code null} when confirmed.
+     */
+    static Response validateDeleteConfirmation(User target, DeleteRequest req) {
+        String currentPassword = req == null ? null : req.currentPassword();
+        if (isBlank(currentPassword)) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity("Password is required to delete your account").build();
+        }
+        if (!BcryptUtil.matches(currentPassword, target.passwordHash)) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity("Current password is incorrect").build();
+        }
+        return null;
     }
 
     static Response cancelSubscriptionAndValidateDeletion(User target, StripeBillingService billing) {

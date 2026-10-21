@@ -155,14 +155,21 @@
   whole import runs in one transaction with all entities in one Hibernate session. Batch it, and
   skip-identical on re-import.
 
-- [ ] **27. Destructive account deletion requires only the session cookie**
+- [x] **27. Destructive account deletion requires only the session cookie**
   (`UserResource.java:486-535`). `DELETE /api/users/{id}` permanently deletes the account and all
   notes/attachments (explicitly framed in the UI as irreversible) but, unlike the password change,
   does **not re-verify the password** — a stolen, shared, or forgotten-logged-in session destroys
   everything irreversibly. Require the current password (and/or an email confirmation step) before
-  destructive deletion. Also note the Stripe HTTP confirmation (15 s timeout) runs synchronously
+  destructive deletion.
+  *Done (branch `agent/delete-password-verification`): `DELETE /api/users/{id}` now takes a
+  `DeleteRequest` body and re-verifies the current password against the bcrypt hash before any Stripe
+  interaction (`UserResource.validateDeleteConfirmation` — blank/missing → 400 "Password is required
+  to delete your account", wrong → 400 "Current password is incorrect"), tested in
+  `UserDeleteVerificationTest`; the Personal Settings delete card now requires the password field and
+  disables Delete until it is entered, and `USER_GUIDE.md` documents the step.*
+  *Accepted follow-up: the Stripe HTTP confirmation (15 s timeout) still runs synchronously
   inside the `@Transactional` delete request, so a Stripe outage stalls or fails deletions;
-  consider an async/outbox confirmation instead.
+  consider an async/outbox confirmation.*
 
 ---
 
@@ -238,10 +245,11 @@
     anonymous), session expiry/revocation, import edge cases (zip bomb, malformed, >limit),
     validation → status-code mapping.
   - Vitest + React Testing Library for autosave/search flows; Playwright for login→edit→search E2E.
-  *Done, unit test suite established (`src/test`) and grown through 2026-10-20: 62 JUnit 5 tests
-  across 11 classes (`LoginThrottlePolicyTest`, `ClientIpTest`, `PasswordPolicyTest`,
+  *Done, unit test suite established (`src/test`) and grown through 2026-10-21: 67 JUnit 5 tests
+  across 12 classes (`LoginThrottlePolicyTest`, `ClientIpTest`, `PasswordPolicyTest`,
   `NoteArrayApplicationTest`, `UserPasswordChangeTest`, `EmailPolicyTest`, `SecurityHeadersFilterTest`,
-  `CsrfFilterTest`, `NoteVersionConflictTest`, `AttachmentQuotaTest`, `UserPlanSyncTest`) covering
+  `CsrfFilterTest`, `NoteVersionConflictTest`, `AttachmentQuotaTest`, `UserPlanSyncTest`,
+  `UserDeleteVerificationTest`) covering
   throttling, client IP resolution, password policy, JAX-RS resource registration & SPA redirects,
   password change validation order, security headers + ingest XSS sanitization, CSRF filtering,
   optimistic-lock conflict handling, attachment quotas, and plan checkout/sync state transitions.*
@@ -275,7 +283,7 @@
 | 2 | Security headers + CSP + link/HTML sanitization | #3 | ✓ (`security-sanitization`, `agent/security-xss-headers`) |
 | 3 | Email normalization/validation + signup config flag | #4, #10 | ✓ (`agent/email-validation`) |
 | 4 | Fix body-size limit & import expansion caps | #5 | ◐ (body limit fixed in `application.properties:17`; total-expansion/entry-count/concurrency caps outstanding) |
-| 5 | Test suite + CI | #21, #22 | ◐ (unit suite done — 62 tests/11 classes; CI & lint/formatter config outstanding) |
+| 5 | Test suite + CI | #21, #22 | ◐ (unit suite done — 67 tests/12 classes; CI & lint/formatter config outstanding) |
 | 6 | Paginated list + lightweight projection + tags endpoint | #12 | ☐ |
 | 7 | Optimistic locking + serialized autosave | #9 | ✓ (`agent/optimistic-locking-autosave`) |
 | 8 | Trash/undo + note history | #15 | ☐ |
@@ -298,3 +306,4 @@
 | 2026-10-19 | #9 | `agent/optimistic-locking-autosave` | Flyway `V1.1.5` (`notes.version`), `@Version` optimistic locking on `Note` → 409 Conflict in `NoteResource.update`, serialized auto-saves with non-overlapping merge-and-retry in `NotesPanel.jsx`; `NoteVersionConflictTest` |
 | 2026-10-20 | #19 (partial) | `e26d09b`, `bb30e08`, `6d1f9b4`, `b41d046`, `403d778`, `5d19cae` | Untagged filter + removable filter badges, result counts, Enter submits login, card/list view toggle with responsive two-column grid, inline card actions, title wrapping |
 | 2026-10-20 | new: attachments, storage, billing, help | `85f9849`, `bb30e08`, `ceef6b1`, `deb76bb`, `8375086`, `0f9c784`, `2b4561f` | `/api/notes/storage` usage endpoint + UI bar, Stripe plan checkout/sync endpoints (`V1.1.6`, `V1.1.7`) and plan badges, account deletion gated on Stripe cancellation confirmation (`StripeBillingService`; `UserPlanSyncTest`), attachment upload route fix, same-origin framing exception for PDF preview, `?download` mode, Help/About pages, `USER_GUIDE.md`; suite grown to 62 tests / 11 classes (`AttachmentQuotaTest`, `UserPlanSyncTest`). NOTE: this work introduced findings #26 (plan self-escalation via API) and #27 (deletion without password re-verification) |
+| 2026-10-21 | #27 | `agent/delete-password-verification` | `DELETE /api/users/{id}` requires the current password (`DeleteRequest` → `validateDeleteConfirmation`, verified before Stripe calls), password field in the Personal Settings delete card with Delete disabled until entered, doc updates; `UserDeleteVerificationTest` (5 tests) |

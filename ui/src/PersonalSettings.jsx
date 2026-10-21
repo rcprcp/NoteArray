@@ -70,6 +70,8 @@ export default function PersonalSettings({
   const [passwordSuccess, setPasswordSuccess] = useState(null)
   const [savingPassword, setSavingPassword] = useState(false)
   const [deleteError, setDeleteError] = useState(null)
+  const [deletePassword, setDeletePassword] = useState('')
+  const [deleteFieldError, setDeleteFieldError] = useState(null)
   const [deletingAccount, setDeletingAccount] = useState(false)
   const [storageUsage, setStorageUsage] = useState({ usedBytes: 0, noteCount: 0 })
 
@@ -97,6 +99,11 @@ export default function PersonalSettings({
 
   const handleDeleteAccount = async () => {
     if (!canDeleteAccount) return
+    setDeleteFieldError(null)
+    if (!deletePassword) {
+      setDeleteFieldError('Password is required to delete your account')
+      return
+    }
     const confirmMsg = isFreePlan
       ? 'Are you sure you want to permanently delete your account and all of your notes?'
       : 'Deleting your account will cancel your recurring Stripe subscription, await confirmation from Stripe, and permanently delete your account and all of your notes. Continue?'
@@ -106,10 +113,17 @@ export default function PersonalSettings({
     setDeleteError(null)
     setDeletingAccount(true)
     try {
-      await usersApi.remove(user.id)
+      // The server re-verifies the current password before deleting; the
+      // session cookie alone can no longer trigger destructive deletion.
+      await usersApi.remove(user.id, deletePassword)
       await onLogout()
     } catch (e) {
-      setDeleteError(e.message || 'Failed to delete account')
+      const msg = e.message || 'Failed to delete account'
+      if (msg.toLowerCase().includes('password')) {
+        setDeleteFieldError(msg)
+      } else {
+        setDeleteError(msg)
+      }
     } finally {
       setDeletingAccount(false)
     }
@@ -532,12 +546,24 @@ export default function PersonalSettings({
               Awaiting Stripe subscription cancellation confirmation and deleting account...
             </Text>
           )}
+          <Text size="xs" c="dimmed">
+            Deleting is permanent. To confirm, enter your current password — the account cannot be deleted with the session alone.
+          </Text>
+          <PasswordInput
+            label="Current password"
+            required
+            value={deletePassword}
+            error={deleteFieldError}
+            disabled={!canDeleteAccount || deletingAccount}
+            onChange={(e) => setDeletePassword(e.currentTarget.value)}
+            style={{ maxWidth: 320 }}
+          />
           <Group justify="flex-start">
             <Button
               color="red"
               variant="filled"
               leftSection={<IconTrash size={16} />}
-              disabled={!canDeleteAccount}
+              disabled={!canDeleteAccount || !deletePassword}
               loading={deletingAccount}
               onClick={handleDeleteAccount}
             >

@@ -373,6 +373,7 @@ Going over quota is not an emergency: your existing notes are safe, you just can
 
 The red **Delete Account** card at the bottom of Personal Settings:
 
+- Type your **current password** — deletion is confirmed only if the password matches, so a signed-in session alone can never delete your account.
 - **Free users:** confirm, and your account and **all notes are permanently deleted**. You're signed out immediately.
 - **Pro/Premium users:** NoteArray cancels your **Stripe subscription first** and *waits for Stripe to confirm* the cancellation ("Awaiting Stripe subscription cancellation confirmation and deleting account…"), then deletes the account and signs you out. If Stripe can't confirm, the deletion refuses with an error so you're never left with an orphaned recurring charge — try again later.
 - If you have a **pending upgrade checkout**, you must complete or cancel it before deleting.

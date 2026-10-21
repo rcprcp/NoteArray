@@ -37,7 +37,7 @@ export const usersApi = {
   update: (id, user) => request(`/api/users/${id}`, { method: 'PUT', body: JSON.stringify(user) }),
   checkoutPlan: (id, plan) => request(`/api/users/${id}/plan/checkout`, { method: 'POST', body: JSON.stringify({ plan }) }),
   syncPlan: (id, payload) => request(`/api/users/${id}/plan/sync`, { method: 'POST', body: JSON.stringify(payload) }),
-  remove: (id) => request(`/api/users/${id}`, { method: 'DELETE' }),
+  remove: (id, currentPassword) => request(`/api/users/${id}`, { method: 'DELETE', body: JSON.stringify({ currentPassword }) }),
   list: () => request('/api/users'),
 }
 
