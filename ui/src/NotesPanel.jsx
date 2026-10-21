@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ActionIcon, Alert, Box, Button, Collapse, Checkbox, Group, List, Modal, Stack, Table, Text, TextInput, Title, UnstyledButton, Badge, FileInput, Loader, Card, SimpleGrid } from '@mantine/core'
-import { IconCheck, IconChevronDown, IconChevronUp, IconPin, IconSearch, IconSelector, IconUpload, IconMenu2, IconX } from '@tabler/icons-react'
+import { IconCheck, IconChevronDown, IconChevronUp, IconDownload, IconPin, IconSearch, IconSelector, IconUpload, IconMenu2, IconX } from '@tabler/icons-react'
 import { useMediaQuery } from '@mantine/hooks'
 import { RichTextEditor } from '@mantine/tiptap'
 import { Node, mergeAttributes } from '@tiptap/core'
@@ -1247,6 +1247,15 @@ export default function NotesPanel({ registerActions } = {}) {
               style={{ width: '100%', height: '70vh', border: '1px solid var(--mantine-color-default-border)', borderRadius: 6 }}
             />
             <Group justify="flex-end">
+              <Button
+                component="a"
+                href={`${previewAttachment.url}?download=1`}
+                leftSection={<IconDownload size={14} />}
+                variant="light"
+                size="sm"
+              >
+                Download
+              </Button>
               <Button
                 component="a"
                 href={previewAttachment.url}

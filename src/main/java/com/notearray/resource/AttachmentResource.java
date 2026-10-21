@@ -7,6 +7,7 @@ import jakarta.inject.Inject;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.Response;
@@ -88,7 +89,7 @@ public class AttachmentResource {
 
     @GET
     @Path("/{id}")
-    public Response download(@PathParam("id") UUID id) {
+    public Response download(@PathParam("id") UUID id, @QueryParam("download") String downloadParam) {
         User user = sessions.resolve(headers.getCookies().get(SessionService.COOKIE_NAME));
         if (user == null) {
             return Response.status(Response.Status.UNAUTHORIZED).build();
@@ -97,8 +98,15 @@ public class AttachmentResource {
         if (attachment == null || !canAccessAttachment(user, attachment)) {
             return Response.status(Response.Status.NOT_FOUND).build();
         }
+        // Inline when previewing in the app; attachment (download prompt with the
+        // stored filename) when ?download is set. Any non-"false" request parameter
+        // value (e.g. ?download=1 or ?download=true) enables the download mode.
+        boolean forceDownload = downloadParam != null
+                && !"false".equalsIgnoreCase(downloadParam.trim());
+        String disposition = forceDownload ? "attachment" : "inline";
         return Response.ok(attachment.data, attachment.contentType)
-                .header("Content-Disposition", "inline; filename=\"" + attachment.filename + "\"")
+                .header("Content-Disposition",
+                        disposition + "; filename=\"" + attachment.filename + "\"")
                 .header("Cache-Control", "private, max-age=86400")
                 .build();
     }
