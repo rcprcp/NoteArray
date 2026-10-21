@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ActionIcon, Alert, Box, Button, Collapse, Checkbox, Group, List, Modal, Stack, Table, Text, TextInput, Title, UnstyledButton, Badge, FileInput, Loader, Card, SimpleGrid } from '@mantine/core'
-import { IconCheck, IconChevronDown, IconChevronUp, IconDownload, IconPin, IconSearch, IconSelector, IconUpload, IconMenu2, IconX } from '@tabler/icons-react'
+import { ActionIcon, Alert, Box, Button, Collapse, Checkbox, Group, List, Modal, Stack, Table, Text, TextInput, Title, UnstyledButton, Badge, FileInput, Loader, Card, SimpleGrid, Tooltip } from '@mantine/core'
+import { IconCheck, IconChevronDown, IconChevronUp, IconDownload, IconLayoutGrid, IconList, IconPin, IconSearch, IconSelector, IconUpload, IconMenu2, IconX } from '@tabler/icons-react'
 import { useMediaQuery } from '@mantine/hooks'
 import { RichTextEditor } from '@mantine/tiptap'
 import { Node, mergeAttributes } from '@tiptap/core'
@@ -20,6 +20,9 @@ const EMPTY_FORM = { title: '', content: '', tags: '' }
 const DEFAULT_SEARCH = { q: '', searchTitles: true, searchContent: true }
 
 const FILTERS_KEY = 'notearray.filters'
+// Card/list display preference: 'auto' follows screen size, or an explicit override.
+const VIEW_KEY = 'notearray.view'
+const DEFAULT_VIEW_MODE = 'auto'
 
 function readStorage(key, fallback) {
   try {
@@ -310,15 +313,22 @@ function PinButton({ note, onToggle }) {
   )
 }
 
-// Mobile card view for a single note
+// Card view for a single note (used on mobile and when the user picks card view)
 function NoteCard({ note, onEdit, onDelete, onTogglePin }) {
   return (
     <Card shadow="sm" padding="md" radius="md" withBorder onClick={() => onEdit(note)} style={{ cursor: 'pointer' }}>
       <Stack gap="xs">
-        <div>
-          <Text fw={500} size="sm" c="dimmed">Created: {new Date(note.createdAt).toLocaleDateString()}</Text>
-          <Text fw={500} size="sm" c="dimmed">Updated: {new Date(note.updatedAt).toLocaleDateString()}</Text>
-        </div>
+        <Group justify="space-between" align="center" wrap="nowrap" gap="xs">
+          <Group gap="xs" wrap="wrap" style={{ minWidth: 0 }}>
+            <Text fw={500} size="sm" c="dimmed" style={{ minWidth: 0 }}>Created: {new Date(note.createdAt).toLocaleDateString()}</Text>
+            <Text fw={500} size="sm" c="dimmed" style={{ minWidth: 0 }}>Updated: {new Date(note.updatedAt).toLocaleDateString()}</Text>
+          </Group>
+          <Group gap="xs" wrap="nowrap" style={{ flex: '0 0 auto' }}>
+            <PinButton note={note} onToggle={onTogglePin} />
+            <Button size="xs" variant="light" onClick={(e) => { e.stopPropagation(); onEdit(note) }}>Edit</Button>
+            <Button size="xs" variant="light" color="red" onClick={(e) => { e.stopPropagation(); onDelete(note) }}>Delete</Button>
+          </Group>
+        </Group>
         <div>
           <Text fw={600} size="md" lineClamp={2}>
             {note.title || <Text c="dimmed" fs="italic">Untitled</Text>}
@@ -331,11 +341,6 @@ function NoteCard({ note, onEdit, onDelete, onTogglePin }) {
             </Group>
           )}
         </div>
-        <Group gap="xs" justify="flex-end">
-          <PinButton note={note} onToggle={onTogglePin} />
-          <Button size="xs" variant="light" onClick={(e) => { e.stopPropagation(); onEdit(note) }}>Edit</Button>
-          <Button size="xs" variant="light" color="red" onClick={(e) => { e.stopPropagation(); onDelete(note) }}>Delete</Button>
-        </Group>
       </Stack>
     </Card>
   )
@@ -385,6 +390,10 @@ export default function NotesPanel({ registerActions } = {}) {
   const [filters, setFilters] = useState(() => ({ ...DEFAULT_FILTERS, ...readStorage(FILTERS_KEY, {}) }))
   const [allNotes, setAllNotes] = useState([])
   const [filtersOpen, setFiltersOpen] = useState(false)
+  // Card vs list display preference ('auto' follows screen size). Persisted.
+  const [viewMode, setViewMode] = useState(() => readStorage(VIEW_KEY, DEFAULT_VIEW_MODE))
+  useEffect(() => writeStorage(VIEW_KEY, viewMode), [viewMode])
+  const cardView = viewMode === 'card' || (viewMode === 'auto' && isMobile)
 
   // Import states
   const [importModalOpened, setImportModalOpened] = useState(false)
@@ -1034,16 +1043,42 @@ export default function NotesPanel({ registerActions } = {}) {
       )}
 
       {!(createMode || editMode) && (
-        <Stack gap="xs">
-          {activeSearch && (
-            <Text fw={600} size={isMobile ? 'md' : 'lg'}>
-              Search results for "{activeSearch.q.trim()}"
+        <Group justify="space-between" align="flex-start" wrap="nowrap" gap="xs">
+          <Stack gap="xs">
+            {activeSearch && (
+              <Text fw={600} size={isMobile ? 'md' : 'lg'}>
+                Search results for "{activeSearch.q.trim()}"
+              </Text>
+            )}
+            <Text size="sm" c="dimmed" role="status">
+              Found {notes.length} result{notes.length === 1 ? '' : 's'}
             </Text>
-          )}
-          <Text size="sm" c="dimmed" role="status">
-            Found {notes.length} result{notes.length === 1 ? '' : 's'}
-          </Text>
-        </Stack>
+          </Stack>
+          <Group gap={4} wrap="nowrap" style={{ flex: '0 0 auto' }} role="group" aria-label="Notes display mode">
+            <Tooltip label="Card view">
+              <ActionIcon
+                variant={viewMode === 'card' ? 'filled' : 'light'}
+                size="lg"
+                onClick={() => setViewMode(viewMode === 'card' ? DEFAULT_VIEW_MODE : 'card')}
+                aria-label="Show note cards"
+                aria-pressed={viewMode === 'card'}
+              >
+                <IconLayoutGrid size={16} />
+              </ActionIcon>
+            </Tooltip>
+            <Tooltip label="List view">
+              <ActionIcon
+                variant={viewMode === 'list' ? 'filled' : 'light'}
+                size="lg"
+                onClick={() => setViewMode(viewMode === 'list' ? DEFAULT_VIEW_MODE : 'list')}
+                aria-label="Show note list"
+                aria-pressed={viewMode === 'list'}
+              >
+                <IconList size={16} />
+              </ActionIcon>
+            </Tooltip>
+          </Group>
+        </Group>
       )}
 
       {/* Notes Display */}
@@ -1081,15 +1116,15 @@ export default function NotesPanel({ registerActions } = {}) {
         </Stack>
       ) : notes.length === 0 ? (
         <Text c="dimmed" ta="center" py="xl">{activeFilterCount > 0 ? 'No notes match your search or filters.' : 'You have no notes yet. Use Create Note or Import some notes from a backup.'}</Text>
-      ) : isMobile ? (
-        // Mobile: Card view
+      ) : cardView ? (
+        // Card view (small screens by default, or when explicitly selected)
         <SimpleGrid cols={1} spacing="md" style={{ width: "100%" }}>
           {sortedNotes.map((n) => (
             <NoteCard key={n.id} note={n} onEdit={openEdit} onDelete={remove} onTogglePin={togglePin} />
           ))}
         </SimpleGrid>
       ) : (
-        // Desktop: Table view
+        // Table view
         <Table striped highlightOnHover withTableBorder style={{ width: "100%" }}>
           <Table.Thead>
             <Table.Tr>
