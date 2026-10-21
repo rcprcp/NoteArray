@@ -1043,7 +1043,7 @@ export default function NotesPanel({ registerActions } = {}) {
       )}
 
       {!(createMode || editMode) && (
-        <Group justify="space-between" align="flex-start" wrap="nowrap" gap="xs">
+        <Group justify="space-between" align="flex-end" wrap="nowrap" gap="xs">
           <Stack gap="xs">
             {activeSearch && (
               <Text fw={600} size={isMobile ? 'md' : 'lg'}>
