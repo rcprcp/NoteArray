@@ -1118,7 +1118,7 @@ export default function NotesPanel({ registerActions } = {}) {
         <Text c="dimmed" ta="center" py="xl">{activeFilterCount > 0 ? 'No notes match your search or filters.' : 'You have no notes yet. Use Create Note or Import some notes from a backup.'}</Text>
       ) : cardView ? (
         // Card view (small screens by default, or when explicitly selected)
-        <SimpleGrid cols={1} spacing="md" style={{ width: "100%" }}>
+        <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md" style={{ width: "100%" }}>
           {sortedNotes.map((n) => (
             <NoteCard key={n.id} note={n} onEdit={openEdit} onDelete={remove} onTogglePin={togglePin} />
           ))}
