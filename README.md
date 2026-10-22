@@ -380,6 +380,11 @@ marks the row (`orphaned_at`), and a scheduled job deletes it once it is older t
 (default `PT24H`), leaving auto-save, undo and cut/paste a safety window. The job runs every
 `notearray.attachments.purge-interval` (default `1h`).
 
+Deleting a **note** settles its attachments in the same request: files another note still links are re-homed to that note
+and kept, files only the deleted note used are removed immediately, and files the deleted note referenced but that live
+on another note start their grace clock right away. Deleting an **account** removes every note and attachment through
+`ON DELETE CASCADE` — instantly and completely.
+
 ### Notes – Filters
 
 - **GET** `/api/notes` also accepts filter parameters, combined with AND (and with any search query):

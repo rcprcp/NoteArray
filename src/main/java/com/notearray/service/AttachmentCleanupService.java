@@ -7,11 +7,14 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.transaction.Transactional;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -88,8 +91,124 @@ public class AttachmentCleanupService {
 
     /** True when a note other than {@code noteId} of the same owner still links the attachment. */
     static boolean referencedElsewhere(UUID attachmentId, UUID ownerId, UUID noteId) {
-        return Note.count("ownerId = ?1 and id <> ?2 and content like ?3",
-                ownerId, noteId, "%/api/attachments/" + attachmentId + "%") > 0;
+        return firstOtherNoteReferencing(attachmentId, ownerId, noteId) != null;
+    }
+
+    /**
+     * A note of the same owner, other than {@code noteId}, whose content links the
+     * attachment — or null when nothing else references it.
+     */
+    static Note firstOtherNoteReferencing(UUID attachmentId, UUID ownerId, UUID noteId) {
+        List<Note> referrers = Note.getEntityManager()
+                .createQuery("SELECT n FROM Note n WHERE n.ownerId = :owner AND n.id <> :noteId"
+                        + " AND n.content LIKE :pattern", Note.class)
+                .setParameter("owner", ownerId)
+                .setParameter("noteId", noteId)
+                .setParameter("pattern", "%/api/attachments/" + attachmentId + "%")
+                .setMaxResults(1)
+                .getResultList();
+        return referrers.isEmpty() ? null : referrers.get(0);
+    }
+
+    /**
+     * Attachments uploaded from a note that is about to be deleted: the ones another
+     * note still links are re-homed to that note (so the delete cascade cannot take a
+     * file that is still in use), the rest go with the note. Pure so the decision is
+     * unit-testable; {@code otherReferrer} returns the note to keep an attachment for,
+     * or null when nothing else links it.
+     */
+    static Map<UUID, UUID> attachmentsToRehome(Set<UUID> uploadedIds, Function<UUID, UUID> otherReferrer) {
+        Map<UUID, UUID> rehome = new HashMap<>();
+        for (UUID id : uploadedIds) {
+            UUID target = otherReferrer.apply(id);
+            if (target != null) {
+                rehome.put(id, target);
+            }
+        }
+        return rehome;
+    }
+
+    /**
+     * Attachments the deleted note referenced but that live on another note: when
+     * nothing else links them any more, start their grace clock now instead of waiting
+     * for the uploader note's next save. Attachments uploaded from the deleted note are
+     * excluded — those are re-homed or removed outright.
+     */
+    static Set<UUID> attachmentsToMarkOrphaned(Set<UUID> referencedFromDeletedNote,
+                                               Set<UUID> uploadedFromDeletedNote,
+                                               Set<UUID> alreadyOrphaned,
+                                               Predicate<UUID> referencedElsewhere) {
+        Set<UUID> mark = new HashSet<>();
+        for (UUID id : referencedFromDeletedNote) {
+            if (uploadedFromDeletedNote.contains(id) || alreadyOrphaned.contains(id)) {
+                continue;
+            }
+            if (!referencedElsewhere.test(id)) {
+                mark.add(id);
+            }
+        }
+        return mark;
+    }
+
+    /**
+     * Settle the attachments around a note deletion. Must run <em>before</em> the note
+     * row is deleted: the {@code note_id} cascade would otherwise take every file
+     * uploaded from it, including ones another note still links.
+     */
+    public void prepareNoteDeletion(Note note) {
+        if (note == null || note.id == null) {
+            return;
+        }
+        UUID ownerId = note.ownerId;
+        UUID noteId = note.id;
+        List<NoteAttachment> uploaded = NoteAttachment.getEntityManager()
+                .createQuery("SELECT a FROM NoteAttachment a WHERE a.noteId = :noteId", NoteAttachment.class)
+                .setParameter("noteId", noteId)
+                .getResultList();
+        Set<UUID> uploadedIds = new HashSet<>();
+        for (NoteAttachment attachment : uploaded) {
+            uploadedIds.add(attachment.id);
+        }
+
+        Map<UUID, UUID> rehome = attachmentsToRehome(uploadedIds, id -> {
+            Note other = firstOtherNoteReferencing(id, ownerId, noteId);
+            return other == null ? null : other.id;
+        });
+        for (NoteAttachment attachment : uploaded) {
+            UUID target = rehome.get(attachment.id);
+            if (target != null) {
+                attachment.noteId = target;   // still linked elsewhere: keep the file
+            } else {
+                attachment.delete();          // this note was its last user
+            }
+        }
+
+        Set<UUID> referenced = referencedAttachmentIds(note.content);
+        Map<UUID, NoteAttachment> referencedElsewhereHere = new HashMap<>();
+        Set<UUID> alreadyOrphaned = new HashSet<>();
+        for (UUID id : referenced) {
+            if (uploadedIds.contains(id)) {
+                continue;
+            }
+            NoteAttachment attachment = NoteAttachment.findById(id);
+            if (attachment == null || !ownerId.equals(attachment.ownerId)) {
+                continue;
+            }
+            referencedElsewhereHere.put(id, attachment);
+            if (attachment.orphanedAt != null) {
+                alreadyOrphaned.add(id);
+            }
+        }
+        Set<UUID> toMark = attachmentsToMarkOrphaned(referenced, uploadedIds, alreadyOrphaned,
+                id -> firstOtherNoteReferencing(id, ownerId, noteId) != null);
+        Instant now = Instant.now();
+        for (UUID id : toMark) {
+            referencedElsewhereHere.get(id).orphanedAt = now;
+        }
+
+        // Push the re-homing and removals to the database before the note row goes:
+        // the FK cascade only sees the note_id values that are actually stored.
+        note.flush();
     }
 
     /**

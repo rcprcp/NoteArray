@@ -178,10 +178,11 @@ Deleting from that list removes the file and its link from this note right away.
 
 ### Storage accounting
 
-Attachments **count against your plan's storage quota** together with note text. Deleting a note deletes its attachments
-immediately and frees the space. If you simply remove an attachment's link from a note, the file is **cleaned up
-automatically** — the space comes back about a day later, which leaves room for undo or a cut/paste mistake (see
-[Plans, Storage & Billing](#9-plans-storage--billing)).
+Attachments **count against your plan's storage quota** together with note text. Deleting a note reclaims the space its
+files used straight away — except any file another note still links, which is kept (and stays linked there). Deleting
+the whole account removes every note and attachment immediately. If you simply remove an attachment's link from a note,
+the file is **cleaned up automatically** — the space comes back about a day later, which leaves room for undo or a
+cut/paste mistake (see [Plans, Storage & Billing](#9-plans-storage--billing)).
 
 ---
 

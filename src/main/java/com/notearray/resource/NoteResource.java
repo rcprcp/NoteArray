@@ -710,6 +710,10 @@ public class NoteResource {
         if (note == null || !canAccessNote(user, note)) {
             return Response.status(Response.Status.NOT_FOUND).build();
         }
+        // Settle attachments first: files still linked from another note are kept (and
+        // re-homed), files only this note used are reclaimed now, and files this note
+        // referenced but that live elsewhere start their grace clock.
+        attachmentCleanup.prepareNoteDeletion(note);
         note.delete();
         return Response.noContent().build();
     }
