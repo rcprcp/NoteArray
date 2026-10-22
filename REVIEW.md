@@ -97,8 +97,8 @@
   never overshoot the plan (Free 100 MB / Pro 1 GB / Premium 5 GB). Limit breaches throw
   `WebApplicationException` (unchecked → JTA rollback), per-entry reads rethrow it before the generic
   catch. `ImportLimitsTest` (8 tests: budget, quota helper, config wiring); suite 80 tests / 13
-  classes. Note: notes still accumulate in one Hibernate session, so very large imports hold heap
-  until commit — batching (finding #11) addresses that.*
+  classes. Note: notes still accumulate in one Hibernate session until commit; that is an accepted
+  design decision (finding #11) — the expansion budget keeps the blast radius bounded.*
 
 - [x] **6. Swagger UI, OpenAPI, and Prometheus metrics are public in prod**
   (`application.properties:26-31`, `always-include=true`; `quarkus-micrometer`). Disable Swagger/OpenAPI
@@ -167,9 +167,15 @@
   *Done (branch `agent/email-validation`): `EmailPolicy` validates name (≤ 255 chars) and email (≤ 320
   chars, local ≤ 64, domain ≤ 255) before persistence and returns 400.*
 
-- [ ] **11. Re-importing the same JEX duplicates every note** — no dedupe (hash of title+content) and the
+- [x] **11. Re-importing the same JEX duplicates every note** — no dedupe (hash of title+content) and the
   whole import runs in one transaction with all entities in one Hibernate session. Batch it, and
   skip-identical on re-import.
+  *Closed as a design decision (2026-10-21, no code change): the single-transaction model is kept —
+  the expansion budget / entry cap / plan-quota rollback from #5 already bound memory and blast
+  radius, so batching adds failure-mode complexity for little gain. Content-hash dedupe was
+  rejected because it only helps unchanged notes: once a user edits a note the hash no longer
+  matches and a duplicate lands anyway, so the invariant "importing the same JEX again duplicates
+  every note" is now documented behavior in `USER_GUIDE.md` instead of a surprise.*
 
 - [x] **27. Destructive account deletion requires only the session cookie**
   (`UserResource.java:486-535`). `DELETE /api/users/{id}` permanently deletes the account and all
@@ -337,3 +343,4 @@
 | 2026-10-21 | #5 | `agent/import-limits` | Import bounds made configurable + real zip-bomb defenses: `notearray.import.max-archive-bytes` 50 MB (env-tunable, body limit stays 55M), `notearray.import.max-total-expansion-bytes` 256 MB cumulative uncompressed (`ExpansionBudget` in `NoteResource`), `notearray.import.max-entries` 10,000, `Semaphore(2)` concurrency bound (503 + `Retry-After: 60`), and plan storage quota enforced per note during the import (whole transaction rolls back with 413 on overshoot — imports can fill but never exceed Free/Pro/Premium storage); `ImportLimitsTest`, suite 80 tests / 13 classes |
 | 2026-10-21 | #26 (layers 1+2) | `agent/plan-stripe-verification` | Plan no longer settable via user CRUD (400 `planWriteRejected`); `PlanSyncRequest` = `{action, checkoutSessionId}` only; `confirm` verifies server-side via Stripe (`StripeBillingService.verifyCheckoutSession`: complete+paid session → subscription price → `planForPrice` with `notearray.stripe.pro/premium-price-id` config; 422 when unverifiable); UI replays only the opaque `session_id` from the `{CHECKOUT_SESSION_ID}` redirect, manual Confirm button removed, success-without-session falls back to cancel+warning; plan documented in `STRIPE.md` (Layer 3 webhook design included); `UserPlanSyncTest` updated, suite 83 tests / 13 classes |
 | 2026-10-21 | UX: quota messages | `agent/quota-message-fix` | Quota-exceeded wording is now plan-agnostic ("Storage quota exceeded. Please upgrade your plan or delete notes to free up space." — no tier name, since the same guard serves free/pro/premium); mid-import overrun says "This import would exceed your plan storage limit (`X`)" where `X` = the caller's own plan via `StorageQuota.limitLabelForPlan` (100 MB / 1 GB / 5 GB); `AttachmentQuotaTest` gains label + message tests, suite 85 tests / 13 classes |
+| 2026-10-21 | #11 (closed: design decision) | `agent/close-finding-11` | No code change: single-transaction import kept (bounded by #5's expansion budget/entry cap/quota rollback), content-hash dedupe rejected (uneditable-hash argument: edits break the match, so duplicates land anyway — skip-identical only works for byte-identical re-imports); re-import duplication is now documented behavior in `USER_GUIDE.md` (import section + troubleshooting table); no tests changed (docs + backlog only) |

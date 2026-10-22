@@ -285,13 +285,18 @@ What you get:
 - **Content** stays markdown, with Joplin's trailing metadata block (id, parent_id, etc.) stripped.
 - Imports with no tags at all get a `joplin-import` tag automatically, so imported notes are easy to find.
 
+> **Re-importing does not de-duplicate.** The importer treats every `.md` entry as a new note —
+> importing the same JEX a second time creates a second copy of every note (and edits you made
+> in NoteArray or Joplin don't change that). Import each notebook once; if you bring the same
+> archive in twice, use the `joplin-import` tag to find and delete the unwanted copies.
+
 ### Markdown (.md) — single files
 
 Upload one `.md` file (up to **10 MB**). The **first line becomes the title**, the rest becomes the note; it's tagged **`markdown-import`** so you can find it later and re-tag it.
 
 ### Reading the result
 
-The modal shows *"Imported N note(s) [with N error(s)]."* — with a bulleted list of any per-note problems. If some imports failed, a special yellow alert lists them: re-run the import to try again. Imports respect your plan's storage limit and stop where the quota is reached (see the next section).
+The modal shows *"Imported N note(s) [with N error(s)]."* — with a bulleted list of any per-note problems. If some notes failed, the rest still imported; fix the source and import only those notes individually (re-running the whole JEX would duplicate everything that already imported). Imports respect your plan's storage limit: if the import would overshoot your plan, **nothing is saved** and the error names your plan's limit (see the next section).
 
 ---
 
@@ -418,7 +423,7 @@ Where messages come from and what to do:
 | *"Only PNG, JPEG, GIF, WebP images and PDF files are supported"* | An attachment type outside the whitelist was dropped. | Convert the file, or link text describing it and attach a PDF where possible. |
 | *"Attachment exceeds the maximum size of 10 MB"* | A single file was too big. | Compress / split it. |
 | *"JEX file exceeds the maximum import size of 50 MB"* / *"Markdown file exceeds the maximum import size of 10 MB"* | Import file too large. | Split the Joplin export into multiple notebooks and import them separately. |
-| *"Imported N note(s) with N error(s)"* | Some notes failed during import (each listed in a bulleted message list). | Re-run the import to retry failures; check your source export. |
+| *"Imported N note(s) with N error(s)"* | Some notes failed during import (each listed in a bulleted message list). The rest imported normally. | Fix the failing entries in the source export and import just those notes as individual `.md` files — re-running the whole JEX duplicates the notes that already imported. |
 | *"Email already in use"* / *"Name already in use"* | That email or name is already an account. | Pick a different one, or log in if it's yours. |
 | *"password must be at least 8 characters"* (and similar) | Password policy failure. | Follow the rules shown on the form. |
 | *"Current password is incorrect"* | The Current Password field didn't match. | Recheck the old password before changing it. |
