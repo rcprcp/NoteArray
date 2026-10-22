@@ -121,6 +121,16 @@
   the Stripe identifiers) from user-writable request fields; activate paid plans only from a signed
   Stripe webhook (or a server-side Checkout Session / subscription status lookup tied to the
   authenticated billing user); keep the client display-only.
+  *Layers 1+2 done (branch `agent/plan-stripe-verification`, plan in `STRIPE.md`): user CRUD now
+  rejects `plan` (400 `planWriteRejected()`); `PlanSyncRequest` shrunk to `{action, checkoutSessionId}`
+  — client Stripe IDs are structurally gone; `confirm` activates a plan **only** from
+  `StripeBillingService.verifyCheckoutSession` (server-side Stripe lookup: session `complete`+`paid`,
+  subscription price mapped to plan via `notearray.stripe.pro/premium-price-id` config,
+  `planForPrice`); 422 when unverifiable. UI sends only the opaque `session_id` from the
+  `{CHECKOUT_SESSION_ID}` redirect; manual "Confirm Stripe Payment" button removed. **Outstanding
+  (Layer 3)**: downgrade-only `past_due`/`subscription_deleted` sync actions are still client-callable
+  (interim) and should move behind a signed `/api/stripe/webhook`; Stripe-side: success URL must
+  embed `{CHECKOUT_SESSION_ID}` and the two price IDs must be configured or confirm refuses.*
 
 ### Medium
 
@@ -325,3 +335,4 @@
 | 2026-10-21 | #23 | `agent/prod-config-hygiene` | `%prod` datasource requires `NOTEARRAY_DB_*` env vars (no dev fallbacks — verified jar refuses to start without them), `com.notearray` DEBUG moved to `%dev` only, `quarkus-smallrye-health` added (`/q/health` + DB readiness verified live + 200), access log enabled with `X-Request-Id` (generated/sanitized in `SecurityHeadersFilter`, caller-supplied ids echoed; verified in log), removed stale ignored `quarkus.http.cookie.same-site-cookie*` keys; 72 tests/12 classes |
 | 2026-10-21 | fix: Firefox attachment download quirk | `agent/attachment-download-fix` | Blob-based Download button (never a viewer navigation) + Firefox fix: blob and `?download` mode served as `application/octet-stream` so Firefox's built-in PDF handling ("Open in Firefox" / `open_pdf_attachments_inline`) cannot save-and-reopen the download despite `Content-Disposition: attachment` (Bugzilla 1756980); preview (`inline`) responses keep `application/pdf` |
 | 2026-10-21 | #5 | `agent/import-limits` | Import bounds made configurable + real zip-bomb defenses: `notearray.import.max-archive-bytes` 50 MB (env-tunable, body limit stays 55M), `notearray.import.max-total-expansion-bytes` 256 MB cumulative uncompressed (`ExpansionBudget` in `NoteResource`), `notearray.import.max-entries` 10,000, `Semaphore(2)` concurrency bound (503 + `Retry-After: 60`), and plan storage quota enforced per note during the import (whole transaction rolls back with 413 on overshoot — imports can fill but never exceed Free/Pro/Premium storage); `ImportLimitsTest`, suite 80 tests / 13 classes |
+| 2026-10-21 | #26 (layers 1+2) | `agent/plan-stripe-verification` | Plan no longer settable via user CRUD (400 `planWriteRejected`); `PlanSyncRequest` = `{action, checkoutSessionId}` only; `confirm` verifies server-side via Stripe (`StripeBillingService.verifyCheckoutSession`: complete+paid session → subscription price → `planForPrice` with `notearray.stripe.pro/premium-price-id` config; 422 when unverifiable); UI replays only the opaque `session_id` from the `{CHECKOUT_SESSION_ID}` redirect, manual Confirm button removed, success-without-session falls back to cancel+warning; plan documented in `STRIPE.md` (Layer 3 webhook design included); `UserPlanSyncTest` updated, suite 83 tests / 13 classes |

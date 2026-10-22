@@ -3,6 +3,7 @@ package com.notearray.resource;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.notearray.entity.User;
 import com.notearray.resource.UserResource.PlanCheckoutRequest;
@@ -42,19 +43,34 @@ class UserPlanSyncTest {
     }
 
     @Test
-    void syncConfirmActivatesPendingPaidPlanAndStoresStripeIds() {
+    void syncConfirmRequiresCheckoutSessionId() {
         UserResource.applyPlanCheckout(user, new PlanCheckoutRequest("premium"), null, null);
 
         Response res = UserResource.applyPlanSync(
-                user,
-                new PlanSyncRequest("confirm", null, "cus_abc123", "sub_xyz789"));
+                user, new PlanSyncRequest("confirm", null), new StripeBillingService());
 
-        assertEquals(200, res.getStatus());
-        assertEquals("premium", user.plan);
-        assertNull(user.pendingPlan);
-        assertEquals(User.PLAN_STATUS_ACTIVE, user.planStatus);
-        assertEquals("cus_abc123", user.stripeCustomerId);
-        assertEquals("sub_xyz789", user.stripeSubscriptionId);
+        assertEquals(400, res.getStatus());
+        assertEquals("free", user.plan);
+        assertEquals(User.PLAN_STATUS_PENDING_CHECKOUT, user.planStatus);
+    }
+
+    @Test
+    void syncConfirmOnlyActivatesWhenStripeVerifiesTheSession() {
+        UserResource.applyPlanCheckout(user, new PlanCheckoutRequest("premium"), null, null);
+
+        // A billing service without a configured API key cannot verify anything,
+        // so the plan must NOT be activated even though a session id is presented.
+        Response res = UserResource.applyPlanSync(
+                user, new PlanSyncRequest("confirm", "cs_test_validsessionid"), new StripeBillingService());
+
+        assertEquals(422, res.getStatus());
+        assertEquals("free", user.plan);
+        // Rejecting verification leaves the pending checkout intact so it can be retried.
+        assertEquals("premium", user.pendingPlan);
+        assertEquals(User.PLAN_STATUS_PENDING_CHECKOUT, user.planStatus);
+        // Client-provided identifiers must never reach the user row.
+        assertNull(user.stripeCustomerId);
+        assertNull(user.stripeSubscriptionId);
     }
 
     @Test
@@ -62,7 +78,7 @@ class UserPlanSyncTest {
         user.plan = "pro";
         UserResource.applyPlanCheckout(user, new PlanCheckoutRequest("premium"), null, null);
 
-        Response res = UserResource.applyPlanSync(user, new PlanSyncRequest("cancel", null, null, null));
+        Response res = UserResource.applyPlanSync(user, new PlanSyncRequest("cancel", null), null);
 
         assertEquals(200, res.getStatus());
         assertEquals("pro", user.plan);
@@ -89,8 +105,27 @@ class UserPlanSyncTest {
         Response badPlan = UserResource.applyPlanCheckout(user, new PlanCheckoutRequest("enterprise"), null, null);
         assertEquals(400, badPlan.getStatus());
 
-        Response badAction = UserResource.applyPlanSync(user, new PlanSyncRequest("unknown", null, null, null));
+        Response badAction = UserResource.applyPlanSync(user, new PlanSyncRequest("unknown", null), null);
         assertEquals(400, badAction.getStatus());
+    }
+
+    @Test
+    void userCrudCannotWriteThePlanDirectly() {
+        Response rejected = UserResource.planWriteRejected();
+        assertEquals(400, rejected.getStatus());
+        assertTrue(rejected.getEntity().toString().contains("plan cannot be set directly"));
+    }
+
+    @Test
+    void stripePriceIdsMapToPlanTiersServerSide() {
+        assertEquals("pro", StripeBillingService.planForPrice(
+                "price_pro_1", "price_pro_1", "price_premium_1"));
+        assertEquals("premium", StripeBillingService.planForPrice(
+                "price_premium_1", "price_pro_1", "price_premium_1"));
+        // Unmapped or empty price ids must never resolve to a plan.
+        assertNull(StripeBillingService.planForPrice("price_unknown", "price_pro_1", "price_premium_1"));
+        assertNull(StripeBillingService.planForPrice(null, "price_pro_1", "price_premium_1"));
+        assertNull(StripeBillingService.planForPrice("", "", ""));
     }
 
     @Test
@@ -105,7 +140,7 @@ class UserPlanSyncTest {
         assertEquals(400, pendingRes.getStatus());
 
         // Canceling the pending checkout on Free re-enables account deletion
-        UserResource.applyPlanSync(user, new PlanSyncRequest("cancel", null, null, null));
+        UserResource.applyPlanSync(user, new PlanSyncRequest("cancel", null), null);
         assertNull(UserResource.cancelSubscriptionAndValidateDeletion(user, billing));
 
         // Pro and Premium users cancel their Stripe subscription and confirm before deletion

@@ -16,6 +16,7 @@ import {
   Title,
   useMantineColorScheme,
 } from '@mantine/core'
+import { notifications } from '@mantine/notifications'
 import { IconArrowDown, IconArrowUp, IconCheck, IconKey, IconLogout, IconMoon, IconSun, IconSunMoon, IconTrash } from '@tabler/icons-react'
 import { THEME_COLORS } from './ThemeButton'
 import { notesApi, usersApi } from './api'
@@ -129,27 +130,35 @@ export default function PersonalSettings({
     }
   }
 
-  // Handle return redirects from Stripe Checkout (?stripe=success&plan=... or ?stripe=cancel)
+  // Handle return redirects from Stripe Checkout (?stripe=success&session_id={CHECKOUT_SESSION_ID}&...&stripe=cancel)
   useEffect(() => {
     const params = new URLSearchParams(location.search)
     const stripeResult = params.get('stripe')
     if (!stripeResult || !onPlanSync) return
-    const returnedPlan = params.get('plan')
-    const customerId = params.get('customer_id')
-    const subscriptionId = params.get('subscription_id')
-
+    // The client only ever passes the opaque checkout session id back to the
+    // server; plan + Stripe identifiers are verified server-side (finding #26).
     if (stripeResult === 'success') {
-      onPlanSync({
-        action: 'confirm',
-        plan: returnedPlan || user.pendingPlan,
-        stripeCustomerId: customerId,
-        stripeSubscriptionId: subscriptionId,
-      })
+      const sessionId = params.get('session_id')
+      if (sessionId) {
+        onPlanSync({
+          action: 'confirm',
+          checkoutSessionId: sessionId,
+        })
+      } else {
+        // A success redirect without a session id cannot be verified server-side;
+        // clear the pending checkout instead of trusting client-declared state.
+        notifications.show({
+          color: 'yellow',
+          title: 'Payment not verified',
+          message: 'The Stripe redirect was missing its checkout session. If you were charged, click the plan again so it can be verified.',
+        })
+        onPlanSync({ action: 'cancel' })
+      }
     } else if (stripeResult === 'cancel') {
       onPlanSync({ action: 'cancel' })
     }
     navigate('/settings', { replace: true })
-  }, [location.search, navigate, onPlanSync, user.pendingPlan])
+  }, [location.search, navigate, onPlanSync])
 
   const handlePlanSelect = async (planKey) => {
     setPlanSyncing(true)
@@ -309,17 +318,11 @@ export default function PersonalSettings({
           <Alert color="yellow" mb="md" title={`Pending Stripe Checkout for ${user.pendingPlan.toUpperCase()}`}>
             <Stack gap="xs">
               <Text size="sm">
-                Complete your Stripe checkout session to activate the <b>{user.pendingPlan.toUpperCase()}</b> plan, or cancel to stay on your current plan.
+                Finish your Stripe checkout in the payment window — after payment you are redirected
+                back here, and the <b>{user.pendingPlan.toUpperCase()}</b> plan activates automatically
+                once the payment is verified with Stripe. Or cancel to stay on your current plan.
               </Text>
               <Group gap="xs">
-                <Button
-                  size="xs"
-                  color="green"
-                  loading={planSyncing}
-                  onClick={() => handleStripeSync({ action: 'confirm', plan: user.pendingPlan })}
-                >
-                  Confirm Stripe Payment
-                </Button>
                 <Button
                   size="xs"
                   variant="default"

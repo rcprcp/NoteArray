@@ -79,7 +79,12 @@ public class UserResource {
     @ConfigProperty(name = "notearray.stripe.premium-checkout-url")
     Optional<String> stripePremiumCheckoutUrl;
 
-    /** Request body for create/update. For update, every field is optional. */
+    /** Request body for create/update. For update, every field is optional.
+     *
+     * {@code plan} is intentionally accepted-but-rejected (REVIEW finding #26):
+     * the server never writes it, so the field cannot self-escalate a plan —
+     * plans change exclusively through the paid Stripe checkout flow.
+     * */
     public record UserRequest(
             String name,
             String email,
@@ -116,15 +121,20 @@ public class UserResource {
     /** Response returned when initiating a plan change or Stripe Checkout session. */
     public record PlanCheckoutResponse(User user, String checkoutUrl, String status) {}
 
-    /** Request body for synchronizing plan state after Stripe Checkout or webhook events. */
-    public record PlanSyncRequest(
-            String action,
-            String plan,
-            String stripeCustomerId,
-            String stripeSubscriptionId) {}
+    /** Request body for synchronizing plan state after Stripe Checkout or webhook events.
+     *  The client may only name the action and the opaque checkout session ID;
+     *  plan and Stripe identifiers are resolved server-side from Stripe (REVIEW #26). */
+    public record PlanSyncRequest(String action, String checkoutSessionId) {}
 
     /** Request body for account deletion. The current password must be re-verified. */
     public record DeleteRequest(String currentPassword) {}
+
+    /** 400 for attempts to write the plan through user CRUD (REVIEW finding #26). */
+    static Response planWriteRejected() {
+        return Response.status(Response.Status.BAD_REQUEST)
+                .entity("plan cannot be set directly; use /plan/checkout")
+                .build();
+    }
 
     /** Get the authenticated user from the session cookie. Returns null if not logged in. */
     private User getAuthenticatedUser() {
@@ -220,8 +230,8 @@ public class UserResource {
         if (!isBlank(req.themeColor()) && !THEME_COLORS.contains(req.themeColor())) {
             return Response.status(Response.Status.BAD_REQUEST).entity("invalid themeColor").build();
         }
-        if (!isBlank(req.plan()) && !PLANS.contains(req.plan().trim().toLowerCase())) {
-            return Response.status(Response.Status.BAD_REQUEST).entity("invalid plan").build();
+        if (!isBlank(req.plan())) {
+            return planWriteRejected();
         }
         if (User.findByName(normalizedName) != null) {
             return Response.status(Response.Status.CONFLICT).entity("name already in use").build();
@@ -240,9 +250,7 @@ public class UserResource {
         if (!isBlank(req.themeColor())) {
             user.themeColor = req.themeColor();
         }
-        if (!isBlank(req.plan())) {
-            user.plan = req.plan().trim().toLowerCase();
-        }
+        // NOTE: req.plan() is never written — see planWriteRejected() (REVIEW #26).
         user.persist();
         try {
             user.flush();
@@ -302,8 +310,8 @@ public class UserResource {
         if (!isBlank(req.themeColor()) && !THEME_COLORS.contains(req.themeColor())) {
             return Response.status(Response.Status.BAD_REQUEST).entity("invalid themeColor").build();
         }
-        if (!isBlank(req.plan()) && !PLANS.contains(req.plan().trim().toLowerCase())) {
-            return Response.status(Response.Status.BAD_REQUEST).entity("invalid plan").build();
+        if (!isBlank(req.plan())) {
+            return planWriteRejected();
         }
         if (!isBlank(req.name())) {
             String normalizedName = EmailPolicy.normalizeName(req.name());
@@ -344,9 +352,7 @@ public class UserResource {
         if (!isBlank(req.themeColor())) {
             user.themeColor = req.themeColor();
         }
-        if (!isBlank(req.plan())) {
-            user.plan = req.plan().trim().toLowerCase();
-        }
+        // NOTE: req.plan() is never written — see planWriteRejected() (REVIEW #26).
 
         try {
             user.flush();
@@ -404,7 +410,7 @@ public class UserResource {
         if (user == null) {
             return Response.status(Response.Status.NOT_FOUND).build();
         }
-        return applyPlanSync(user, req);
+        return applyPlanSync(user, req, stripeBilling);
     }
 
     static Response applyPlanCheckout(
@@ -435,28 +441,40 @@ public class UserResource {
         return Response.ok(new PlanCheckoutResponse(user, checkoutUrl, user.planStatus)).build();
     }
 
-    static Response applyPlanSync(User user, PlanSyncRequest req) {
+    static Response applyPlanSync(User user, PlanSyncRequest req, StripeBillingService billing) {
         if (req == null || isBlank(req.action())) {
             return Response.status(Response.Status.BAD_REQUEST).entity("action is required").build();
         }
         String action = req.action().trim().toLowerCase();
         switch (action) {
             case "confirm": {
-                String resolvedPlan = !isBlank(req.plan())
-                        ? req.plan().trim().toLowerCase()
-                        : user.pendingPlan;
-                if (isBlank(resolvedPlan) || !PLANS.contains(resolvedPlan)) {
+                // REVIEW #26: the client may only present the opaque checkout
+                // session ID. Plan tier and Stripe identifiers are read from
+                // Stripe with the server API key — nothing here is trusted from
+                // the request body anymore.
+                String checkoutSessionId = req.checkoutSessionId() == null
+                        ? null
+                        : req.checkoutSessionId().trim();
+                if (checkoutSessionId == null || checkoutSessionId.isBlank()) {
                     return Response.status(Response.Status.BAD_REQUEST)
-                            .entity("valid target plan is required to confirm").build();
+                            .entity("checkoutSessionId is required to confirm a payment").build();
                 }
-                user.plan = resolvedPlan;
+                StripeBillingService.VerifiedCheckout verified = billing == null
+                        ? null
+                        : billing.verifyCheckoutSession(checkoutSessionId);
+                if (verified == null || isBlank(verified.plan()) || !PLANS.contains(verified.plan())) {
+                    return Response.status(422)
+                            .entity("Stripe payment could not be verified; the plan was not activated")
+                            .build();
+                }
+                user.plan = verified.plan();
                 user.pendingPlan = null;
                 user.planStatus = User.PLAN_STATUS_ACTIVE;
-                if (!isBlank(req.stripeCustomerId())) {
-                    user.stripeCustomerId = req.stripeCustomerId().trim();
+                if (!isBlank(verified.stripeCustomerId())) {
+                    user.stripeCustomerId = verified.stripeCustomerId();
                 }
-                if (!isBlank(req.stripeSubscriptionId())) {
-                    user.stripeSubscriptionId = req.stripeSubscriptionId().trim();
+                if (!isBlank(verified.stripeSubscriptionId())) {
+                    user.stripeSubscriptionId = verified.stripeSubscriptionId();
                 }
                 user.planUpdatedAt = Instant.now();
                 return Response.ok(user).build();
