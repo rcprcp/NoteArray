@@ -84,4 +84,20 @@ public class User extends BaseEntity {
         }
         return find("name", normalized).firstResult();
     }
+
+    /** Lookup for Stripe webhook events by the user's known subscription ID. */
+    public static User findByStripeSubscriptionId(String subscriptionId) {
+        if (subscriptionId == null || subscriptionId.isBlank()) {
+            return null;
+        }
+        return find("stripeSubscriptionId", subscriptionId.trim()).firstResult();
+    }
+
+    /** Lookup for Stripe webhook events by the user's known customer ID. */
+    public static User findByStripeCustomerId(String customerId) {
+        if (customerId == null || customerId.isBlank()) {
+            return null;
+        }
+        return find("stripeCustomerId", customerId.trim()).firstResult();
+    }
 }

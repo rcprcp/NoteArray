@@ -67,37 +67,54 @@ in a request body is ever trusted for billing state. Concretely:
   cannot prove payment); pending users are pointed back at the checkout flow.
   "Cancel Checkout" remains.
 
-## Layer 3 — todo: webhook lifecycle events
+## Layer 3 — done: webhook lifecycle events
 
-Goal: replace the client-callable `past_due` / `subscription_deleted` sync
-actions with signed Stripe webhook processing so no sync action at all can
-escalate or fake billing state from the client.
+Client-callable `past_due` / `subscription_deleted` were **removed** from
+`applyPlanSync`; the only remaining sync actions are `confirm` (Layer 2) and
+`cancel` (pending-checkout cleanup). Billing events arrive exclusively as signed
+Stripe webhooks.
 
-Implementation sketch (for a future branch, e.g. `agent/stripe-webhook`):
+Implementation (`StripeWebhookResource`, branch `agent/stripe-webhook`):
 
-1. **Endpoint**: new `StripeWebhookResource` at `POST /api/stripe/webhook`,
-   reads raw body + `Stripe-Signature` header.
-   - Exempt from session auth. `CsrfFilter` must be updated to allowlist this
-     non-browser path (no `Sec-Fetch-Site`/`Origin` from curl → already passes,
-     but verify the filter's behavior for header-less requests).
-   - Signature check: hand-rolled HMAC-SHA256 (no stripe-java dependency):
-     parse `Stripe-Signature: t=<ts>,v1=<sig>`; notearray-side secret in
-     `notearray.stripe.webhook-secret`; compare `HMAC(secret, t + "." + body)`
-     against every `v1` value with a constant-time comparison (`MessageDigest.isEqual`);
-     reject when |now - t| > tolerance (e.g. 5 minutes) to stop replay.
-   - Respond 200 fast; parse tolerantly (webhook retries on 5xx).
-2. **Events to handle**:
-   - `invoice.payment_failed` → find user by `stripeCustomerId` → set
-     `planStatus = past_due` (data comes from the event object only).
-   - `customer.subscription.deleted` → downgrade: `plan=free`,
-     `planStatus=canceled`, clear `stripeSubscriptionId`, clear `pendingPlan`.
-   - Optionally `invoice.paid`/`customer.subscription.updated` → keep active
-     status / detect cancellations at period end.
-3. **Lookups required**: `User.findByStripeCustomerId(cusId)` Panache finder
-   (add `@Indexed`-style DB migration if the query stays slow — optional).
-4. **Then delete** the `past_due` and `subscription_deleted` cases from
-   `applyPlanSync` (client loses the ability to report billing events at all).
-   Keep `cancel` locally-scope (pending checkout cleanup) and `confirm`.
+1. **Endpoint**: `POST /api/stripe/webhook`, public (no session auth), reads the
+   **raw body bytes** so the signature covers exactly what Stripe sent; `@Transactional`.
+   - `CsrfFilter` verified to pass header-less (non-browser) requests unchanged —
+     no filter changes needed.
+   - Unconfigured `notearray.stripe.webhook-secret` → 503 (never processes bodies).
+2. **Signature verification** (dependency-free, no stripe-java):
+   parse `Stripe-Signature: t=<ts>,v1=<hex>...`; HMAC-SHA256 over `"<t>.<rawBody>"`
+   via JCA (`HmacSHA256`), digest compared in constant time (`MessageDigest.isEqual`),
+   multiple `v1` values each checked, hex case-insensitive; reject when
+   `|now - t| > 300 s` (replay) — bad/missing signature → 400 before any DB touch.
+   Decision recorded: stripe-java's `Webhook.constructEvent` was considered and
+   rejected for footprint (~10 MB deps for 2 tiny handlers); revisit if richer
+   Stripe object processing is ever needed.
+3. **Events handled** (downgrade-only — a webhook can never raise a plan):
+   - `invoice.payment_failed` → `StripeWebhookResource.markPastDue`: keeps the
+     plan, sets `plan_status=past_due`, idempotent (re-deliveries don't move
+     `planUpdatedAt`).
+   - `customer.subscription.deleted` → `downgradeAfterDeletion`: `plan=free`,
+     `canceled`, clears `stripeSubscriptionId` + `pendingPlan`; **keeps**
+     `stripeCustomerId` (real-payment identity for later verification).
+   - Every other event type → 200 acknowledged, ignored (Stripe stops retrying).
+4. **User matching**: `User.findByStripeSubscriptionId` (event: invoice
+   `subscription` / subscription `id`), fallback `User.findByStripeCustomerId`
+   (`customer`). Unmatched users → 200 `{ignored:true}` + warn log.
+5. **Tests** (`StripeWebhookResourceTest`, 15 cases): HMAC pinned to the RFC 4231
+   "Jefe" vector; accept correct signature, header parse edge cases, ±skew
+   boundaries (300 s passes, 301 fails, future-dated fails), wrong secret,
+   tampered body, multi-`v1` acceptance; lifecycle handlers keep/clear exactly
+   the right fields; sync endpoint asserts legacy client actions now 400
+   while `cancel`/`confirm` round-trip. Suite 100 tests / 14 classes.
+
+### Stripe-side prerequisite (user action, one-time)
+
+Dashboard → Developers → Webhooks → Add endpoint:
+URL `https://<public host>/api/stripe/webhook`, events
+`invoice.payment_failed` + `customer.subscription.deleted`; then start the
+backend with `-Dnotearray.stripe.webhook-secret=whsec_...` (a *different*
+secret from the API key). Validate with the dashboard's "Send test webhook";
+a deliberately bogus signature must return 400.
 
 ## Useful verification endpoints
 

@@ -109,7 +109,7 @@
   (`%prod.quarkus.micrometer.export.prometheus.enabled=false`) in the `prod` profile while keeping them
   enabled in `dev`.*
 
-- [ ] **26. Any authenticated user can grant themselves any plan — Stripe state is trusted from the
+- [x] **26. Any authenticated user can grant themselves any plan — Stripe state is trusted from the
   client** (`UserResource.java:220-222,240-242,344-346,435-484`). `POST /api/users` and
   `PUT /api/users/{id}` accept a client-supplied `plan` field and write it straight to the user row,
   and `POST /api/users/{id}/plan/sync` with `{"action":"confirm"}` accepts
@@ -121,16 +121,21 @@
   the Stripe identifiers) from user-writable request fields; activate paid plans only from a signed
   Stripe webhook (or a server-side Checkout Session / subscription status lookup tied to the
   authenticated billing user); keep the client display-only.
-  *Layers 1+2 done (branch `agent/plan-stripe-verification`, plan in `STRIPE.md`): user CRUD now
-  rejects `plan` (400 `planWriteRejected()`); `PlanSyncRequest` shrunk to `{action, checkoutSessionId}`
-  — client Stripe IDs are structurally gone; `confirm` activates a plan **only** from
-  `StripeBillingService.verifyCheckoutSession` (server-side Stripe lookup: session `complete`+`paid`,
-  subscription price mapped to plan via `notearray.stripe.pro/premium-price-id` config,
-  `planForPrice`); 422 when unverifiable. UI sends only the opaque `session_id` from the
-  `{CHECKOUT_SESSION_ID}` redirect; manual "Confirm Stripe Payment" button removed. **Outstanding
-  (Layer 3)**: downgrade-only `past_due`/`subscription_deleted` sync actions are still client-callable
-  (interim) and should move behind a signed `/api/stripe/webhook`; Stripe-side: success URL must
-  embed `{CHECKOUT_SESSION_ID}` and the two price IDs must be configured or confirm refuses.*
+  *Done in three layers (`agent/plan-stripe-verification`, `agent/stripe-webhook`; plan + security
+  model in `STRIPE.md`): (1) user CRUD rejects `plan` (400 `planWriteRejected()`); (2) `confirm`
+  activates a plan **only** from a server-side Stripe lookup — `PlanSyncRequest` is
+  `{action, checkoutSessionId}` (client Stripe IDs structurally gone) and
+  `StripeBillingService.verifyCheckoutSession` requires a `complete`+`paid` session whose
+  subscription price maps to pro/premium via `notearray.stripe.pro/premium-price-id` (422
+  otherwise); the UI replays only the opaque `session_id` from the `{CHECKOUT_SESSION_ID}` redirect;
+  (3) lifecycle events (`invoice.payment_failed` → past_due, `customer.subscription.deleted` →
+  downgrade) arrive **only** via signed `POST /api/stripe/webhook`
+  (`StripeWebhookResource`: HMAC-SHA256 `Stripe-Signature` verification with 5-min replay window,
+  constant-time compare, downgrade-only handlers); the client-callable `past_due` /
+  `subscription_deleted` sync actions were deleted, so no client request can write billing state
+  anywhere. Stripe-side prerequisites (documented in `STRIPE.md`): Payment-Link success URL must
+  embed `{CHECKOUT_SESSION_ID}`, price IDs must be configured for confirm, and the webhook endpoint
+  + `notearray.stripe.webhook-secret` must be set up in the dashboard.*
 
 ### Medium
 
@@ -344,3 +349,4 @@
 | 2026-10-21 | #26 (layers 1+2) | `agent/plan-stripe-verification` | Plan no longer settable via user CRUD (400 `planWriteRejected`); `PlanSyncRequest` = `{action, checkoutSessionId}` only; `confirm` verifies server-side via Stripe (`StripeBillingService.verifyCheckoutSession`: complete+paid session → subscription price → `planForPrice` with `notearray.stripe.pro/premium-price-id` config; 422 when unverifiable); UI replays only the opaque `session_id` from the `{CHECKOUT_SESSION_ID}` redirect, manual Confirm button removed, success-without-session falls back to cancel+warning; plan documented in `STRIPE.md` (Layer 3 webhook design included); `UserPlanSyncTest` updated, suite 83 tests / 13 classes |
 | 2026-10-21 | UX: quota messages | `agent/quota-message-fix` | Quota-exceeded wording is now plan-agnostic ("Storage quota exceeded. Please upgrade your plan or delete notes to free up space." — no tier name, since the same guard serves free/pro/premium); mid-import overrun says "This import would exceed your plan storage limit (`X`)" where `X` = the caller's own plan via `StorageQuota.limitLabelForPlan` (100 MB / 1 GB / 5 GB); `AttachmentQuotaTest` gains label + message tests, suite 85 tests / 13 classes |
 | 2026-10-21 | #11 (closed: design decision) | `agent/close-finding-11` | No code change: single-transaction import kept (bounded by #5's expansion budget/entry cap/quota rollback), content-hash dedupe rejected (uneditable-hash argument: edits break the match, so duplicates land anyway — skip-identical only works for byte-identical re-imports); re-import duplication is now documented behavior in `USER_GUIDE.md` (import section + troubleshooting table); no tests changed (docs + backlog only) |
+| 2026-10-21 | #26 (layer 3) | `agent/stripe-webhook` | Signed Stripe webhook lifecycle endpoint: `POST /api/stripe/webhook` (`StripeWebhookResource`) verifies `Stripe-Signature` HMAC-SHA256 over raw body + timestamp (300 s replay window, constant-time compare, multiple `v1` values, dependency-free — stripe-java rejected for footprint, decision in `STRIPE.md`); handles `invoice.payment_failed` → past_due (idempotent, plan kept) and `customer.subscription.deleted` → downgrade (clears subscription id, keeps customer id), other events ACK'd 200; user matching via `User.findByStripeSubscriptionId`/`findByStripeCustomerId`; client-callable `past_due`/`subscription_deleted` sync actions removed (client can no longer write billing state anywhere); CSRF filter verified no-op for headerless Stripe requests; `StripeWebhookResourceTest` (15 cases incl. RFC 4231 vector), suite 100 tests / 14 classes |

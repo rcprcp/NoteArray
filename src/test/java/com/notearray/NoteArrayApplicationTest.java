@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.notearray.resource.AttachmentResource;
 import com.notearray.resource.NoteResource;
 import com.notearray.resource.SpaResource;
+import com.notearray.resource.StripeWebhookResource;
 import com.notearray.resource.UserResource;
 import com.notearray.security.CsrfFilter;
 import com.notearray.security.SecurityHeadersFilter;
@@ -27,6 +28,8 @@ class NoteArrayApplicationTest {
             "AttachmentResource should be registered in NoteArrayApplication");
         assertTrue(classes.contains(UserResource.class),
             "UserResource should be registered in NoteArrayApplication");
+        assertTrue(classes.contains(StripeWebhookResource.class),
+            "StripeWebhookResource should be registered in NoteArrayApplication");
         assertTrue(classes.contains(NoteResource.class),
             "NoteResource should be registered in NoteArrayApplication");
         assertTrue(classes.contains(SpaResource.class),

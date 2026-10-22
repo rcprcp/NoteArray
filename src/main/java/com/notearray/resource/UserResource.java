@@ -121,9 +121,12 @@ public class UserResource {
     /** Response returned when initiating a plan change or Stripe Checkout session. */
     public record PlanCheckoutResponse(User user, String checkoutUrl, String status) {}
 
-    /** Request body for synchronizing plan state after Stripe Checkout or webhook events.
-     *  The client may only name the action and the opaque checkout session ID;
-     *  plan and Stripe identifiers are resolved server-side from Stripe (REVIEW #26). */
+    /** Request body for synchronizing plan state. The client may only name the
+     *  action and the opaque checkout session ID; plan and Stripe identifiers
+     *  are resolved server-side from Stripe (REVIEW #26). Since the signed
+     *  `/api/stripe/webhook` endpoint (Layer 3) exists, the client can no longer
+     *  report billing events at all: `past_due`/`subscription_deleted` were
+     *  removed, leaving only payment confirmation and pending-checkout cleanup. */
     public record PlanSyncRequest(String action, String checkoutSessionId) {}
 
     /** Request body for account deletion. The current password must be re-verified. */
@@ -485,20 +488,9 @@ public class UserResource {
                 user.planUpdatedAt = Instant.now();
                 return Response.ok(user).build();
             }
-            case "past_due": {
-                user.planStatus = User.PLAN_STATUS_PAST_DUE;
-                user.planUpdatedAt = Instant.now();
-                return Response.ok(user).build();
-            }
-            case "subscription_deleted": {
-                user.plan = "free";
-                user.pendingPlan = null;
-                user.planStatus = User.PLAN_STATUS_CANCELED;
-                user.stripeSubscriptionId = null;
-                user.planUpdatedAt = Instant.now();
-                return Response.ok(user).build();
-            }
             default:
+                // NOTE: past_due / subscription_deleted are webhook-only now (signed
+                // StripeWebhookResource); clients cannot report billing state.
                 return Response.status(Response.Status.BAD_REQUEST)
                         .entity("invalid sync action").build();
         }

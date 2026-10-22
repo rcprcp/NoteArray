@@ -7,6 +7,7 @@ import java.util.Set;
 import com.notearray.resource.AttachmentResource;
 import com.notearray.resource.NoteResource;
 import com.notearray.resource.SpaResource;
+import com.notearray.resource.StripeWebhookResource;
 import com.notearray.resource.UserResource;
 import com.notearray.security.CsrfFilter;
 import com.notearray.security.SecurityHeadersFilter;
@@ -20,6 +21,7 @@ public class NoteArrayApplication extends Application {
         classes.add(AttachmentResource.class);
         classes.add(NoteResource.class);
         classes.add(UserResource.class);
+        classes.add(StripeWebhookResource.class);
         classes.add(SpaResource.class);
         classes.add(CsrfFilter.class);
         classes.add(SecurityHeadersFilter.class);
