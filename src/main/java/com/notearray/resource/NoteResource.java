@@ -183,7 +183,11 @@ public class NoteResource {
      *   q              - search text
      *   searchTitles   - search the title (default false)
      *   searchContent  - search the note content (default false)
-     * If q is provided, at least one of searchTitles / searchContent must be true (else 400).
+     *   searchTags     - search the tags as a partial match (default false):
+     *                    every tag token containing the query matches, so
+     *                    "grq" finds tokens like grq and grq/cobol
+     * If q is provided, at least one of searchTitles / searchContent /
+     * searchTags must be true (else 400).
      *
      * Optional filters (all combined with AND):
      *   tags           - repeatable; note must have every listed tag
@@ -197,6 +201,7 @@ public class NoteResource {
     public Response list(@QueryParam("q") String q,
                          @QueryParam("searchTitles") @jakarta.ws.rs.DefaultValue("false") boolean searchTitles,
                          @QueryParam("searchContent") @jakarta.ws.rs.DefaultValue("false") boolean searchContent,
+                         @QueryParam("searchTags") @jakarta.ws.rs.DefaultValue("false") boolean searchTags,
                          @QueryParam("tags") List<String> tags,
                          @QueryParam("tagPrefix") List<String> tagPrefixes,
                          @QueryParam("untagged") @jakarta.ws.rs.DefaultValue("false") boolean untagged,
@@ -211,9 +216,9 @@ public class NoteResource {
         }
 
         boolean hasQuery = q != null && !q.isBlank();
-        if (hasQuery && !searchTitles && !searchContent) {
+        if (hasQuery && !searchTitles && !searchContent && !searchTags) {
             return Response.status(Response.Status.BAD_REQUEST)
-                    .entity("Select at least one of searchTitles or searchContent").build();
+                    .entity("Select at least one of searchTitles, searchContent or searchTags").build();
         }
 
         Instant cFrom, cTo, uFrom, uTo;
@@ -231,15 +236,28 @@ public class NoteResource {
         Map<String, Object> params = new HashMap<>();
         if (hasQuery) {
             sql.append(" AND (");
+            StringBuilder or = new StringBuilder();
             if (searchTitles) {
-                sql.append("n.title_tsv @@ plainto_tsquery('english', :q)");
+                or.append("n.title_tsv @@ plainto_tsquery('english', :q)");
             }
             if (searchContent) {
-                if (searchTitles) sql.append(" OR ");
-                sql.append("n.content_tsv @@ plainto_tsquery('english', :q)");
+                if (!or.isEmpty()) or.append(" OR ");
+                or.append("n.content_tsv @@ plainto_tsquery('english', :q)");
             }
-            sql.append(")");
-            params.put("q", q.trim());
+            if (searchTags) {
+                if (!or.isEmpty()) or.append(" OR ");
+                // Partial tag search: every tag token containing the query
+                // matches (token = one space-delimited entry, possibly a
+                // hierarchical grq/cobol path), so "sup" finds super-duper.
+                or.append("(' ' || lower(coalesce(n.tags, '')) || ' ') LIKE :tagq");
+                params.put("tagq", "%" + escapeLike(q) + "%");
+            }
+            sql.append(or).append(")");
+            // Native queries reject setParameter for names absent from the SQL:
+            // :q only exists when a full-text predicate was rendered.
+            if (searchTitles || searchContent) {
+                params.put("q", q.trim());
+            }
         }
         if (!user.superuser) {
             sql.append(" AND n.owner_id = :owner");
@@ -255,26 +273,28 @@ public class NoteResource {
         if (tags != null) {
             for (String tag : tags) {
                 if (tag == null || tag.isBlank()) continue;
-                String escaped = tag.trim().toLowerCase()
-                        .replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
+                /*
+                 * A tag whose value ends with '/' selects a whole folder
+                 * subtree: grq/ matches the token grq itself AND every deeper
+                 * token grq/…. Plain tags keep the exact-token match.
+                 */
+                if (tag.trim().endsWith("/")) {
+                    // grq/ → match the grq token itself AND every grq/… token.
+                    String folderPath = tag.trim().replaceAll("/+$", "");
+                    if (!folderPath.isBlank()) {
+                        appendTagPrefixCondition(sql, params, escapeLike(folderPath));
+                    }
+                    continue;
+                }
                 String name = "tag" + i++;
                 sql.append(" AND (' ' || lower(coalesce(n.tags, '')) || ' ') LIKE :").append(name);
-                params.put(name, "% " + escaped + " %");
+                params.put(name, "% " + escapeLike(tag) + " %");
             }
         }
         if (tagPrefixes != null) {
             for (String prefix : tagPrefixes) {
                 if (prefix == null || prefix.isBlank()) continue;
-                String escaped = prefix.trim().toLowerCase(Locale.ROOT)
-                        .replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
-                // Hierarchical tags: prefix:Work matches the token Work itself AND
-                // every deeper token Work/… (one LIKE per alternative, both escaped).
-                String exact = "prefix" + i++;
-                String deeper = "prefix" + i++;
-                sql.append(" AND ((' ' || lower(coalesce(n.tags, '')) || ' ') LIKE :").append(exact)
-                        .append(" OR (' ' || lower(coalesce(n.tags, '')) || ' ') LIKE :").append(deeper).append(")");
-                params.put(exact, "% " + escaped + " %");
-                params.put(deeper, "% " + escaped + "/% %");
+                appendTagPrefixCondition(sql, params, escapeLike(prefix));
             }
         }
         if (cFrom != null) { sql.append(" AND n.created_at >= :cFrom"); params.put("cFrom", cFrom); }
@@ -286,7 +306,59 @@ public class NoteResource {
         Query query = Note.getEntityManager().createNativeQuery(sql.toString(), Note.class);
         params.forEach(query::setParameter);
         List<Note> results = query.getResultList();
+        applyAttachmentCounts(results, user);
         return Response.ok(results).build();
+    }
+
+    /** Lowercase a tag token and escape the three SQL LIKE wildcards. */
+    static String escapeLike(String tag) {
+        return tag.trim().toLowerCase(Locale.ROOT)
+                .replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
+    }
+
+    /**
+     * Hierarchical tags: a prefix matches the token itself AND every deeper
+     * token {@code Work/…} (one LIKE per alternative, param names derived from
+     * the ever-growing map so repeated calls stay unique).
+     */
+    static void appendTagPrefixCondition(StringBuilder sql, Map<String, Object> params, String escapedPrefix) {
+        String exact = "prefix" + params.size();
+        String deeper = "prefix" + (params.size() + 1);
+        sql.append(" AND ((' ' || lower(coalesce(n.tags, '')) || ' ') LIKE :").append(exact)
+                .append(" OR (' ' || lower(coalesce(n.tags, '')) || ' ') LIKE :").append(deeper).append(")");
+        params.put(exact, "% " + escapedPrefix + " %");
+        params.put(deeper, "% " + escapedPrefix + "/% %");
+    }
+
+    /**
+     * Fill {@link Note#attachmentCount} for the returned notes in one grouped
+     * query, so the list page can show an attachment indicator without loading
+     * any blobs. Notes without attachments keep their 0.
+     */
+    @SuppressWarnings("unchecked")
+    private static void applyAttachmentCounts(List<Note> notes, User user) {
+        if (notes == null || notes.isEmpty()) {
+            return;
+        }
+        StringBuilder countsSql = new StringBuilder("SELECT a.note_id, count(*) FROM note_attachments a");
+        Map<String, Object> countsParams = new HashMap<>();
+        if (!user.superuser) {
+            countsSql.append(" WHERE a.owner_id = :owner");
+            countsParams.put("owner", user.id);
+        }
+        countsSql.append(" GROUP BY a.note_id");
+        Query countsQuery = Note.getEntityManager().createNativeQuery(countsSql.toString());
+        countsParams.forEach(countsQuery::setParameter);
+        Map<UUID, Note> byId = new HashMap<>();
+        for (Note note : notes) {
+            byId.put(note.id, note);
+        }
+        for (Object[] row : (List<Object[]>) countsQuery.getResultList()) {
+            Note note = byId.get(row[0]);
+            if (note != null) {
+                note.attachmentCount = ((Number) row[1]).longValue();
+            }
+        }
     }
 
     private static Instant parseInstant(String value) {

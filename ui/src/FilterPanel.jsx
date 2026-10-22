@@ -17,20 +17,22 @@ export const DEFAULT_FILTERS = {
 export const PREFIX_OPTION = 'prefix:'
 
 /**
- * Every selectable ancestor of hierarchical tags: for the tag
- * `work/projects/acme` the selectable prefixes are `work`, `work/projects`
- * and `work/projects/acme` itself. Plain (non-hierarchical) tags add nothing.
+ * Every selectable folder path of hierarchical tags: for the tag
+ * `work/projects/acme` the selectable folders are `work`, `work/projects`
+ * and `work/projects/acme` itself. Plain (non-hierarchical) tags contribute
+ * nothing — they stay in the Tags group.
  */
 export function collectPrefixes(allTags) {
-  const prefixes = new Set()
+  const paths = new Set()
   for (const tag of allTags || []) {
     const parts = String(tag).split('/')
     if (parts.length < 2) continue
-    for (let i = 1; i <= parts.length; i++) {
-      prefixes.add(parts.slice(0, i).join('/'))
+    for (let i = 1; i < parts.length; i++) {
+      paths.add(parts.slice(0, i).join('/'))
     }
+    paths.add(String(tag))
   }
-  return [...prefixes]
+  return [...paths]
 }
 
 export function buildApiFilters(f) {
@@ -82,18 +84,21 @@ export function TagMultiSelect({
   prefixes = [],
   prefixValue = [],
 }) {
+  const hasChildren = (t) => (tags || []).some((x) => x.startsWith(`${t}/`))
+  // Plain-leaf tags only: a tag with sub-tags is offered in the Folders group,
+  // where selecting it always matches the whole subtree — so there is no
+  // "wrong group" choice and searching e.g. `grq` finds grq/* too.
+  const plainTags = (tags || []).filter((t) => !t.includes('/') && !hasChildren(t))
   const data = [
     {
       group: 'Tags',
-      items: (tags || []).map((t) => ({ value: t, label: t })),
+      items: plainTags.map((t) => ({ value: t, label: t })),
     },
-  ]
-  if ((prefixes || []).length > 0) {
-    data.push({
+    {
       group: 'Folders (include sub-folders)',
       items: prefixes.map((p) => ({ value: `${PREFIX_OPTION}${p}`, label: p })),
-    })
-  }
+    },
+  ]
   // A stored selection that no longer appears in the option list (tags were
   // re-tagged or removed) must stay selectable or Mantine drops the chip.
   const known = new Set(data.flatMap((g) => g.items.map((it) => it.value)))
@@ -108,6 +113,7 @@ export function TagMultiSelect({
       label="Tags"
       placeholder="Search tags"
       data={data}
+      searchable
       value={[...(value || []), ...(prefixValue || []).map((p) => `${PREFIX_OPTION}${p}`)]}
       onChange={(selected) => {
         onChange({
@@ -117,7 +123,6 @@ export function TagMultiSelect({
             .map((v) => v.slice(PREFIX_OPTION.length)),
         })
       }}
-      searchable
       clearable
       nothingFoundMessage="No tags"
       onSearchChange={onSearchChange}

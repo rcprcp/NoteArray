@@ -29,6 +29,14 @@ public class Note extends BaseEntity {
     @Column(name = "pinned", nullable = false)
     public boolean pinned = false;
 
+    /**
+     * Number of attachments on this note. Not persisted — filled in per list
+     * response by {@code NoteResource.list()} so the UI can show an attachment
+     * indicator without fetching every blob.
+     */
+    @jakarta.persistence.Transient
+    public Long attachmentCount = 0L;
+
     @Version
     @Column(name = "version", nullable = false)
     public long version = 0L;

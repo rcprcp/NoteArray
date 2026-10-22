@@ -51,6 +51,7 @@ export const notesApi = {
       params.set('q', q)
       params.set('searchTitles', String(!!search.searchTitles))
       params.set('searchContent', String(!!search.searchContent))
+      params.set('searchTags', String(!!search.searchTags))
     }
     if (filters) {
       ;(filters.tags || []).forEach((t) => params.append('tags', t))

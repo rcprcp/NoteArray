@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ActionIcon, Alert, Box, Button, Collapse, Checkbox, Group, List, Modal, Stack, Table, Text, TextInput, Title, UnstyledButton, Badge, FileInput, Loader, Card, SimpleGrid, Tooltip } from '@mantine/core'
-import { IconCheck, IconChevronDown, IconChevronUp, IconDownload, IconLayoutGrid, IconList, IconPin, IconSearch, IconSelector, IconUpload, IconMenu2, IconX } from '@tabler/icons-react'
+import { IconCheck, IconChevronDown, IconChevronUp, IconDownload, IconLayoutGrid, IconList, IconPaperclip, IconPin, IconSearch, IconSelector, IconUpload, IconMenu2, IconX } from '@tabler/icons-react'
 import { useMediaQuery } from '@mantine/hooks'
 import { RichTextEditor } from '@mantine/tiptap'
 import { Node, mergeAttributes } from '@tiptap/core'
@@ -17,7 +17,7 @@ import { notesApi } from './api'
 import FilterPanel, { DEFAULT_FILTERS, buildApiFilters, describeFilters } from './FilterPanel'
 
 const EMPTY_FORM = { title: '', content: '', tags: '' }
-const DEFAULT_SEARCH = { q: '', searchTitles: true, searchContent: true }
+const DEFAULT_SEARCH = { q: '', searchTitles: true, searchContent: true, searchTags: true }
 
 const FILTERS_KEY = 'notearray.filters'
 // Card/list display preference: 'auto' follows screen size, or an explicit override.
@@ -314,6 +314,18 @@ function PinButton({ note, onToggle }) {
 }
 
 // Card view for a single note (used on mobile and when the user picks card view)
+
+/** Paperclip indicator for notes that carry one or more attachments. */
+export function AttachmentIcon({ count }) {
+  if (!count || count < 1) return null
+  const label = `${count} attachment${count === 1 ? '' : 's'}`
+  return (
+    <Tooltip label={label} withArrow>
+      <IconPaperclip size={14} stroke={1.8} style={{ flexShrink: 0 }} aria-label={label} />
+    </Tooltip>
+  )
+}
+
 function NoteCard({ note, onEdit, onDelete, onTogglePin }) {
   return (
     <Card shadow="sm" padding="md" radius="md" withBorder onClick={() => onEdit(note)} style={{ cursor: 'pointer' }}>
@@ -330,9 +342,12 @@ function NoteCard({ note, onEdit, onDelete, onTogglePin }) {
           </Group>
         </Group>
         <div>
-          <Text fw={600} size="md" style={{ overflowWrap: 'anywhere' }}>
-            {note.title || <Text c="dimmed" fs="italic">Untitled</Text>}
-          </Text>
+          <Group gap={4} wrap="nowrap">
+            <Text fw={600} size="md" style={{ overflowWrap: 'anywhere' }}>
+              {note.title || <Text c="dimmed" fs="italic">Untitled</Text>}
+            </Text>
+            <AttachmentIcon count={note.attachmentCount} />
+          </Group>
           {note.tags && (
             <Group gap="xs" mt="xs">
               {note.tags.split(' ').filter(t => t.length > 0).map((tag, idx) => (
@@ -560,7 +575,7 @@ export default function NotesPanel({ registerActions } = {}) {
       await load(null, filters)
       return
     }
-    if (!search.searchTitles && !search.searchContent) {
+    if (!search.searchTitles && !search.searchContent && !search.searchTags) {
       setHelpOpened(true)
       return
     }
@@ -1026,6 +1041,11 @@ export default function NotesPanel({ registerActions } = {}) {
               checked={search.searchContent}
               onChange={(e) => setSearch({ ...search, searchContent: e.currentTarget.checked })}
             />
+            <Checkbox
+              label="Search Tags"
+              checked={search.searchTags}
+              onChange={(e) => setSearch({ ...search, searchTags: e.currentTarget.checked })}
+            />
           </Group>
         )}
         {tagsVisible && (
@@ -1163,7 +1183,10 @@ export default function NotesPanel({ registerActions } = {}) {
                 <Table.Td>{new Date(n.updatedAt).toLocaleString()}</Table.Td>
                 <Table.Td>
                   <Stack gap="xs">
-                    <Text>{n.title || <Text c="dimmed" fs="italic">Untitled</Text>}</Text>
+                    <Group gap={4} wrap="nowrap">
+                      <Text style={{ minWidth: 0 }}>{n.title || <Text c="dimmed" fs="italic">Untitled</Text>}</Text>
+                      <AttachmentIcon count={n.attachmentCount} />
+                    </Group>
                     {n.tags && (
                       <Group gap="xs">
                         {n.tags.split(' ').filter(t => t.length > 0).map((tag, idx) => (
@@ -1277,6 +1300,9 @@ export default function NotesPanel({ registerActions } = {}) {
           <List spacing="xs" size="sm">
             <List.Item><b>Search Titles</b> – match words in note titles.</List.Item>
             <List.Item><b>Search Note Content</b> – match words in the body of your notes.</List.Item>
+            <List.Item><b>Search Tags</b> – match tags by part of a word: "sup" finds
+              tags like <i>super-duper</i> and <i>supper</i>, and "grq" finds notes in
+              folders like <i>grq</i> and <i>grq/cobol</i>.</List.Item>
           </List>
           <Text size="sm">
             Check both to search titles and content together. Then type your search words and

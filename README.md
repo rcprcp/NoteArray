@@ -366,8 +366,9 @@ UPDATE users SET superuser = FALSE WHERE email = 'user@example.com';
 ### Notes – Filters
 
 - **GET** `/api/notes` also accepts filter parameters, combined with AND (and with any search query):
-  - `tags` – repeatable query parameter; a note must have every listed tag to match. Example: `?tags=work&tags=important`
+  - `tags` – repeatable query parameter; a note must have every listed tag to match. A value ending with `/` selects a whole folder subtree: `?tags=grq/` matches the token `grq` itself and every deeper token (`grq/cobol`, …).
   - `tagPrefix` – repeatable query parameter for hierarchical (`grandparent/parent/child`) tags; a note matches when it carries the token itself or any deeper token. Example: `?tagPrefix=work` matches `work` and `work/2024`
+  - List responses include `attachmentCount` per note, so clients can show an attachment indicator without fetching blobs
   - `untagged` – `true` to return only notes without any tags
   - `pinned` – `true` to return only pinned notes
   - `createdFrom` / `createdTo` – ISO-8601 instants for note creation date range (inclusive)
@@ -390,9 +391,10 @@ UPDATE users SET superuser = FALSE WHERE email = 'user@example.com';
     - `q` – Search query (required when searching)
     - `searchTitles` – Search in note titles (boolean, default false)
     - `searchContent` – Search in note content (boolean, default false)
+    - `searchTags` – Search the tags as a partial match (boolean, default false): every tag token containing the query matches, so `q=sup` finds tags like `super-duper` and `supper`, and `q=grq` finds notes in folders `grq` and `grq/cobol`
   - **Response:** Array of matching note objects, sorted by `createdAt` descending
   - Returns 401 if not authenticated
-  - Returns 400 if q is provided but neither searchTitles nor searchContent is true
+  - Returns 400 if q is provided but neither searchTitles nor searchContent nor searchTags is true
   - Search is word-based, case-insensitive, and ignores common stop words (like "the")
   - Word endings are normalized (e.g., "running" matches "run")
   - Superusers search all notes; regular users search only their own

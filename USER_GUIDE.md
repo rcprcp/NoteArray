@@ -203,8 +203,8 @@ The header **Pinned** button is a *filter toggle* — click it to show **only pi
 
 Click **Find by Tag** in the header (List Notes view) to open the tag-filter panel:
 
-- **Search tags**: a searchable multi-select of the tags that exist across your notes. Pick one or more — only notes with **all** selected tags match (AND logic, not OR).
-- **Folders (include sub-folders)**: hierarchical tags such as `work/projects/acme` (typically created by importing a Joplin archive) appear here as selectable **folders**. Selecting a folder matches notes in it **and all sub-folders** (e.g. picking `work` also matches `work/projects`); an active folder shows as a `Folder: work` chip.
+- **Search tags**: a searchable multi-select; typing matches **any part of a tag** — "sup" surfaces *super-duper* and *supper*. Pick one or more — only notes with **all** selected tags match (AND logic, not OR).
+- **Folders (include sub-folders)**: hierarchical tags such as `work/projects/acme` (typically created by importing a Joplin archive) appear here as selectable **folders** — a tag that has sub-tags is listed here rather than under Tags, so selecting it always matches the whole subtree. Selecting a folder matches notes in it **and all sub-folders** (e.g. picking `work` also matches `work/projects`); an active folder shows as a `Folder: work` chip.
 - **"Find notes with no tags" checkbox**: shows only untagged notes. Checking it clears your tag selection; selecting a tag clears it, since the two are mutually exclusive.
 
 ### Active filters
@@ -221,17 +221,21 @@ Click **Search Text** in the header:
 2. Choose **where** to look — at least one must be checked:
    - **Search Titles** — match words in note titles
    - **Search Note Content** — match words in note text
-   - Both can be checked at once for a comprehensive search.
+   - **Search Tags** — match tags by *part* of a tag: typing "sup" finds notes tagged
+     like *super-duper* or *supper*, and typing "grq" finds notes in folders
+     *grq* and *grq/cobol* (hierarchical tags are searched inside their paths too)
+   - All three can be checked at once for a comprehensive search.
 3. **Clear** resets the search.
 
-If you try to search with neither box checked, a **"How to search your notes"** help modal opens explaining the two boxes. (The server also requires at least one — this is a safety net, not a bug.)
+If you try to search with no box checked, a **"How to search your notes"** help modal opens explaining the boxes. (The server also requires at least one — this is a safety net, not a bug.)
 
 ### How search behaves
 
-- **Word-based** — it matches whole words, not arbitrary substrings.
+- **Titles & content are word-based** — they match whole words, not arbitrary substrings.
+- **Tags are partial-match** — the query can be any fragment inside a tag token: "sup" matches *super-duper*, "cob" matches *grq/cobol*.
 - **Case-insensitive** — "meeting" matches "Meeting" and "MEETING".
 - **Ignores common words** such as "the", which are too frequent to be useful.
-- **Word endings are normalized** — searching "running" also matches "run".
+- **Word endings are normalized** — searching "running" also matches "run" (titles and content).
 - **Every word must appear** in the field you selected.
 
 ### Combining search with filters
@@ -248,6 +252,7 @@ The default view is **List Notes**. On desktop it's a table:
 
 - **Created / Updated / Title** columns
 - Tags shown as badges under the title
+- A **paperclip icon** next to the title — and in card view — marks notes that carry one or more attachments (hover for the count)
 - Untitled notes show as italic *"Untitled"*
 - Row actions: **Pin** (a pin/star icon button), **Edit**, and **Delete**
 
