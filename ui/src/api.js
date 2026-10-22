@@ -96,6 +96,17 @@ export const notesApi = {
       credentials: 'include',
     })
   },
+  // Attachments this note links to (metadata only; bytes come from /api/attachments/{id}).
+  listAttachments: (noteId) => request(`/api/notes/${noteId}/attachments`),
+  /**
+   * Delete an attachment. `fromNote` names the note the caller is removing the
+   * link from, so its own reference does not block the delete; a 409 means
+   * another note still links the file.
+   */
+  deleteAttachment: (attachmentId, fromNote) => {
+    const qs = fromNote ? `?fromNote=${fromNote}` : ''
+    return request(`/api/attachments/${attachmentId}${qs}`, { method: 'DELETE' })
+  },
   /**
    * Download an attachment as a file, never a viewer navigation.
    * Fetches the bytes as a Blob and triggers a save via an anchor with the

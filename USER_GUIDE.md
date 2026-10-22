@@ -167,9 +167,21 @@ After dropping, the note auto-saves like normal (see [Auto-save](#auto-save-no-s
 - **Download** saves the file directly to your Downloads folder — it always saves, never opens a viewer, even in browsers whose PDF viewer intercepts navigations.
 - **Open in New Tab** opens it in a full browser tab. **Close** returns to the note.
 
+### Managing a note's attachments
+
+The editor lists the files a note links to under **Attachments (n)**, below the Tags field. Each row shows the
+filename and size with **Preview**, **Download** and **Delete**. The list follows the links in your text, so removing a
+link removes its row (and the paperclip in the notes list follows too). The same file can be linked from several notes —
+it then shows on each of them, and **Delete** refuses while another note still links it ("remove that link first").
+
+Deleting from that list removes the file and its link from this note right away.
+
 ### Storage accounting
 
-Attachments **count against your plan's storage quota** together with note text. Deleting a note deletes its attachments immediately and frees the space (see [Plans, Storage & Billing](#9-plans-storage--billing)).
+Attachments **count against your plan's storage quota** together with note text. Deleting a note deletes its attachments
+immediately and frees the space. If you simply remove an attachment's link from a note, the file is **cleaned up
+automatically** — the space comes back about a day later, which leaves room for undo or a cut/paste mistake (see
+[Plans, Storage & Billing](#9-plans-storage--billing)).
 
 ---
 

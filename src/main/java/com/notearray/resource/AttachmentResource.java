@@ -1,9 +1,12 @@
 package com.notearray.resource;
 
+import com.notearray.entity.Note;
 import com.notearray.entity.NoteAttachment;
 import com.notearray.entity.User;
 import com.notearray.service.SessionService;
 import jakarta.inject.Inject;
+import jakarta.transaction.Transactional;
+import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
@@ -11,6 +14,7 @@ import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.Response;
+import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
@@ -85,6 +89,42 @@ public class AttachmentResource {
 
     private boolean canAccessAttachment(User caller, NoteAttachment attachment) {
         return caller.superuser || attachment.ownerId.equals(caller.id);
+    }
+
+    /**
+     * Delete an attachment outright (the automatic sweep only reclaims it after
+     * the grace window). Refuses with 409 while another note still links the
+     * file; {@code fromNote} names the note the caller is removing the link
+     * from, so its own reference does not block the delete.
+     */
+    @DELETE
+    @Path("/{id}")
+    @Transactional
+    public Response delete(@PathParam("id") UUID id, @QueryParam("fromNote") UUID fromNote) {
+        User user = sessions.resolve(headers.getCookies().get(SessionService.COOKIE_NAME));
+        if (user == null) {
+            return Response.status(Response.Status.UNAUTHORIZED).build();
+        }
+        NoteAttachment attachment = NoteAttachment.findById(id);
+        if (attachment == null || !canAccessAttachment(user, attachment)) {
+            return Response.status(Response.Status.NOT_FOUND).build();
+        }
+        List<Note> referrers = Note.getEntityManager()
+                .createQuery("SELECT n FROM Note n WHERE n.ownerId = :owner AND n.content LIKE :pattern", Note.class)
+                .setParameter("owner", attachment.ownerId)
+                .setParameter("pattern", "%/api/attachments/" + id + "%")
+                .getResultList();
+        for (Note referrer : referrers) {
+            if (fromNote != null && referrer.id.equals(fromNote)) {
+                continue;
+            }
+            return Response.status(Response.Status.CONFLICT)
+                    .entity("Attachment is still linked from note \"" + referrer.title
+                            + "\"; remove that link first")
+                    .build();
+        }
+        attachment.delete();
+        return Response.noContent().build();
     }
 
     @GET

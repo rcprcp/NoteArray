@@ -362,6 +362,23 @@ UPDATE users SET superuser = FALSE WHERE email = 'user@example.com';
   - Returns 401 if not authenticated
   - Returns 404 if note doesn't exist or caller lacks permission
   - Superusers can delete any note; regular users can only delete their own
+  - The note's attachments are removed with it (database `ON DELETE CASCADE`)
+
+### Notes – Attachments
+
+- `POST /api/notes/{id}/attachments?filename=...` – Upload one image (PNG/JPEG/GIF/WebP) or PDF (body is the raw file, max 10 MB)
+  - **Response:** `{ "id", "noteId", "filename", "contentType", "byteSize", "url" }`
+  - Counts against the plan's storage; returns 413 when the plan quota would be exceeded
+- `GET /api/notes/{id}/attachments` – Metadata for the attachments the note's text **links to** (a file shared by several notes is listed by each of them)
+- `GET /api/attachments/{id}` – Download/preview the bytes (`?download=1` forces a save)
+- `DELETE /api/attachments/{id}?fromNote={noteId}` – Delete an attachment
+  - `fromNote` names the note whose link is being removed, so its own reference does not block the delete
+  - Returns 409 while **another** note still links the file; 404 for unknown or foreign attachments
+
+Attachments whose link is removed from every note are reclaimed automatically: the save that drops the last reference
+marks the row (`orphaned_at`), and a scheduled job deletes it once it is older than `notearray.attachments.orphan-grace`
+(default `PT24H`), leaving auto-save, undo and cut/paste a safety window. The job runs every
+`notearray.attachments.purge-interval` (default `1h`).
 
 ### Notes – Filters
 

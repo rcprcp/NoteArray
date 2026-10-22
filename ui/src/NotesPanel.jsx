@@ -110,6 +110,29 @@ function deriveTitleFromFilename(filename) {
   return (base || filename).slice(0, 255)
 }
 
+function formatBytes(bytes) {
+  const n = Number(bytes) || 0
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`
+}
+
+/**
+ * Remove every link/image pointing at an attachment from the markdown content —
+ * both markdown forms (`![alt](url)`, `[label](url?download=1)`) and the HTML
+ * anchors/images the drop handler inserts. Empty paragraphs left behind go too.
+ */
+export function stripAttachmentLinks(content, attachmentId) {
+  if (!content || !attachmentId) return content
+  const markdown = new RegExp(`!?\\[[^\\]]*\\]\\([^)]*/api/attachments/${attachmentId}[^)]*\\)`, 'g')
+  const html = new RegExp(`<(?:img|a)\\b[^>]*/api/attachments/${attachmentId}[^>]*>(?:[^<]*</a>)?`, 'gi')
+  return content
+    .replace(markdown, '')
+    .replace(html, '')
+    .replace(/<p>\s*<\/p>/gi, '')
+    .trim()
+}
+
 function MarkdownEditor({ value, onChange, onDropFiles, onPreviewAttachment }) {
   const [dragOver, setDragOver] = useState(false)
   const dropHandlerRef = useRef(onDropFiles)
@@ -427,6 +450,8 @@ export default function NotesPanel({ registerActions } = {}) {
   const [importLoading, setImportLoading] = useState(false)
   const [importResult, setImportResult] = useState(null)
   const [previewAttachment, setPreviewAttachment] = useState(null)
+  // Attachments the note being edited is linked to (metadata only).
+  const [noteAttachments, setNoteAttachments] = useState([])
   const [storageInfo, setStorageInfo] = useState({
     usedBytes: 0,
     limitBytes: 100 * 1024 * 1024,
@@ -504,6 +529,7 @@ export default function NotesPanel({ registerActions } = {}) {
     setEditingNote(null)
     setForm(EMPTY_FORM)
     setFormError(null)
+    setNoteAttachments([])
     setEditMode(false)
     setCreateMode(true)
   }
@@ -554,6 +580,13 @@ export default function NotesPanel({ registerActions } = {}) {
 
   const activeFilterItems = useMemo(() => describeFilters(filters), [filters])
   const activeFilterCount = activeFilterItems.length + (activeSearch ? 1 : 0)
+
+  // The attachment list follows the links in the editor, so removing a link
+  // hides its row immediately (the server-side list is reference-based too).
+  const visibleAttachments = useMemo(
+    () => noteAttachments.filter((a) => form.content.includes(`/api/attachments/${a.id}`)),
+    [noteAttachments, form.content],
+  )
 
   const togglePin = async (note) => {
     try {
@@ -651,6 +684,45 @@ export default function NotesPanel({ registerActions } = {}) {
     setFormError(null)
     setCreateMode(false)
     setEditMode(true)
+    refreshNoteAttachments(note.id)
+  }
+
+  /** Reload the attachment list shown in the note view. */
+  const refreshNoteAttachments = async (noteId) => {
+    if (!noteId) {
+      setNoteAttachments([])
+      return
+    }
+    try {
+      const list = await notesApi.listAttachments(noteId)
+      setNoteAttachments(Array.isArray(list) ? list : [])
+    } catch (e) {
+      setNoteAttachments([])
+    }
+  }
+
+  /** Delete an attachment (and its now-dangling link) from the note view. */
+  const removeAttachment = async (attachment) => {
+    if (!editingNote || !attachment) return
+    if (!window.confirm(`Delete attachment "${attachment.filename}"? Its link is removed from this note.`)) return
+    setFormError(null)
+    try {
+      await notesApi.deleteAttachment(attachment.id, editingNote.id)
+    } catch (e) {
+      setFormError(e.status === 409
+        ? e.message
+        : `Failed to delete attachment: ${e.message}`)
+      return
+    }
+    const nextContent = stripAttachmentLinks(form.content, attachment.id)
+    setForm((prev) => ({ ...prev, content: nextContent }))
+    await performAutoSave(editingNote.id, {
+      ...form,
+      title: form.title.trim() || editingNote.title,
+      content: nextContent,
+    })
+    await refreshNoteAttachments(editingNote.id)
+    await reload()
   }
 
   // Persist pending changes of the note being edited (serialized one request at a time).
@@ -949,6 +1021,7 @@ export default function NotesPanel({ registerActions } = {}) {
         title: form.title.trim() || targetNote.title,
         content: nextMarkdown,
       })
+      await refreshNoteAttachments(targetNote.id)
       await reload()
     } catch (e) {
       setAutoSaveError(e.message || 'Failed to upload attachment')
@@ -1144,6 +1217,36 @@ export default function NotesPanel({ registerActions } = {}) {
               </Group>
             )}
           </div>
+          {editingNote && visibleAttachments.length > 0 && (
+            <div>
+              <Text fw={500} size="sm" mb={6}>Attachments ({visibleAttachments.length})</Text>
+              <Stack gap={4}>
+                {visibleAttachments.map((attachment) => (
+                  <Group key={attachment.id} justify="space-between" align="center" wrap="nowrap" gap="xs">
+                    <Text size="sm" style={{ minWidth: 0, overflowWrap: 'anywhere' }}>
+                      {attachment.filename}{' '}
+                      <Text span size="xs" c="dimmed">({formatBytes(attachment.byteSize)})</Text>
+                    </Text>
+                    <Group gap={4} wrap="nowrap" style={{ flex: '0 0 auto' }}>
+                      <Button size="xs" variant="light" onClick={() => setPreviewAttachment({ url: attachment.url, label: attachment.filename })}>
+                        Preview
+                      </Button>
+                      <Button size="xs" variant="light" onClick={() => notesApi.download(attachment.url, attachment.filename)}>
+                        Download
+                      </Button>
+                      <Button size="xs" variant="light" color="red" onClick={() => removeAttachment(attachment)}>
+                        Delete
+                      </Button>
+                    </Group>
+                  </Group>
+                ))}
+              </Stack>
+              <Text size="xs" c="dimmed" mt={4}>
+                Deleting removes the file and its link from this note. Unused attachments are
+                cleaned up automatically a day after their last link is removed.
+              </Text>
+            </div>
+          )}
           <div style={{ width: "100%" }}>
             <Text fw={500} size="sm" mb={6}>Content (drag and drop images or PDFs into the editor)</Text>
             <div style={{ width: "100%" }}>

@@ -3,6 +3,7 @@ package com.notearray.resource;
 import com.notearray.entity.Note;
 import com.notearray.entity.NoteAttachment;
 import com.notearray.entity.User;
+import com.notearray.service.AttachmentCleanupService;
 import com.notearray.service.SessionService;
 import com.notearray.service.StorageQuota;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -35,11 +36,14 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Semaphore;
 import java.util.regex.Matcher;
@@ -78,6 +82,9 @@ public class NoteResource {
 
     @Inject
     SessionService sessions;
+
+    @Inject
+    AttachmentCleanupService attachmentCleanup;
 
     @Inject
     ObjectMapper objectMapper;
@@ -315,7 +322,7 @@ public class NoteResource {
         Query query = Note.getEntityManager().createNativeQuery(sql.toString(), Note.class);
         params.forEach(query::setParameter);
         List<Note> results = query.getResultList();
-        applyAttachmentCounts(results, user);
+        applyAttachmentCounts(results);
         return Response.ok(results).build();
     }
 
@@ -340,33 +347,40 @@ public class NoteResource {
     }
 
     /**
-     * Fill {@link Note#attachmentCount} for the returned notes in one grouped
-     * query, so the list page can show an attachment indicator without loading
-     * any blobs. Notes without attachments keep their 0.
+     * Fill {@link Note#attachmentCount} for the returned notes: the number of
+     * attachments their *content* links to (not the number uploaded from them),
+     * so a file shared by two notes counts on both, and a note whose link was
+     * removed stops showing the paperclip immediately. Computed in memory from
+     * the content the list already carries — one extra query for the owner's
+     * attachment ids, no content scans.
      */
     @SuppressWarnings("unchecked")
-    private static void applyAttachmentCounts(List<Note> notes, User user) {
+    private static void applyAttachmentCounts(List<Note> notes) {
         if (notes == null || notes.isEmpty()) {
             return;
         }
-        StringBuilder countsSql = new StringBuilder("SELECT a.note_id, count(*) FROM note_attachments a");
-        Map<String, Object> countsParams = new HashMap<>();
-        if (!user.superuser) {
-            countsSql.append(" WHERE a.owner_id = :owner");
-            countsParams.put("owner", user.id);
-        }
-        countsSql.append(" GROUP BY a.note_id");
-        Query countsQuery = Note.getEntityManager().createNativeQuery(countsSql.toString());
-        countsParams.forEach(countsQuery::setParameter);
-        Map<UUID, Note> byId = new HashMap<>();
+        Set<UUID> owners = new LinkedHashSet<>();
         for (Note note : notes) {
-            byId.put(note.id, note);
+            owners.add(note.ownerId);
         }
-        for (Object[] row : (List<Object[]>) countsQuery.getResultList()) {
-            Note note = byId.get(row[0]);
-            if (note != null) {
-                note.attachmentCount = ((Number) row[1]).longValue();
+        Query idsQuery = Note.getEntityManager()
+                .createNativeQuery("SELECT owner_id, id FROM note_attachments WHERE owner_id IN (:owners)");
+        idsQuery.setParameter("owners", owners);
+        Map<UUID, Set<UUID>> attachmentIdsByOwner = new HashMap<>();
+        for (Object[] row : (List<Object[]>) idsQuery.getResultList()) {
+            attachmentIdsByOwner
+                    .computeIfAbsent((UUID) row[0], key -> new HashSet<>())
+                    .add((UUID) row[1]);
+        }
+        for (Note note : notes) {
+            Set<UUID> available = attachmentIdsByOwner.get(note.ownerId);
+            if (available == null || available.isEmpty()) {
+                note.attachmentCount = 0L;
+                continue;
             }
+            Set<UUID> referenced = AttachmentCleanupService.referencedAttachmentIds(note.content);
+            referenced.retainAll(available);
+            note.attachmentCount = (long) referenced.size();
         }
     }
 
@@ -398,6 +412,46 @@ public class NoteResource {
         long limitBytes = StorageQuota.limitBytesForPlan(user.plan);
         boolean overQuota = usedBytes >= limitBytes;
         return Response.ok(new StorageUsage(usedBytes, limitBytes, noteCount, overQuota)).build();
+    }
+
+    /**
+     * The attachments this note's text links to — even one uploaded from
+     * another note, since a file can be shared by several notes. Reference-based,
+     * so it always matches the paperclip count and drops a file the moment its
+     * link is removed. Metadata only; the bytes come from
+     * {@code GET /api/attachments/{id}}.
+     */
+    @GET
+    @Path("/{id}/attachments")
+    public Response listAttachments(@PathParam("id") UUID noteId) {
+        User user = getAuthenticatedUser();
+        if (user == null) {
+            return Response.status(Response.Status.UNAUTHORIZED).build();
+        }
+        Note note = Note.findById(noteId);
+        if (note == null || !canAccessNote(user, note)) {
+            return Response.status(Response.Status.NOT_FOUND).build();
+        }
+        Set<UUID> referenced = AttachmentCleanupService.referencedAttachmentIds(note.content);
+        List<AttachmentResource.AttachmentResponse> attachments = new ArrayList<>();
+        for (UUID id : referenced) {
+            NoteAttachment attachment = NoteAttachment.findById(id);
+            if (attachment != null && (user.superuser || attachment.ownerId.equals(user.id))) {
+                attachments.add(toAttachmentResponse(attachment));
+            }
+        }
+        attachments.sort(Comparator.comparing(AttachmentResource.AttachmentResponse::filename));
+        return Response.ok(attachments).build();
+    }
+
+    private static AttachmentResource.AttachmentResponse toAttachmentResponse(NoteAttachment attachment) {
+        return new AttachmentResource.AttachmentResponse(
+                attachment.id,
+                attachment.noteId,
+                attachment.filename,
+                attachment.contentType,
+                attachment.byteSize,
+                "/api/attachments/" + attachment.id);
     }
 
     @POST
@@ -599,6 +653,9 @@ public class NoteResource {
             }
             throw e;
         }
+        // The content may have dropped a link: mark attachments no note references
+        // any more (and clear the mark on any whose reference came back).
+        attachmentCleanup.sweepNote(note);
         return Response.ok(note).build();
     }
 

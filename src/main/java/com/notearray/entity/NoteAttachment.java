@@ -6,6 +6,7 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.Table;
+import java.time.Instant;
 import java.util.UUID;
 
 @Entity
@@ -26,6 +27,14 @@ public class NoteAttachment extends BaseEntity {
 
     @Column(name = "byte_size", nullable = false)
     public long byteSize;
+
+    /**
+     * Set when no note references this attachment any more; a scheduled job
+     * purges rows older than the grace window, and a re-added reference clears
+     * it again.
+     */
+    @Column(name = "orphaned_at")
+    public Instant orphanedAt;
 
     @JsonIgnore
     @Basic(fetch = FetchType.LAZY)
