@@ -338,13 +338,13 @@ function NoteCard({ note, onEdit, onDelete, onTogglePin }) {
           <Stack gap={4} align="flex-end">
             <Group gap="xs" wrap="nowrap">
               <PinButton note={note} onToggle={onTogglePin} />
-              <Button size="xs" variant="light" w={56} onClick={(e) => { e.stopPropagation(); onEdit(note) }}>Edit</Button>
+              <Button size="xs" variant="light" w={64} onClick={(e) => { e.stopPropagation(); onEdit(note) }}>Edit</Button>
             </Group>
             <Group gap="xs" wrap="nowrap">
               <Box w={42} style={{ display: 'flex', justifyContent: 'center' }}>
                 <AttachmentIcon count={note.attachmentCount} />
               </Box>
-              <Button size="xs" variant="light" color="red" w={56} onClick={(e) => { e.stopPropagation(); onDelete(note) }}>Delete</Button>
+              <Button size="xs" variant="light" color="red" w={64} onClick={(e) => { e.stopPropagation(); onDelete(note) }}>Delete</Button>
             </Group>
           </Stack>
         </Group>
@@ -1201,8 +1201,8 @@ export default function NotesPanel({ registerActions } = {}) {
                   <Group gap="xs" wrap="nowrap">
                     <AttachmentIcon count={n.attachmentCount} />
                     <PinButton note={n} onToggle={togglePin} />
-                    <Button size="xs" variant="light" w={56} onClick={(e) => { e.stopPropagation(); openEdit(n) }}>Edit</Button>
-                    <Button size="xs" variant="light" color="red" w={56} onClick={(e) => { e.stopPropagation(); remove(n) }}>Delete</Button>
+                    <Button size="xs" variant="light" w={64} onClick={(e) => { e.stopPropagation(); openEdit(n) }}>Edit</Button>
+                    <Button size="xs" variant="light" color="red" w={64} onClick={(e) => { e.stopPropagation(); remove(n) }}>Delete</Button>
                   </Group>
                 </Table.Td>
               </Table.Tr>
