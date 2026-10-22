@@ -13,10 +13,122 @@ nginx + Let's Encrypt TLS, backups and day-2 operations.
 >
 > **Verified:** the commands marked ✅ were executed against a real production-mode run while writing this
 > guide (prod profile, health checks, CSRF/host matrix, cookie flags, migration validation, smoke tests).
+> The ngrok behaviour in “Day-0” was verified with a dummy local server (ngrok 3.39.12) — **not** against a
+> live instance holding real data.
+
+---
+
+## Day-0 — fastest path: install with apt, expose it with ngrok
+
+Use this when you want the app reachable **today** on a fresh box, before DNS or certificates exist. Two good
+reasons: try it end-to-end on real hardware, or give a public HTTPS URL to a third party — notably **Stripe
+webhooks** (`https://<your-tunnel>/api/stripe/webhook`), which need to reach your machine.
+
+> **Security first:** a tunnel publishes your login page (and every account) to the internet. Use a throwaway
+> database/user for the trial, choose a strong password, and **close the tunnel when you are done**
+> (`pkill -f "ngrok http"`). Never leave a Day-0 tunnel running in place of the Day-1 setup below.
+
+### D0.1 Install PostgreSQL and Java 25
+
+```bash
+sudo apt update
+sudo apt -y upgrade
+
+# --- PostgreSQL ---
+sudo apt -y install postgresql postgresql-contrib
+sudo systemctl enable --now postgresql
+psql --version                       # 16+ (18 tested)
+
+# --- Java 25 (Adoptium apt repo; see §2 for alternatives) ---
+sudo apt -y install wget gpg
+sudo mkdir -p /etc/apt/keyrings
+wget -qO- https://packages.adoptium.net/artifactory/api/gpg/key/public \
+  | sudo gpg --dearmor -o /etc/apt/keyrings/adoptium.gpg
+echo "deb [signed-by=/etc/apt/keyrings/adoptium.gpg] https://packages.adoptium.net/artifactory/deb \
+$(awk -F= '/^VERSION_CODENAME/{print $2}' /etc/os-release) main" \
+  | sudo tee /etc/apt/sources.list.d/adoptium.list
+sudo apt update
+sudo apt -y install temurin-25-jdk
+java -version                        # must report 25
+```
+
+### D0.2 Database (minimal)
+
+```bash
+sudo -u postgres psql <<'SQL'
+CREATE ROLE notearray LOGIN PASSWORD '<DB_PASSWORD>';
+CREATE DATABASE notearray OWNER notearray ENCODING 'UTF8' TEMPLATE template0;
+SQL
+```
+
+Tune `max_connections` if you expect more than one instance or heavier concurrency — **see §3.1 for the exact
+files and restart semantics**; for a single instance the 100 default is already enough.
+
+### D0.3 Run the app locally and get a public URL
+
+```bash
+# build (§4) or copy the artifact from CI, then run it on loopback:
+cd /opt/notearray/current
+NOTEARRAY_DB_URL='jdbc:postgresql://127.0.0.1:5432/notearray' \
+NOTEARRAY_DB_USERNAME=notearray \
+NOTEARRAY_DB_PASSWORD='<DB_PASSWORD>' \
+QUARKUS_HTTP_HOST=127.0.0.1 QUARKUS_HTTP_PORT=8080 \
+java -jar quarkus-run.jar          # "Profile prod activated" + "Listening on: http://127.0.0.1:8080"
+
+# in another terminal: expose it
+ngrok config add-authtoken <NGROK_AUTHTOKEN>            # once
+ngrok http --domain=<YOUR-STATIC-DOMAIN>.ngrok-free.app 8080
+# (no reserved domain? plain `ngrok http 8080` works, but the random URL changes every restart)
+```
+
+Read the public URL programmatically (ngrok's local API on `127.0.0.1:4040`):
+
+```bash
+curl -s http://127.0.0.1:4040/api/tunnels \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)["tunnels"][0]["public_url"])'
+```
+
+**Now restart the app with the tunnel's hostname allow-listed** — this is the step people miss. The app
+rejects unknown `Host` headers with a bare 400, and its CSRF filter requires `Origin`'s host to equal `Host`
+(see §8.1). ngrok forwards its **public hostname** as `Host`, so that hostname must be listed:
+
+```bash
+QUARKUS_HTTP_HOST_VALIDATION_ALLOWED_HOSTS=<YOUR-STATIC-DOMAIN>.ngrok-free.app,localhost,127.0.0.1 \
+NOTEARRAY_RATE_LIMIT_TRUST_PROXY=true      # ngrok sets X-Forwarded-For/-Proto
+```
+
+| What ngrok forwards (verified) | Value seen by the app |
+|---|---|
+| `Host` | `<your-domain>.ngrok-free.app` — hence the allow-list above |
+| `X-Forwarded-For` | the real client IP (rate limiting uses it when `trust-proxy=true`) |
+| `X-Forwarded-Proto` | `https` — so prod's `Secure` session cookie works as-is |
+| Interstitial warning page | none observed with agent 3.39.12; if your account shows one for browser visits, API clients can send `ngrok-skip-browser-warning: 1` |
+
+Verify through the tunnel:
+
+```bash
+URL=https://<your-domain>.ngrok-free.app
+curl -s -o /dev/null -w 'page: %{http_code}\n' $URL/
+curl -s $URL/q/health/ready | head -c 120                       # {"status":"UP",...}
+curl -s -o /dev/null -w 'signup: %{http_code}\n' -X POST $URL/api/users \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"day0","email":"day0@example.com","password":"Smoke123!"}'
+```
+
+For a longer-lived tunnel, run the agent as a service instead of a foreground process:
+
+```bash
+sudo ngrok service install --config /etc/ngrok/ngrok.yml     # then: sudo systemctl enable --now ngrok
+```
+
+When you move to the Day-1 setup, **remove the ngrok hostname** from
+`QUARKUS_HTTP_HOST_VALIDATION_ALLOWED_HOSTS` and stop the tunnel — nginx + Let's Encrypt replace it.
 
 ---
 
 ## 0. Day-1 checklist
+
+> Doing a quick trial before DNS/TLS exist? Start with the **Day-0 ngrok path** above, then come back here.
 
 - [ ] DNS `A`/`AAAA` record for `<DNS_NAME>` pointing at the host, propagated (`dig +short <DNS_NAME>`)
 - [ ] Host baseline: updates, timezone, NTP, dedicated service user, directories, firewall (§1)
@@ -92,6 +204,7 @@ sudo apt -y install temurin-25-jdk
 ### Option B — distribution JDK (Ubuntu 25.10 / 26.04 LTS)
 
 ```bash
+sudo apt update
 sudo apt -y install openjdk-25-jdk
 ```
 
@@ -160,6 +273,53 @@ PGPASSWORD='<DB_PASSWORD>' psql -h 127.0.0.1 -U notearray -d notearray -c "selec
 Optional sizing for a small host (`/etc/postgresql/*/main/postgresql.conf`): `shared_buffers = 25%RAM`,
 `effective_cache_size = 50%RAM`, `work_mem = 16MB`, `maintenance_work_mem = 256MB`. Restart afterwards.
 Monitor disk: **attachments live in the database**, so the data directory grows with every upload.
+
+### 3.1 Which config files to edit (and when a restart is required)
+
+Only two files matter for this app:
+
+| File | Setting | Purpose |
+|---|---|---|
+| `/etc/postgresql/<VER>/main/postgresql.conf` | `max_connections`, `shared_buffers`, `work_mem`, `listen_addresses` | connection budget + memory |
+| `/etc/postgresql/<VER>/main/pg_hba.conf` | the `host … 127.0.0.1/32 …` line | how the app authenticates (`scram-sha-256`) |
+
+`<VER>` is the major version directory (`18` on the box used to write this guide — find yours with
+`ls -d /etc/postgresql/*/main`). Confirm the paths PostgreSQL actually uses at runtime:
+
+```bash
+sudo -u postgres psql -tAc "show config_file; show hba_file;"
+# /etc/postgresql/18/main/postgresql.conf
+# /etc/postgresql/18/main/pg_hba.conf
+```
+
+Raise `max_connections` (default **100** — enough for one app instance with its 50-connection pool; raise it
+when you run more instances or add other clients):
+
+```bash
+sudo sed -i 's/^#\?max_connections *=.*/max_connections = 200\t\t\t# app pool x instances + admin headroom/' \
+  /etc/postgresql/*/main/postgresql.conf
+grep -n '^max_connections' /etc/postgresql/*/main/postgresql.conf
+```
+
+**A restart is required** — `max_connections` and `shared_buffers` are `postmaster`-context settings, so a
+reload is not enough (verified against `pg_settings`):
+
+| Setting | Context | Takes effect |
+|---|---|---|
+| `max_connections` | `postmaster` | **restart** the cluster |
+| `shared_buffers` | `postmaster` | **restart** the cluster |
+| `work_mem` | `user` | new sessions / `pg_reload_conf()` |
+| `pg_hba.conf` | — | `reload` (or a restart) |
+
+```bash
+sudo systemctl restart postgresql          # or: sudo pg_ctlcluster 18 main restart
+systemctl status postgresql --no-pager | head -5
+sudo -u postgres psql -tAc "show max_connections"     # 200
+```
+
+Memory caveat: every connection costs a few MB of base memory plus its `work_mem` when sorting — 200
+connections × 16 MB `work_mem` is a 3 GB worst case. Keep `max_connections ≥ pool × instances + 5` and watch
+`SELECT count(*) FROM pg_stat_activity;` under load.
 
 ---
 
@@ -318,6 +478,75 @@ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/      # 200 (serv
 ---
 
 ## 7. nginx + Let's Encrypt
+
+### 7.0 The short version — install, configure, certify
+
+```bash
+# 1) install
+sudo apt update
+sudo apt -y install nginx certbot python3-certbot-nginx
+sudo systemctl enable --now nginx
+
+# 2) site config (minimal working block; full version with /q/ limits and timeouts in §7.2)
+sudo tee /etc/nginx/sites-available/notearray >/dev/null <<'NGINX'
+server {
+    listen 80;
+    listen [::]:80;
+    server_name <DNS_NAME>;
+
+    client_max_body_size 64m;                 # 50 MB imports + 10 MB attachments (app cap is 55m)
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host              $host;    # REQUIRED (CSRF compares Origin to Host)
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 600s;                     # large imports
+    }
+}
+NGINX
+
+sudo ln -sfn /etc/nginx/sites-available/notearray /etc/nginx/sites-enabled/notearray
+sudo rm -f /etc/nginx/sites-enabled/default
+sudo nginx -t && sudo systemctl reload nginx
+
+# 3) DNS must resolve to this host BEFORE certbot runs
+dig +short <DNS_NAME>
+
+# 4) issue the certificate + redirect (this rewrites the site file: ssl_certificate, 443 block, 301)
+sudo certbot --nginx -d <DNS_NAME> --redirect -m <OPS_EMAIL> --agree-tos --no-eff-email
+
+# 5) verify + enable renewal
+curl -sI https://<DNS_NAME> | head -1
+sudo certbot certificates
+sudo certbot renew --dry-run
+systemctl list-timers | grep certbot
+```
+
+**Why `--nginx` and not `--standalone`:** nginx already owns port 80, so the standalone authenticator would fail
+with *Address already in use* unless nginx is stopped. Use the nginx plugin (above) or the webroot flow:
+
+```bash
+# alternative: webroot (nginx keeps serving; certbot drops the challenge file into the docroot)
+sudo mkdir -p /var/www/html
+sudo certbot certonly --webroot -w /var/www/html -d <DNS_NAME> -m <OPS_EMAIL> --agree-tos --no-eff-email
+# then add ssl_certificate/ssl_certificate_key lines yourself (see §7.2)
+```
+
+Which files you touch, and what manages them:
+
+| Path | Managed by | Notes |
+|---|---|---|
+| `/etc/nginx/sites-available/notearray` | you (then certbot) | the site block; certbot adds the 443/redirect blocks |
+| `/etc/nginx/sites-enabled/notearray` | you (symlink) | must point at the file above |
+| `/etc/nginx/nginx.conf` | distro | leave alone unless you know why |
+| `/etc/letsencrypt/live/<DNS_NAME>/` | certbot | `fullchain.pem`, `privkey.pem`, `chain.pem` (symlinks, replaced on renewal) |
+| `/etc/letsencrypt/renewal/<DNS_NAME>.conf` | certbot | renewal options (authenticator, webroot path) |
+| `/etc/letsencrypt/renewal-hooks/deploy/` | you | scripts run after a successful renewal (§7.3) |
+| `/etc/letsencrypt/options-ssl-nginx.conf` | certbot | TLS protocol/ciphers include used by the site block |
+
+Always `sudo nginx -t` before `reload` — a syntax error in the site file takes the whole server down on reload.
 
 ### 7.1 Install
 
