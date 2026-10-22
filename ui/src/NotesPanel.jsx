@@ -14,7 +14,7 @@ import Placeholder from '@tiptap/extension-placeholder'
 import { Markdown } from 'tiptap-markdown'
 import { Link } from '@mantine/tiptap'
 import { notesApi } from './api'
-import FilterPanel, { DEFAULT_FILTERS, buildApiFilters, describeFilters } from './FilterPanel'
+import { DEFAULT_FILTERS, buildApiFilters, describeFilters, sanitizeFilters } from './filters'
 
 const EMPTY_FORM = { title: '', content: '', tags: '' }
 const DEFAULT_SEARCH = { q: '', searchTitles: true, searchContent: true, searchTags: true }
@@ -404,11 +404,9 @@ export default function NotesPanel({ registerActions } = {}) {
   const [editMode, setEditMode] = useState(false)
   const [searchExpanded, setSearchExpanded] = useState(false)
 
-  // Advanced filters (persisted) and the unfiltered note list
-  // used for tag options and smart collection counts.
-  const [filters, setFilters] = useState(() => ({ ...DEFAULT_FILTERS, ...readStorage(FILTERS_KEY, {}) }))
-  const [allNotes, setAllNotes] = useState([])
-  const [filtersOpen, setFiltersOpen] = useState(false)
+  // Advanced filters (persisted). Tag filtering lives in the text search's
+  // "Search Tags" scope, so no tag list has to be fetched.
+  const [filters, setFilters] = useState(() => sanitizeFilters(readStorage(FILTERS_KEY, {})))
   // Card vs list display preference ('auto' follows screen size). Persisted.
   const [viewMode, setViewMode] = useState(() => readStorage(VIEW_KEY, DEFAULT_VIEW_MODE))
   useEffect(() => writeStorage(VIEW_KEY, viewMode), [viewMode])
@@ -439,13 +437,11 @@ export default function NotesPanel({ registerActions } = {}) {
   const load = useCallback(async (searchParams, filterState) => {
     try {
       const apiFilters = buildApiFilters(filterState)
-      const [filtered, everything, storage] = await Promise.all([
+      const [filtered, storage] = await Promise.all([
         notesApi.list(searchParams, apiFilters),
-        notesApi.list(),
         notesApi.storage().catch(() => null),
       ])
       setNotes(filtered)
-      setAllNotes(everything)
       if (storage) {
         const used = Number(storage.usedBytes) || 0
         const limit = Number(storage.limitBytes) || 100 * 1024 * 1024
@@ -553,21 +549,27 @@ export default function NotesPanel({ registerActions } = {}) {
   const activeFilterItems = useMemo(() => describeFilters(filters), [filters])
   const activeFilterCount = activeFilterItems.length + (activeSearch ? 1 : 0)
 
-  const allTags = useMemo(() => {
-    const set = new Set(filters.tags)
-    allNotes.forEach((n) => (n.tags || '').split(' ').filter(Boolean).forEach((t) => set.add(t)))
-    return [...set].sort((a, b) => a.localeCompare(b))
-  }, [allNotes, filters.tags])
+  /** "Find notes with no tags" and tag search are mutually exclusive. */
+  const toggleUntagged = (checked) => {
+    updateFilters({
+      untagged: checked,
+      ...(filters.collection === 'untagged' ? { collection: null } : {}),
+    })
+    if (checked) {
+      setSearch((s) => ({ ...s, searchTags: false }))
+    }
+  }
 
-  const collectionCounts = useMemo(() => ({
-    untagged: allNotes.filter((n) => !(n.tags || '').trim()).length,
-    pinned: allNotes.filter((n) => n.pinned).length,
-  }), [allNotes])
-
-  const resultCounts = useMemo(() => ({
-    pinned: notes.filter((n) => n.pinned).length,
-    untagged: notes.filter((n) => !(n.tags || '').trim()).length,
-  }), [notes])
+  /** Turning tag search on clears "Find notes with no tags". */
+  const toggleSearchTags = (checked) => {
+    setSearch((s) => ({ ...s, searchTags: checked }))
+    if (checked && (filters.untagged || filters.collection === 'untagged')) {
+      updateFilters({
+        untagged: false,
+        ...(filters.collection === 'untagged' ? { collection: null } : {}),
+      })
+    }
+  }
 
   const togglePin = async (note) => {
     try {
@@ -1014,15 +1016,6 @@ export default function NotesPanel({ registerActions } = {}) {
     }
   }
 
-  const filterPanel = (
-    <FilterPanel
-      filters={filters}
-      onChange={updateFilters}
-      allTags={allTags}
-      collectionCounts={collectionCounts}
-    />
-  )
-
   return (
     <Stack gap="md" p={{ base: 'sm', sm: 'md' }} style={{ width: '100%' }}>
       {/* Header */}
@@ -1050,11 +1043,16 @@ export default function NotesPanel({ registerActions } = {}) {
           </Button>
         </Group>
 
-        <Group gap="lg">
+        <Stack gap={6}>
           <Checkbox
             label="Search Titles"
             checked={search.searchTitles}
             onChange={(e) => setSearch({ ...search, searchTitles: e.currentTarget.checked })}
+          />
+          <Checkbox
+            label="Find notes with attachments"
+            checked={!!filters.hasAttachments}
+            onChange={(e) => updateFilters({ hasAttachments: e.currentTarget.checked })}
           />
           <Checkbox
             label="Search Note Content"
@@ -1064,11 +1062,14 @@ export default function NotesPanel({ registerActions } = {}) {
           <Checkbox
             label="Search Tags"
             checked={search.searchTags}
-            onChange={(e) => setSearch({ ...search, searchTags: e.currentTarget.checked })}
+            onChange={(e) => toggleSearchTags(e.currentTarget.checked)}
           />
-        </Group>
-
-        {filterPanel}
+          <Checkbox
+            label="Find notes with no tags"
+            checked={!!filters.untagged || filters.collection === 'untagged'}
+            onChange={(e) => toggleUntagged(e.currentTarget.checked)}
+          />
+        </Stack>
 
         {!(createMode || editMode) && activeFilterCount > 0 && (
           <Group gap="xs" aria-label="Active filters">
@@ -1318,7 +1319,8 @@ export default function NotesPanel({ registerActions } = {}) {
       >
         <Stack>
           <Text size="sm">
-            Choose where to look before searching. Please check at least one of the boxes:
+            Choose what to search and which notes to keep. Please check at least one of the search
+            boxes:
           </Text>
           <List spacing="xs" size="sm">
             <List.Item><b>Search Titles</b> – match words in note titles.</List.Item>
@@ -1330,6 +1332,12 @@ export default function NotesPanel({ registerActions } = {}) {
           <Text size="sm">
             Check any combination to search titles, content and tags together. Then type your
             search words and press <b>Search</b> (or Enter).
+          </Text>
+          <Text size="sm">
+            <b>Find notes with attachments</b> keeps only notes that have files, and
+            <b>Find notes with no tags</b> keeps only untagged notes (with nothing else selected it
+            lists every untagged note). Ticking it unticks <b>Search Tags</b>, since an untagged
+            note cannot match a tag search.
           </Text>
           <Text size="xs" c="dimmed">
             Titles and content are word-based and ignore case, common words (like "the"), and word

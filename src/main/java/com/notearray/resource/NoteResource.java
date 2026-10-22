@@ -192,6 +192,7 @@ public class NoteResource {
      * Optional filters (all combined with AND):
      *   tags           - repeatable; note must have every listed tag
      *   untagged       - only notes without tags
+     *   hasAttachments - only notes with at least one attachment
      *   pinned         - only pinned notes
      *   createdFrom / createdTo - ISO-8601 instants, inclusive range on creation time
      *   updatedFrom / updatedTo - ISO-8601 instants, inclusive range on modification time
@@ -205,6 +206,7 @@ public class NoteResource {
                          @QueryParam("tags") List<String> tags,
                          @QueryParam("tagPrefix") List<String> tagPrefixes,
                          @QueryParam("untagged") @jakarta.ws.rs.DefaultValue("false") boolean untagged,
+                         @QueryParam("hasAttachments") @jakarta.ws.rs.DefaultValue("false") boolean hasAttachments,
                          @QueryParam("pinned") @jakarta.ws.rs.DefaultValue("false") boolean pinned,
                          @QueryParam("createdFrom") String createdFrom,
                          @QueryParam("createdTo") String createdTo,
@@ -265,6 +267,9 @@ public class NoteResource {
         }
         if (untagged) {
             sql.append(" AND btrim(coalesce(n.tags, '')) = ''");
+        }
+        if (hasAttachments) {
+            sql.append(" AND EXISTS (SELECT 1 FROM note_attachments a WHERE a.note_id = n.id)");
         }
         if (pinned) {
             sql.append(" AND n.pinned = true");

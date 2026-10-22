@@ -370,6 +370,7 @@ UPDATE users SET superuser = FALSE WHERE email = 'user@example.com';
   - `tagPrefix` – repeatable query parameter for hierarchical (`grandparent/parent/child`) tags; a note matches when it carries the token itself or any deeper token. Example: `?tagPrefix=work` matches `work` and `work/2024`
   - List responses include `attachmentCount` per note, so clients can show an attachment indicator without fetching blobs
   - `untagged` – `true` to return only notes without any tags
+  - `hasAttachments` – `true` to return only notes that have at least one attachment
   - `pinned` – `true` to return only pinned notes
   - `createdFrom` / `createdTo` – ISO-8601 instants for note creation date range (inclusive)
   - `updatedFrom` / `updatedTo` – ISO-8601 instants for note modification date range (inclusive)
@@ -380,6 +381,7 @@ UPDATE users SET superuser = FALSE WHERE email = 'user@example.com';
     - `?tags=work&tags=important` – notes tagged with both "work" AND "important"
     - `?tagPrefix=work` – notes in folder `work` or any sub-folder of it
     - `?untagged=true` – notes with no tags
+    - `?hasAttachments=true` – notes that have attachments
     - `?pinned=true` – pinned notes only
     - `?createdFrom=2024-01-01T00:00:00Z&createdTo=2024-12-31T23:59:59Z` – notes created in 2024
     - `?tags=work&pinned=true&updatedFrom=2024-10-01T00:00:00Z` – pinned work notes updated since Oct 1
@@ -537,7 +539,7 @@ The interactive Swagger UI allows you to test all endpoints directly from your b
 
 ### Advanced Search & Filtering
 - **Responsive header actions** – Header includes **Create Note**, **List Notes**, **Search Notes**, **Pinned**, **Import**, and the user avatar. When viewport width is constrained, items collapse right-to-left into an overflow (`...`) menu, and Search/Pinned/Import controls are disabled when outside the List Notes view.
-- **Search Notes panel** – One header button opens the combined search panel: the text search box with its **Search Titles / Search Note Content / Search Tags** scope checkboxes plus the tag filter below it. Toggled with the **Search Notes** header button
+- **Search Notes panel** – One header button opens the combined search panel: the text search box with its **Search Titles / Search Note Content / Search Tags** scope checkboxes plus the **Find notes with attachments** and **Find notes with no tags** filters. Toggled with the **Search Notes** header button
   - **Find notes with no tags** checkbox at the top of the panel filters to notes with no tags (and automatically unchecks if the user types in the Tags field or selects a tag)
   - Add tags by typing (space-delimited) or multi-select from existing tags
   - Notes must have all selected tags
@@ -709,15 +711,15 @@ Covered so far (36 unit tests across 6 test classes): login-throttle backoff/loc
 - **Login throttling:** Failed logins back off exponentially (1s doubling to 64s; 15-minute lockout after 8 consecutive failures, reset by a successful login), and each client IP gets 120 login + 30 signup requests per hour. Throttled requests return `429` with a `Retry-After` header. Tune via `notearray.rate-limit.*` properties — repeated failed logins while testing locally will hit the lockout.
 - **Password policy:** New or changed passwords need 8+ characters with an uppercase letter, a lowercase letter, and a number (special characters from `!@#$%^&*` are optional). Enforced server-side on create/update and mirrored by the signup form.
 - **Markdown in notes:** Content is stored as markdown, so you can export, version control, and sync notes easily.
-- **Tags and search:** Tags are space-delimited and searchable via the full-text search feature and tag filters.
+- **Tags and search:** Tags are space-delimited and searchable with the **Search Tags** scope (partial tag matches) in the Search Notes panel.
 - **Importing notes:** Use the Import feature to migrate notes from Joplin or upload individual markdown files. Imports automatically preserve metadata and convert folder structures to tags.
 - **Auto-save behavior:** Changes to existing notes are automatically saved after 2 seconds of inactivity. New notes require manual save first. The debounce delay prevents excessive server requests while providing responsive save behavior. No changes are lost when closing the modal—pending changes are flushed before closing.
 - **Responsive design:** Mobile-first CSS approach with breakpoints at 768px and 1024px. Use browser DevTools to test different screen sizes. Touch targets are 44px minimum on mobile for accessibility.
 - **Mobile optimization:** Modals go full-screen on mobile, search filters collapse, notes display as cards instead of tables. Font sizes scale with viewport using `clamp()`.
 - **Filter state management:** Active filters are managed in NotesPanel state and persisted to `localStorage` for recovery on page reload. Filters are combined with search queries using AND logic.
 - **Date filtering:** Backend API supports ISO-8601 instant range parameters (`createdFrom`, `createdTo`, `updatedFrom`, `updatedTo`) and returns 400 for invalid formats.
-- **Tag filtering:** Multi-select tag filter automatically populates from tags in the user's notes. A note matches if it has ALL selected tags. Combine multiple tags for powerful filtering.
-- **Smart collections:** **Pinned** in the header and **Untagged** inside the **Search Notes** panel filter directly to pinned or untagged notes.
+- **Attachment filter:** **Find notes with attachments** in the Search Notes panel keeps only notes that carry files.
+- **Smart collections:** **Pinned** in the header and **Find notes with no tags** in the **Search Notes** panel filter directly to pinned or untagged notes.
 - **Pinned notes:** Use the pin icon in the notes list to pin/unpin notes as favorites.
 
 ## Technologies Used

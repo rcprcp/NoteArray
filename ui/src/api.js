@@ -57,6 +57,7 @@ export const notesApi = {
       ;(filters.tags || []).forEach((t) => params.append('tags', t))
       ;(filters.tagPrefixes || []).forEach((t) => params.append('tagPrefix', t))
       if (filters.untagged) params.set('untagged', 'true')
+      if (filters.hasAttachments) params.set('hasAttachments', 'true')
       if (filters.pinned) params.set('pinned', 'true')
       for (const key of ['createdFrom', 'createdTo', 'updatedFrom', 'updatedTo']) {
         if (filters[key]) params.set(key, filters[key])

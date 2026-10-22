@@ -59,7 +59,7 @@ Once signed in, the header at the top of every page is your control center:
 |---|---|
 | **Create Note** | Opens the note editor to write a new note |
 | **List Notes** | Returns to your note list (clears active search/filters) |
-| **Search Notes** | Toggles the search panel — text search, its scope checkboxes and the tag filter together (List Notes view only) |
+| **Search Notes** | Toggles the search panel — text search with its scope checkboxes and the attachment / untagged filters (List Notes view only) |
 | **Pinned** | Filters the list to your pinned notes (List Notes view only) |
 | **Import** (upload icon) | Opens the Import notes modal (List Notes view only) |
 | **Help/About** | Dropdown with **FAQ**, **Privacy Policy**, and **Security Notes** pages |
@@ -200,16 +200,14 @@ The header **Pinned** button is a *filter toggle* — click it to show **only pi
 
 ### Search Notes panel
 
-Click **Search Notes** in the header (List Notes view) to open the search panel. It combines the text search and the tag filter in one place:
+Click **Search Notes** in the header (List Notes view) to open the search panel. It holds the text search and the list filters together:
 
 - **Text search**: the search box with its **Search** button (Enter also works) and **Clear**.
-- **Search Titles / Search Note Content / Search Tags**: choose where the text search looks.
-- **Tag filter** (below the scope checkboxes):
-  - **Search tags**: a searchable multi-select; typing matches **any part of a tag** — "sup" surfaces *super-duper* and *supper*. Pick one or more — only notes with **all** selected tags match (AND logic, not OR).
-  - **Folders (include sub-folders)**: hierarchical tags such as `work/projects/acme` (typically created by importing a Joplin archive) appear here as selectable **folders** — a tag that has sub-tags is listed here rather than under Tags, so selecting it always matches the whole subtree. Selecting a folder matches notes in it **and all sub-folders** (e.g. picking `work` also matches `work/projects`); an active folder shows as a `Folder: work` chip.
-  - **"Find notes with no tags" checkbox**: shows only untagged notes. Checking it clears your tag selection; selecting a tag clears it, since the two are mutually exclusive.
+- **Search Titles** / **Search Note Content** / **Search Tags**: choose where the text search looks. Tags are matched on **any part** of a tag — "sup" finds notes tagged *super-duper* or *supper*, and "grq" finds notes in folders *grq* and *grq/cobol* — so there is no separate tag picker.
+- **Find notes with attachments**: only notes that carry at least one attachment.
+- **Find notes with no tags**: only untagged notes. With no search text and no other boxes ticked it simply lists every untagged note. Ticking it unticks **Search Tags** (a note with no tags can't match a tag search), and ticking **Search Tags** unticks it again.
 
-The text search and the tag filter combine with AND logic, so you can search text and narrow by tags at the same time.
+Search text and filters combine with AND logic, so you can search text and narrow the results by attachments or tags at the same time. Each active filter shows as a removable chip above the list.
 
 ### Active filters
 
@@ -219,7 +217,7 @@ Any active search/filters appear as **removable chips** above the list, plus an 
 
 ## 5. Searching Your Notes
 
-Click **Search Notes** in the header (the same panel holds the tag filter — see [Search Notes panel](#search-notes-panel)):
+Click **Search Notes** in the header (the same panel holds the attachment and untagged filters — see [Search Notes panel](#search-notes-panel)):
 
 1. Type words into **"Search notes…"** and press **Enter** (or the **Search** button).
 2. Choose **where** to look — at least one must be checked:
@@ -244,7 +242,7 @@ If you try to search with no box checked, a **"How to search your notes"** help 
 
 ### Combining search with filters
 
-You can pair a search with tag filters, the Untagged checkbox, the Pinned filter, and the Search Titles / Search Note Content options all at once — filters combine with AND logic for powerful, narrow results. Result counts are shown above the list: *"Search results for '…'"* / *"Found N result(s)."*
+You can pair a search with the Search Titles / Search Note Content / Search Tags scope boxes, the **Find notes with attachments** and **Find notes with no tags** filters, and the Pinned filter all at once — they combine with AND logic for powerful, narrow results. Result counts are shown above the list: *"Search results for '…'"* / *"Found N result(s)."*
 
 ---
 
