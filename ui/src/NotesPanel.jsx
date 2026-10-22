@@ -330,24 +330,28 @@ function NoteCard({ note, onEdit, onDelete, onTogglePin }) {
   return (
     <Card shadow="sm" padding="md" radius="md" withBorder onClick={() => onEdit(note)} style={{ cursor: 'pointer' }}>
       <Stack gap="xs">
-        <Group justify="space-between" align="center" wrap="nowrap" gap="xs">
+        <Group justify="space-between" align="flex-start" wrap="nowrap" gap="xs">
           <Group gap="xs" wrap="wrap" style={{ minWidth: 0 }}>
             <Text fw={500} size="sm" c="dimmed" style={{ minWidth: 0 }}>Created: {new Date(note.createdAt).toLocaleDateString()}</Text>
             <Text fw={500} size="sm" c="dimmed" style={{ minWidth: 0 }}>Updated: {new Date(note.updatedAt).toLocaleDateString()}</Text>
           </Group>
-          <Group gap="xs" wrap="nowrap" style={{ flex: '0 0 auto' }}>
-            <PinButton note={note} onToggle={onTogglePin} />
-            <Button size="xs" variant="light" onClick={(e) => { e.stopPropagation(); onEdit(note) }}>Edit</Button>
-            <Button size="xs" variant="light" color="red" onClick={(e) => { e.stopPropagation(); onDelete(note) }}>Delete</Button>
-          </Group>
+          <Stack gap={4} align="flex-end">
+            <Group gap="xs" wrap="nowrap">
+              <PinButton note={note} onToggle={onTogglePin} />
+              <Button size="xs" variant="light" onClick={(e) => { e.stopPropagation(); onEdit(note) }}>Edit</Button>
+            </Group>
+            <Group gap="xs" wrap="nowrap">
+              <Box w={42} style={{ display: 'flex', justifyContent: 'center' }}>
+                <AttachmentIcon count={note.attachmentCount} />
+              </Box>
+              <Button size="xs" variant="light" color="red" onClick={(e) => { e.stopPropagation(); onDelete(note) }}>Delete</Button>
+            </Group>
+          </Stack>
         </Group>
         <div>
-          <Group gap={4} wrap="nowrap">
-            <Text fw={600} size="md" style={{ overflowWrap: 'anywhere' }}>
-              {note.title || <Text c="dimmed" fs="italic">Untitled</Text>}
-            </Text>
-            <AttachmentIcon count={note.attachmentCount} />
-          </Group>
+          <Text fw={600} size="md" style={{ overflowWrap: 'anywhere' }}>
+            {note.title || <Text c="dimmed" fs="italic">Untitled</Text>}
+          </Text>
           {note.tags && (
             <Group gap="xs" mt="xs">
               {note.tags.split(' ').filter(t => t.length > 0).map((tag, idx) => (
@@ -1183,10 +1187,7 @@ export default function NotesPanel({ registerActions } = {}) {
                 <Table.Td>{new Date(n.updatedAt).toLocaleString()}</Table.Td>
                 <Table.Td>
                   <Stack gap="xs">
-                    <Group gap={4} wrap="nowrap">
-                      <Text style={{ minWidth: 0 }}>{n.title || <Text c="dimmed" fs="italic">Untitled</Text>}</Text>
-                      <AttachmentIcon count={n.attachmentCount} />
-                    </Group>
+                    <Text style={{ minWidth: 0 }}>{n.title || <Text c="dimmed" fs="italic">Untitled</Text>}</Text>
                     {n.tags && (
                       <Group gap="xs">
                         {n.tags.split(' ').filter(t => t.length > 0).map((tag, idx) => (
@@ -1198,6 +1199,7 @@ export default function NotesPanel({ registerActions } = {}) {
                 </Table.Td>
                 <Table.Td>
                   <Group gap="xs" wrap="nowrap">
+                    <AttachmentIcon count={n.attachmentCount} />
                     <PinButton note={n} onToggle={togglePin} />
                     <Button size="xs" variant="light" onClick={(e) => { e.stopPropagation(); openEdit(n) }}>Edit</Button>
                     <Button size="xs" variant="light" color="red" onClick={(e) => { e.stopPropagation(); remove(n) }}>Delete</Button>
