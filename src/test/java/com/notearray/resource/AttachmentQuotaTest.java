@@ -21,6 +21,28 @@ class AttachmentQuotaTest {
     }
 
     @Test
+    void planLimitLabelMatchesTheCallerTier() {
+        // Overrun messages must show the caller's own plan limit, not a fixed value.
+        assertEquals("100 MB", StorageQuota.limitLabelForPlan("free"));
+        assertEquals("1 GB", StorageQuota.limitLabelForPlan("pro"));
+        assertEquals("5 GB", StorageQuota.limitLabelForPlan("premium"));
+        assertEquals("100 MB", StorageQuota.limitLabelForPlan(null));
+    }
+
+    @Test
+    void quotaMessagesArePlanAgnostic() {
+        // The same guard serves every tier, so the text must not name (or default
+        // to) a tier and must point at upgrade-or-delete. A Pro user at their
+        // own 1 GB limit is the failing case here.
+        Response exceeded = StorageQuota.checkCanCreate(1L * 1024 * 1024 * 1024, 0L, "pro");
+        assertNotNull(exceeded);
+        String text = String.valueOf(exceeded.getEntity());
+        assertTrue(text.contains("Please upgrade your plan or delete notes"));
+        assertFalse(text.contains("Pro"));
+        assertFalse(text.contains("Free"));
+    }
+
+    @Test
     void enforcesPlanStorageQuotas() {
         long ninetyNineMb = 99L * 1024 * 1024;
         long twoMb = 2L * 1024 * 1024;

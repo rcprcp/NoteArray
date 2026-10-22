@@ -63,10 +63,23 @@ public final class StorageQuota {
     }
 
     private static Response quotaExceededResponse(String plan) {
-        String planName = plan == null || plan.isBlank() ? "Free" : plan.trim();
+        // Plan-agnostic wording: this guard runs for every tier (free/pro/premium) and the
+        // caller's plan is already visible in the UI. The specific bumped limit for an
+        // import is surfaced by the import flow itself.
         return Response.status(Response.Status.REQUEST_ENTITY_TOO_LARGE)
-                .entity("Storage quota exceeded for your " + planName
-                        + " plan. Please upgrade your plan or delete notes to free up space.")
+                .entity("Storage quota exceeded. Please upgrade your plan or delete notes to free up space.")
                 .build();
+    }
+
+    /**
+     * Human-readable limit for a plan ("100 MB" / "1 GB" / "5 GB"), used in
+     * messages that should show exactly what the caller's plan allows.
+     */
+    public static String limitLabelForPlan(String plan) {
+        long bytes = limitBytesForPlan(plan);
+        if (bytes >= 1024L * 1024 * 1024) {
+            return (bytes / (1024L * 1024 * 1024)) + " GB";
+        }
+        return (bytes / (1024L * 1024)) + " MB";
     }
 }

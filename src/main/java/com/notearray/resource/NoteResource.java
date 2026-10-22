@@ -613,6 +613,8 @@ public class NoteResource {
             // Cumulative uncompressed budget across every entry (notes + metadata).
             ExpansionBudget budget = new ExpansionBudget(maxTotalExpansionBytes);
             long planLimitBytes = StorageQuota.limitBytesForPlan(user.plan);
+            // Shown in the overrun message so it reflects the caller's actual plan (100 MB / 1 GB / 5 GB).
+            String planLimitLabel = StorageQuota.limitLabelForPlan(user.plan);
             long importedBytes = 0;
             int noteEntries = 0;
 
@@ -684,9 +686,8 @@ public class NoteResource {
                                 if (quotaWouldExceed(currentUsed, importedBytes, noteBytes, planLimitBytes)) {
                                     // Unchecked → the @Transactional import rolls back entirely.
                                     throw importLimitExceeded(
-                                            "Import would exceed your plan storage limit of "
-                                                    + (planLimitBytes / (1024 * 1024)) + " MB; "
-                                                    + "the whole import was rolled back");
+                                            "This import would exceed your plan storage limit (" + planLimitLabel
+                                                    + "). Please upgrade your plan or delete notes to free up space.");
                                 }
                                 note.persist();
                                 importedBytes += noteBytes;
@@ -733,9 +734,8 @@ public class NoteResource {
                                         : note.content.getBytes(StandardCharsets.UTF_8).length;
                                 if (quotaWouldExceed(currentUsed, importedBytes, noteBytes, planLimitBytes)) {
                                     throw importLimitExceeded(
-                                            "Import would exceed your plan storage limit of "
-                                                    + (planLimitBytes / (1024 * 1024)) + " MB; "
-                                                    + "the whole import was rolled back");
+                                            "This import would exceed your plan storage limit (" + planLimitLabel
+                                                    + "). Please upgrade your plan or delete notes to free up space.");
                                 }
                                 note.persist();
                                 importedBytes += noteBytes;
