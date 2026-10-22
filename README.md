@@ -623,6 +623,9 @@ The interactive Swagger UI allows you to test all endpoints directly from your b
 
 ## Building for Production
 
+> **Deploying to a server?** See **[DEVOPS.md](DEVOPS.md)** for the full operation-ready checklist:
+> PostgreSQL, Java 25, systemd, nginx + Let's Encrypt, backups, upgrades/rollback, monitoring and troubleshooting.
+
 ### Build the UI
 
 ```bash
