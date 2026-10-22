@@ -855,18 +855,31 @@ export default function NotesPanel({ registerActions } = {}) {
     }
   }
 
+  /** Deletes the note (after confirmation); returns true when it was removed. */
   const remove = async (note) => {
-    if (!window.confirm(`Delete note "${note.title || 'Untitled'}"?`)) return
+    if (!window.confirm(`Delete note "${note.title || 'Untitled'}"?`)) return false
     try {
       await notesApi.remove(note.id)
       setError(null)
       await reload()
+      return true
     } catch (e) {
       if (e.status === 401) {
         setError('Session expired. Please login again.')
       } else {
         setError(`Failed to delete note: ${e.message}`)
       }
+      return false
+    }
+  }
+
+  /** Delete from the note view: on success leave the editor (its note is gone). */
+  const removeFromEditor = async () => {
+    if (!editingNote) return
+    clearAutoSaveTimer()
+    if (await remove(editingNote)) {
+      setEditMode(false)
+      setEditingNote(null)
     }
   }
 
@@ -1131,7 +1144,14 @@ export default function NotesPanel({ registerActions } = {}) {
       {(createMode || editMode) ? (
         <Stack gap="md" style={{ width: '100%', flex: 1, minWidth: 0 }}>
           {formError && <Alert color="red" withCloseButton onClose={() => setFormError(null)}>{formError}</Alert>}
-          <TextInput label="Title" w="100%" style={{ width: "100%" }} required maxLength={255} value={form.title} error={formError && !form.title.trim()} onChange={(e) => setForm({ ...form, title: e.currentTarget.value })} size={inputSize} />
+          <Group justify="space-between" align="flex-end" wrap="nowrap" gap="xs" style={{ width: '100%' }}>
+            <TextInput label="Title" style={{ flex: 1, minWidth: 0 }} required maxLength={255} value={form.title} error={formError && !form.title.trim()} onChange={(e) => setForm({ ...form, title: e.currentTarget.value })} size={inputSize} />
+            {editingNote && (
+              <Button variant="light" color="red" size={inputSize} onClick={removeFromEditor} style={{ flex: '0 0 auto' }}>
+                Delete
+              </Button>
+            )}
+          </Group>
           {editingNote && <Text size="xs" c="dimmed">Created: {new Date(editingNote.createdAt).toLocaleString()}</Text>}
           <div>
             <TextInput label="Tags (space-delimited)" w="100%" style={{ width: "100%" }} placeholder="joplin important work" maxLength={10000} value={form.tags} onChange={(e) => setForm({ ...form, tags: e.currentTarget.value.toLowerCase() })} size={inputSize} />
