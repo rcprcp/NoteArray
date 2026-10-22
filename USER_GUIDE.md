@@ -61,13 +61,14 @@ Once signed in, the header at the top of every page is your control center:
 | **List Notes** | Returns to your note list (clears active search/filters) |
 | **Search Notes** | Toggles the search panel — text search with its scope checkboxes and the attachment / untagged filters (List Notes view only) |
 | **Pinned** | Filters the list to your pinned notes (List Notes view only) |
+| **Untagged** | Filters the list to notes with no tags (List Notes view only) |
 | **Import** (upload icon) | Opens the Import notes modal (List Notes view only) |
 | **Help/About** | Dropdown with **FAQ**, **Privacy Policy**, and **Security Notes** pages |
 | **Your avatar** | Shows your initials; click it to open **Personal Settings** |
 
 Notes:
 
-- **Search Notes**, **Pinned**, and **Import** are only enabled while you're on the **List Notes** view. Switch to that view first, then toggle them.
+- **Search Notes**, **Pinned**, **Untagged**, and **Import** are only enabled while you're on the **List Notes** view. Switch to that view first, then toggle them.
 - On narrow screens, header items that don't fit collapse into a **More actions (…)** menu on the right.
 
 ### Screen layouts
@@ -196,7 +197,11 @@ Pin a note you use often:
 1. On the **List Notes** view (card or table), find the **pin icon** next to the note.
 2. Click it to pin (icon becomes filled). Click again to unpin.
 
-The header **Pinned** button is a *filter toggle* — click it to show **only pinned notes**; click again to show everything. Pinning does not change how the list is sorted (see [Sorting](#6-viewing-sorting--deleting) — sorting stays under your control).
+The header **Pinned** button is a *filter toggle* — click it to show **only pinned notes**; click again to show everything. It combines with your search text and the Search Notes panel's options, and stays on until you click it off (or press **List Notes**, which resets everything). Pinning does not change how the list is sorted (see [Sorting](#6-viewing-sorting--deleting) — sorting stays under your control).
+
+### Finding untagged notes
+
+The header **Untagged** button is a filter toggle like **Pinned**: click it to show **only notes with no tags**, click again to show everything. It combines with your search text, the Search Notes panel's options, and the **Pinned** button, and stays on until you click it off (or press **List Notes**).
 
 ### Search Notes panel
 
@@ -205,9 +210,10 @@ Click **Search Notes** in the header (List Notes view) to open the search panel.
 - **Text search**: the search box with its **Search** button (Enter also works) and **Clear**.
 - **Search Titles** / **Search Note Content** / **Search Tags**: choose where the text search looks. Tags are matched on **any part** of a tag — "sup" finds notes tagged *super-duper* or *supper*, and "grq" finds notes in folders *grq* and *grq/cobol* — so there is no separate tag picker. Notes with **no tags** are included in tag searches too: they have no tags to match, so the tag scope does not exclude them.
 - **Find notes with attachments**: only notes that carry at least one attachment.
-- **Find notes with no tags**: only untagged notes. With no search text and no other boxes ticked it simply lists every untagged note. Ticking it unticks **Search Tags** (a note with no tags can't match a tag search), and ticking **Search Tags** unticks it again.
 
 Search text and filters combine with AND logic, so you can search text and narrow the results by attachments or tags at the same time. Each active filter shows as a removable chip above the list.
+
+The header's **Pinned** and **Untagged** buttons are click-on, click-off list filters that combine with whatever the panel is searching — see [Pinning notes](#pinning-notes) and [Finding untagged notes](#finding-untagged-notes).
 
 ### Active filters
 
@@ -242,7 +248,7 @@ If you try to search with no box checked, a **"How to search your notes"** help 
 
 ### Combining search with filters
 
-You can pair a search with the Search Titles / Search Note Content / Search Tags scope boxes, the **Find notes with attachments** and **Find notes with no tags** filters, and the Pinned filter all at once — they combine with AND logic for powerful, narrow results. Result counts are shown above the list: *"Search results for '…'"* / *"Found N result(s)."*
+You can pair a search with the Search Titles / Search Note Content / Search Tags scope boxes, the **Find notes with attachments** filter, the header **Pinned** and **Untagged** toggles, and the Pinned filter all at once — they combine with AND logic for powerful, narrow results. Result counts are shown above the list: *"Search results for '…'"* / *"Found N result(s)."*
 
 ---
 

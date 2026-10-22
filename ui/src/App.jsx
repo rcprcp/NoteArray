@@ -88,6 +88,7 @@ export default function App({ themeColor, onThemeChange, onPlanChange, onPlanSyn
     { key: 'list', label: 'List Notes', onClick: goToList },
     { key: 'search', label: 'Search Notes', active: actions?.searchOpen, toggle: true, disabled: listOnlyDisabled, onClick: () => actions?.onToggleSearch?.() },
     { key: 'pinned', label: 'Pinned', active: actions?.pinnedActive, toggle: true, disabled: listOnlyDisabled, onClick: () => actions?.onSetPinned?.() },
+    { key: 'untagged', label: 'Untagged', active: actions?.untaggedActive, toggle: true, disabled: listOnlyDisabled, onClick: () => actions?.onSetUntagged?.() },
     { key: 'import', label: 'Import', icon: IconUpload, active: actions?.importOpen, toggle: true, disabled: listOnlyDisabled || !!actions?.overQuota, onClick: () => actions?.onImport?.() },
     {
       key: 'help',

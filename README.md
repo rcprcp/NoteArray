@@ -538,9 +538,8 @@ The interactive Swagger UI allows you to test all endpoints directly from your b
 - **Live preview** – Editor supports TipTap's rich text rendering with markdown shortcuts
 
 ### Advanced Search & Filtering
-- **Responsive header actions** – Header includes **Create Note**, **List Notes**, **Search Notes**, **Pinned**, **Import**, and the user avatar. When viewport width is constrained, items collapse right-to-left into an overflow (`...`) menu, and Search/Pinned/Import controls are disabled when outside the List Notes view.
-- **Search Notes panel** – One header button opens the combined search panel: the text search box with its **Search Titles / Search Note Content / Search Tags** scope checkboxes plus the **Find notes with attachments** and **Find notes with no tags** filters. Toggled with the **Search Notes** header button
-  - **Find notes with no tags** checkbox at the top of the panel filters to notes with no tags (and automatically unchecks if the user types in the Tags field or selects a tag)
+- **Responsive header actions** – Header includes **Create Note**, **List Notes**, **Search Notes**, **Pinned**, **Untagged**, **Import**, and the user avatar. When viewport width is constrained, items collapse right-to-left into an overflow (`...`) menu, and Search/Pinned/Untagged/Import controls are disabled when outside the List Notes view.
+- **Search Notes panel** – One header button opens the combined search panel: the text search box with its **Search Titles / Search Note Content / Search Tags** scope checkboxes plus the **Find notes with attachments** filter. Toggled with the **Search Notes** header button
   - Add tags by typing (space-delimited) or multi-select from existing tags
   - Notes must have all selected tags
 - **Pinned button** – **Pinned** toggle button in the header filters directly to pinned notes
@@ -719,7 +718,7 @@ Covered so far (36 unit tests across 6 test classes): login-throttle backoff/loc
 - **Filter state management:** Active filters are managed in NotesPanel state and persisted to `localStorage` for recovery on page reload. Filters are combined with search queries using AND logic.
 - **Date filtering:** Backend API supports ISO-8601 instant range parameters (`createdFrom`, `createdTo`, `updatedFrom`, `updatedTo`) and returns 400 for invalid formats.
 - **Attachment filter:** **Find notes with attachments** in the Search Notes panel keeps only notes that carry files.
-- **Smart collections:** **Pinned** in the header and **Find notes with no tags** in the **Search Notes** panel filter directly to pinned or untagged notes.
+- **Smart collections:** the header **Pinned** and **Untagged** buttons filter directly to pinned or untagged notes; both combine with the Search Notes panel and stay on until clicked off.
 - **Pinned notes:** Use the pin icon in the notes list to pin/unpin notes as favorites.
 
 ## Technologies Used

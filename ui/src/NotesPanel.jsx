@@ -521,21 +521,21 @@ export default function NotesPanel({ registerActions } = {}) {
           setImportModalOpened(true)
         },
         onToggleSearch: toggleSearchPanel,
+        // Pinned / Untagged are click-on, click-off list filters. They combine
+        // with whatever the Search Notes panel is searching, and stay on until
+        // clicked off (or until List Notes resets everything).
         onSetPinned: () => {
-          if (filters.collection === 'pinned') {
-            setFilters((f) => ({ ...f, collection: null }))
-          } else {
-            resetAll()
-            setFilters({ ...DEFAULT_FILTERS, collection: 'pinned' })
-            setTagsVisible(false)
-            setSearchVisible(false)
-          }
+          setFilters((f) => ({ ...f, collection: f.collection === 'pinned' ? null : 'pinned' }))
+        },
+        onSetUntagged: () => {
+          setFilters((f) => ({ ...f, untagged: !f.untagged }))
         },
         onReset: resetAll,
         inEditor: createMode || editMode,
         createOpen: createMode,
         searchOpen: searchPanelOpen,
         pinnedActive: filters.collection === 'pinned',
+        untaggedActive: !!filters.untagged,
         importOpen: importModalOpened,
         overQuota: storageInfo.overQuota,
       })
@@ -548,28 +548,6 @@ export default function NotesPanel({ registerActions } = {}) {
 
   const activeFilterItems = useMemo(() => describeFilters(filters), [filters])
   const activeFilterCount = activeFilterItems.length + (activeSearch ? 1 : 0)
-
-  /** "Find notes with no tags" and tag search are mutually exclusive. */
-  const toggleUntagged = (checked) => {
-    updateFilters({
-      untagged: checked,
-      ...(filters.collection === 'untagged' ? { collection: null } : {}),
-    })
-    if (checked) {
-      setSearch((s) => ({ ...s, searchTags: false }))
-    }
-  }
-
-  /** Turning tag search on clears "Find notes with no tags". */
-  const toggleSearchTags = (checked) => {
-    setSearch((s) => ({ ...s, searchTags: checked }))
-    if (checked && (filters.untagged || filters.collection === 'untagged')) {
-      updateFilters({
-        untagged: false,
-        ...(filters.collection === 'untagged' ? { collection: null } : {}),
-      })
-    }
-  }
 
   const togglePin = async (note) => {
     try {
@@ -1062,12 +1040,7 @@ export default function NotesPanel({ registerActions } = {}) {
           <Checkbox
             label="Search Tags"
             checked={search.searchTags}
-            onChange={(e) => toggleSearchTags(e.currentTarget.checked)}
-          />
-          <Checkbox
-            label="Find notes with no tags"
-            checked={!!filters.untagged || filters.collection === 'untagged'}
-            onChange={(e) => toggleUntagged(e.currentTarget.checked)}
+            onChange={(e) => setSearch({ ...search, searchTags: e.currentTarget.checked })}
           />
         </Stack>
 
@@ -1335,10 +1308,8 @@ export default function NotesPanel({ registerActions } = {}) {
             search words and press <b>Search</b> (or Enter).
           </Text>
           <Text size="sm">
-            <b>Find notes with attachments</b> keeps only notes that have files, and
-            <b>Find notes with no tags</b> keeps only untagged notes (with nothing else selected it
-            lists every untagged note). Ticking it unticks <b>Search Tags</b>, since an untagged
-            note cannot match a tag search.
+            <b>Find notes with attachments</b> keeps only notes that have files. The header's
+            <b>Pinned</b> and <b>Untagged</b> buttons are filters that combine with your search.
           </Text>
           <Text size="xs" c="dimmed">
             Titles and content are word-based and ignore case, common words (like "the"), and word
