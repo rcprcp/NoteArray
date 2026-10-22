@@ -86,8 +86,7 @@ export default function App({ themeColor, onThemeChange, onPlanChange, onPlanSyn
   const headerItems = [
     { key: 'create', label: 'Create Note', active: actions?.createOpen, disabled: !!actions?.overQuota, onClick: () => { navigate('/notes'); actions?.onCreate?.() } },
     { key: 'list', label: 'List Notes', onClick: goToList },
-    { key: 'text', label: 'Search Text', active: actions?.searchOpen, toggle: true, disabled: listOnlyDisabled, onClick: () => actions?.onToggleSearch?.() },
-    { key: 'tags', label: 'Find by Tag', active: actions?.tagsOpen, toggle: true, disabled: listOnlyDisabled, onClick: () => actions?.onToggleTags?.() },
+    { key: 'search', label: 'Search Notes', active: actions?.searchOpen, toggle: true, disabled: listOnlyDisabled, onClick: () => actions?.onToggleSearch?.() },
     { key: 'pinned', label: 'Pinned', active: actions?.pinnedActive, toggle: true, disabled: listOnlyDisabled, onClick: () => actions?.onSetPinned?.() },
     { key: 'import', label: 'Import', icon: IconUpload, active: actions?.importOpen, toggle: true, disabled: listOnlyDisabled || !!actions?.overQuota, onClick: () => actions?.onImport?.() },
     {

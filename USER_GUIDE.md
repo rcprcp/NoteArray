@@ -59,8 +59,7 @@ Once signed in, the header at the top of every page is your control center:
 |---|---|
 | **Create Note** | Opens the note editor to write a new note |
 | **List Notes** | Returns to your note list (clears active search/filters) |
-| **Search Text** | Toggles the search panel (List Notes view only) |
-| **Find by Tag** | Toggles the tag-filter panel (List Notes view only) |
+| **Search Notes** | Toggles the search panel — text search, its scope checkboxes and the tag filter together (List Notes view only) |
 | **Pinned** | Filters the list to your pinned notes (List Notes view only) |
 | **Import** (upload icon) | Opens the Import notes modal (List Notes view only) |
 | **Help/About** | Dropdown with **FAQ**, **Privacy Policy**, and **Security Notes** pages |
@@ -68,7 +67,7 @@ Once signed in, the header at the top of every page is your control center:
 
 Notes:
 
-- **Search Text**, **Find by Tag**, **Pinned**, and **Import** are only enabled while you're on the **List Notes** view. Switch to that view first, then toggle them.
+- **Search Notes**, **Pinned**, and **Import** are only enabled while you're on the **List Notes** view. Switch to that view first, then toggle them.
 - On narrow screens, header items that don't fit collapse into a **More actions (…)** menu on the right.
 
 ### Screen layouts
@@ -199,13 +198,18 @@ Pin a note you use often:
 
 The header **Pinned** button is a *filter toggle* — click it to show **only pinned notes**; click again to show everything. Pinning does not change how the list is sorted (see [Sorting](#6-viewing-sorting--deleting) — sorting stays under your control).
 
-### Find by Tag panel
+### Search Notes panel
 
-Click **Find by Tag** in the header (List Notes view) to open the tag-filter panel:
+Click **Search Notes** in the header (List Notes view) to open the search panel. It combines the text search and the tag filter in one place:
 
-- **Search tags**: a searchable multi-select; typing matches **any part of a tag** — "sup" surfaces *super-duper* and *supper*. Pick one or more — only notes with **all** selected tags match (AND logic, not OR).
-- **Folders (include sub-folders)**: hierarchical tags such as `work/projects/acme` (typically created by importing a Joplin archive) appear here as selectable **folders** — a tag that has sub-tags is listed here rather than under Tags, so selecting it always matches the whole subtree. Selecting a folder matches notes in it **and all sub-folders** (e.g. picking `work` also matches `work/projects`); an active folder shows as a `Folder: work` chip.
-- **"Find notes with no tags" checkbox**: shows only untagged notes. Checking it clears your tag selection; selecting a tag clears it, since the two are mutually exclusive.
+- **Text search**: the search box with its **Search** button (Enter also works) and **Clear**.
+- **Search Titles / Search Note Content / Search Tags**: choose where the text search looks.
+- **Tag filter** (below the scope checkboxes):
+  - **Search tags**: a searchable multi-select; typing matches **any part of a tag** — "sup" surfaces *super-duper* and *supper*. Pick one or more — only notes with **all** selected tags match (AND logic, not OR).
+  - **Folders (include sub-folders)**: hierarchical tags such as `work/projects/acme` (typically created by importing a Joplin archive) appear here as selectable **folders** — a tag that has sub-tags is listed here rather than under Tags, so selecting it always matches the whole subtree. Selecting a folder matches notes in it **and all sub-folders** (e.g. picking `work` also matches `work/projects`); an active folder shows as a `Folder: work` chip.
+  - **"Find notes with no tags" checkbox**: shows only untagged notes. Checking it clears your tag selection; selecting a tag clears it, since the two are mutually exclusive.
+
+The text search and the tag filter combine with AND logic, so you can search text and narrow by tags at the same time.
 
 ### Active filters
 
@@ -215,9 +219,9 @@ Any active search/filters appear as **removable chips** above the list, plus an 
 
 ## 5. Searching Your Notes
 
-Click **Search Text** in the header:
+Click **Search Notes** in the header (the same panel holds the tag filter — see [Search Notes panel](#search-notes-panel)):
 
-1. Type words into **"Search notes…"** and press **Enter** (or the **Search Text** button).
+1. Type words into **"Search notes…"** and press **Enter** (or the **Search** button).
 2. Choose **where** to look — at least one must be checked:
    - **Search Titles** — match words in note titles
    - **Search Note Content** — match words in note text
@@ -287,7 +291,7 @@ What you get:
 
 - **Folder hierarchy → hierarchical tags**: each Joplin folder level becomes a `/`-joined segment —
   a note in `Work ▸ Projects ▸ Acme` is tagged `work/projects/acme` (folder names are lowercased,
-  spaces become `_`). The Find by Tag panel lists these as selectable **Folders**: picking
+  spaces become `_`). The Search Notes panel lists these as selectable **Folders**: picking
   `work` matches that folder and every sub-folder in it. Sub-notebooks therefore still land
   in the right place.
 - **Metadata tags** (`tags:` lines in Joplin's footer) are picked up too.

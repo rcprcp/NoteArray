@@ -536,8 +536,8 @@ The interactive Swagger UI allows you to test all endpoints directly from your b
 - **Live preview** – Editor supports TipTap's rich text rendering with markdown shortcuts
 
 ### Advanced Search & Filtering
-- **Responsive header actions** – Header includes **Create Note**, **List Notes**, **Search Text**, **Find by Tag**, **Pinned**, **Import**, and the user avatar. When viewport width is constrained, items collapse right-to-left into an overflow (`...`) menu, and Search/Tag/Pinned/Import controls are disabled when outside the List Notes view.
-- **Find by Tag panel** – Toggled with the **Find by Tag** header button
+- **Responsive header actions** – Header includes **Create Note**, **List Notes**, **Search Notes**, **Pinned**, **Import**, and the user avatar. When viewport width is constrained, items collapse right-to-left into an overflow (`...`) menu, and Search/Pinned/Import controls are disabled when outside the List Notes view.
+- **Search Notes panel** – One header button opens the combined search panel: the text search box with its **Search Titles / Search Note Content / Search Tags** scope checkboxes plus the tag filter below it. Toggled with the **Search Notes** header button
   - **Find notes with no tags** checkbox at the top of the panel filters to notes with no tags (and automatically unchecks if the user types in the Tags field or selects a tag)
   - Add tags by typing (space-delimited) or multi-select from existing tags
   - Notes must have all selected tags
@@ -565,7 +565,7 @@ The interactive Swagger UI allows you to test all endpoints directly from your b
 - **Import button** – Upload notes from external sources
 - **Joplin JEX import** – Import entire note collections from Joplin
   - Upload .jex files (Joplin's native export format)
-  - Folder structure becomes hierarchical tags (`Work/Projects/Acme`), filterable with the Find by Tag panel
+  - Folder structure becomes hierarchical tags (`Work/Projects/Acme`), filterable from the Search Notes panel
   - Extracts title from markdown headings
   - Imports note attachments referenced by `[name.ext](:/…)` links, named from the link text, with the links rewritten to point at the uploaded files (images render inline; other files download on click)
   - Shows import progress and results
@@ -717,7 +717,7 @@ Covered so far (36 unit tests across 6 test classes): login-throttle backoff/loc
 - **Filter state management:** Active filters are managed in NotesPanel state and persisted to `localStorage` for recovery on page reload. Filters are combined with search queries using AND logic.
 - **Date filtering:** Backend API supports ISO-8601 instant range parameters (`createdFrom`, `createdTo`, `updatedFrom`, `updatedTo`) and returns 400 for invalid formats.
 - **Tag filtering:** Multi-select tag filter automatically populates from tags in the user's notes. A note matches if it has ALL selected tags. Combine multiple tags for powerful filtering.
-- **Smart collections:** **Pinned** in the header and **Untagged** inside the **Find by Tag** panel filter directly to pinned or untagged notes.
+- **Smart collections:** **Pinned** in the header and **Untagged** inside the **Search Notes** panel filter directly to pinned or untagged notes.
 - **Pinned notes:** Use the pin icon in the notes list to pin/unpin notes as favorites.
 
 ## Technologies Used

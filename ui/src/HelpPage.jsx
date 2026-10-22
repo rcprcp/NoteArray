@@ -11,7 +11,7 @@ const PAGES = {
       },
       {
         heading: 'How do tags and search work?',
-        body: 'Tags are space-delimited words attached to each note (for example: "work project-alpha urgent"). Use Find by Tag to filter notes that contain all selected tags, or check "Find notes with no tags" to locate untagged notes. Use Search Text to run a full-text search across note titles, note content, or both.',
+        body: 'Tags are space-delimited words attached to each note (for example: "work project-alpha urgent"). Use the Search Notes panel to filter notes that contain all selected tags, or check "Find notes with no tags" to locate untagged notes. The same panel runs a full-text search across note titles, note content, and tags.',
       },
       {
         heading: 'Can I import existing notes from Joplin or Markdown files?',

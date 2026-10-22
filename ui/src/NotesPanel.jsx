@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ActionIcon, Alert, Box, Button, Collapse, Checkbox, Group, List, Modal, Stack, Table, Text, TextInput, Title, UnstyledButton, Badge, FileInput, Loader, Card, SimpleGrid, Tooltip } from '@mantine/core'
+import { ActionIcon, Alert, Box, Button, Checkbox, Group, List, Modal, Stack, Table, Text, TextInput, Title, UnstyledButton, Badge, FileInput, Loader, Card, SimpleGrid, Tooltip } from '@mantine/core'
 import { IconCheck, IconChevronDown, IconChevronUp, IconDownload, IconLayoutGrid, IconList, IconPaperclip, IconPin, IconSearch, IconSelector, IconUpload, IconMenu2, IconX } from '@tabler/icons-react'
 import { useMediaQuery } from '@mantine/hooks'
 import { RichTextEditor } from '@mantine/tiptap'
@@ -418,6 +418,14 @@ export default function NotesPanel({ registerActions } = {}) {
   const [importModalOpened, setImportModalOpened] = useState(false)
   const [searchVisible, setSearchVisible] = useState(false)
   const [tagsVisible, setTagsVisible] = useState(false)
+  // Search Text and Find by Tag are one panel: the "Search Notes" header button
+  // opens/closes text search, its scope checkboxes and the tag filter together.
+  const searchPanelOpen = searchVisible || tagsVisible
+  const toggleSearchPanel = () => {
+    const next = !searchPanelOpen
+    setSearchVisible(next)
+    setTagsVisible(next)
+  }
   const [importLoading, setImportLoading] = useState(false)
   const [importResult, setImportResult] = useState(null)
   const [previewAttachment, setPreviewAttachment] = useState(null)
@@ -516,8 +524,7 @@ export default function NotesPanel({ registerActions } = {}) {
           }
           setImportModalOpened(true)
         },
-        onToggleSearch: () => setSearchVisible((v) => !v),
-        onToggleTags: () => setTagsVisible((v) => !v),
+        onToggleSearch: toggleSearchPanel,
         onSetPinned: () => {
           if (filters.collection === 'pinned') {
             setFilters((f) => ({ ...f, collection: null }))
@@ -531,14 +538,13 @@ export default function NotesPanel({ registerActions } = {}) {
         onReset: resetAll,
         inEditor: createMode || editMode,
         createOpen: createMode,
-        searchOpen: searchVisible,
-        tagsOpen: tagsVisible,
+        searchOpen: searchPanelOpen,
         pinnedActive: filters.collection === 'pinned',
         importOpen: importModalOpened,
         overQuota: storageInfo.overQuota,
       })
     }
-  }, [registerActions, createMode, editMode, searchVisible, tagsVisible, importModalOpened, activeSearch, filters, storageInfo.overQuota])
+  }, [registerActions, createMode, editMode, searchPanelOpen, importModalOpened, activeSearch, filters, storageInfo.overQuota])
 
   const updateFilters = (patch) => {
     setFilters((f) => ({ ...f, ...patch }))
@@ -1024,9 +1030,8 @@ export default function NotesPanel({ registerActions } = {}) {
 
       <Stack gap="md" style={{ flex: 1, minWidth: 0, width: '100%' }}>
       {/* Search Section */}
-      {!(createMode || editMode) && (searchVisible || tagsVisible) && (
+      {!(createMode || editMode) && searchPanelOpen && (
       <Stack gap="xs">
-        {searchVisible && (
         <Group align="flex-end" wrap="nowrap" gap={{ base: 'xs', sm: 'md' }}>
           <TextInput
             style={{ flex: 1 }}
@@ -1039,35 +1044,31 @@ export default function NotesPanel({ registerActions } = {}) {
             }}
             size={inputSize}
           />
-          <Button onClick={runSearch} size={controlSize}>Search Text</Button>
+          <Button onClick={runSearch} size={controlSize}>Search</Button>
           <Button variant="default" onClick={clearSearch} disabled={!activeSearch && !search.q} size={controlSize}>
             Clear
           </Button>
         </Group>
-        )}
 
-        {searchVisible && (
-          <Group gap="lg">
-            <Checkbox
-              label="Search Titles"
-              checked={search.searchTitles}
-              onChange={(e) => setSearch({ ...search, searchTitles: e.currentTarget.checked })}
-            />
-            <Checkbox
-              label="Search Note Content"
-              checked={search.searchContent}
-              onChange={(e) => setSearch({ ...search, searchContent: e.currentTarget.checked })}
-            />
-            <Checkbox
-              label="Search Tags"
-              checked={search.searchTags}
-              onChange={(e) => setSearch({ ...search, searchTags: e.currentTarget.checked })}
-            />
-          </Group>
-        )}
-        {tagsVisible && (
-          <Collapse expanded={tagsVisible}>{filterPanel}</Collapse>
-        )}
+        <Group gap="lg">
+          <Checkbox
+            label="Search Titles"
+            checked={search.searchTitles}
+            onChange={(e) => setSearch({ ...search, searchTitles: e.currentTarget.checked })}
+          />
+          <Checkbox
+            label="Search Note Content"
+            checked={search.searchContent}
+            onChange={(e) => setSearch({ ...search, searchContent: e.currentTarget.checked })}
+          />
+          <Checkbox
+            label="Search Tags"
+            checked={search.searchTags}
+            onChange={(e) => setSearch({ ...search, searchTags: e.currentTarget.checked })}
+          />
+        </Group>
+
+        {filterPanel}
 
         {!(createMode || editMode) && activeFilterCount > 0 && (
           <Group gap="xs" aria-label="Active filters">
@@ -1327,13 +1328,15 @@ export default function NotesPanel({ registerActions } = {}) {
               folders like <i>grq</i> and <i>grq/cobol</i>.</List.Item>
           </List>
           <Text size="sm">
-            Check both to search titles and content together. Then type your search words and
-            press <b>Search Text</b> (or Enter).
+            Check any combination to search titles, content and tags together. Then type your
+            search words and press <b>Search</b> (or Enter).
           </Text>
           <Text size="xs" c="dimmed">
-            Search is word-based and ignores case, common words (like "the"), and word endings
-            (for example, "running" also matches "run"). All of your words must appear in the
-            same field. Clear the search box and press Search Text, or press Clear, to see all notes again.
+            Titles and content are word-based and ignore case, common words (like "the"), and word
+            endings (for example, "running" also matches "run"); tags match on any part of the tag.
+            All of your words must appear in the same field. Clear the search box and press
+            Search, or press Clear, to see all notes again. Tag filters from the same panel are
+            combined with the text search.
           </Text>
           <Group justify="flex-end">
             <Button onClick={() => setHelpOpened(false)} size="sm">Got it</Button>
