@@ -406,6 +406,10 @@ UPDATE users SET superuser = FALSE WHERE email = 'user@example.com';
   - Returns 400 if file is invalid
   - Returns 413 if the archive exceeds 50 MB (individual entries are also capped at 10 MB)
   - Detects archive format: ZIP (folder/note JSON metadata) or TAR (raw markdown export)
+  - TAR (JEX) imports also bring attachments: `resources/<resourceId>.<ext>` blobs referenced by
+    `[name.ext](:/<resourceId>)` links become attachments named after the link text, and the note's
+    links are rewritten to `/api/attachments/{id}` (images inline, other files force-download).
+    Dangling/over-10 MB resources keep their original link and are reported in the response messages
   - Flattens Joplin's folder hierarchy into space-delimited tags
   - Applies any `tags:` values found in the Joplin metadata footer as Tags
   - Strips the trailing Joplin metadata block (`id:`, `parent_id:`, etc.) from note content
@@ -553,6 +557,7 @@ The interactive Swagger UI allows you to test all endpoints directly from your b
   - Upload .jex files (Joplin's native export format)
   - Preserves folder structure as space-delimited tags
   - Extracts title from markdown headings
+  - Imports note attachments referenced by `[name.ext](:/…)` links, named from the link text, with the links rewritten to point at the uploaded files (images render inline; other files download on click)
   - Shows import progress and results
 - **Markdown import** – Import individual markdown files
   - Upload .md files

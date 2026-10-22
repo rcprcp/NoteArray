@@ -961,6 +961,7 @@ export default function NotesPanel({ registerActions } = {}) {
       setImportResult({
         imported: 1,
         errors: 0,
+        attachments: 0,
         messages: ['Note imported successfully'],
       })
       await reload()
@@ -1204,6 +1205,9 @@ export default function NotesPanel({ registerActions } = {}) {
               <Stack gap="xs">
                 <Text size="sm">
                   Imported {importResult.imported} note{importResult.imported === 1 ? '' : 's'}
+                  {importResult.attachments > 0 && (
+                    ` and ${importResult.attachments} attachment${importResult.attachments === 1 ? '' : 's'}`
+                  )}
                   {importResult.errors > 0 && ` with ${importResult.errors} error${importResult.errors === 1 ? '' : 's'}`}
                 </Text>
                 {importResult.messages.length > 0 && (
@@ -1229,7 +1233,8 @@ export default function NotesPanel({ registerActions } = {}) {
               <Stack gap="sm">
                 <Text fw={500} size="sm">Import from Joplin (.jex)</Text>
                 <Text size="xs" c="dimmed">
-                  Export from Joplin, then upload the .jex file. Folder hierarchy will be converted to tags.
+                  Export from Joplin, then upload the .jex file. Folder hierarchy will be converted to tags, and
+                  attachments referenced in your notes are imported and linked automatically.
                 </Text>
                 <FileInput
                   placeholder="Choose .jex file"

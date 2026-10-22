@@ -36,10 +36,14 @@ import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.Semaphore;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
@@ -120,6 +124,22 @@ public class NoteResource {
         }
     }
 
+    /** A Joplin resource blob extracted from the archive's {@code resources/} directory. */
+    record JexResource(String extension, byte[] data) {
+        /** Identifies the resource file by name: {@code resources/<resourceId>.<ext>}. */
+        static String resourceIdOf(String name) {
+            String base = name.replaceFirst("^\\./?resources/", "");
+            base = base.substring(base.lastIndexOf('/') + 1); // nested path → bare filename
+            int dot = base.lastIndexOf('.');
+            return dot > 0 ? base.substring(0, dot) : base;
+        }
+
+        static String extensionOf(String name) {
+            int dot = name.lastIndexOf('.');
+            return dot > 0 ? name.substring(dot + 1).toLowerCase(Locale.ROOT) : "";
+        }
+    }
+
     /** 413 response for an import that breached a configured limit. */
     static WebApplicationException importLimitExceeded(String message) {
         return new WebApplicationException(Response.status(Response.Status.REQUEST_ENTITY_TOO_LARGE)
@@ -139,7 +159,7 @@ public class NoteResource {
         }
     }
 
-    public record ImportResult(int imported, int errors, List<String> messages) {}
+    public record ImportResult(int imported, int errors, int attachments, List<String> messages) {}
 
     public record StorageUsage(long usedBytes, long limitBytes, long noteCount, boolean overQuota) {}
 
@@ -617,6 +637,7 @@ public class NoteResource {
             String planLimitLabel = StorageQuota.limitLabelForPlan(user.plan);
             long importedBytes = 0;
             int noteEntries = 0;
+            int attachmentsImported = 0;
 
             try {
                 if (isZip) {
@@ -702,6 +723,46 @@ public class NoteResource {
                         }
                     }
                 } else {
+                    /*
+                     * JEX (TAR) layout: <noteId>.md entries at the root plus a
+                     * resources/ directory holding every attachment, stored as
+                     * <resourceId>.<extension>. Notes reference them with
+                     * inline links like [gpu-optimizer.pdf](:/234939b91e…).
+                     * Importing those attachments means three things:
+                     *   1. extract the blobs (pass 1 below, charged to the same
+                     *      expansion budget as everything else),
+                     *   2. create a NoteAttachment row per referenced resource,
+                     *      named after the link text,
+                     *   3. rewrite the note's links to /api/attachments/{id}
+                     *      so they keep working after the migration.
+                     */
+                    Map<String, JexResource> resources = new HashMap<>();
+                    try (TarArchiveInputStream tis = new TarArchiveInputStream(new ByteArrayInputStream(data))) {
+                        TarArchiveEntry entry;
+                        byte[] buffer = new byte[8192];
+                        while ((entry = tis.getNextTarEntry()) != null) {
+                            if (entry.isDirectory()) {
+                                continue;
+                            }
+                            String name = entry.getName().replaceFirst("^\\./", "");
+                            if (!name.startsWith("resources/")) {
+                                continue;
+                            }
+                            try {
+                                byte[] blob = readResourceEntry(tis, buffer, budget);
+                                resources.put(JexResource.resourceIdOf(name),
+                                        new JexResource(JexResource.extensionOf(name), blob));
+                            } catch (IOException oversized) {
+                                // Per-blob cap (10 MB): skip it and let the note pass
+                                // report the dangling link later.
+                                LOG.debugf(oversized, "Resource %s exceeds the per-attachment limit", name);
+                                messages.add("Warning: resource '" + name
+                                        + "' exceeds the " + (StorageQuota.MAX_ATTACHMENT_BYTES / (1024 * 1024))
+                                        + " MB per-attachment limit and was skipped");
+                            }
+                        }
+                    }
+
                     try (TarArchiveInputStream tis = new TarArchiveInputStream(new ByteArrayInputStream(data))) {
                         TarArchiveEntry entry;
                         byte[] buffer = new byte[8192];
@@ -730,16 +791,41 @@ public class NoteResource {
                                 }
                                 String noteId = filename.substring(0, dot);
                                 Note note = buildJoplinNote(user, noteId, content, List.of());
-                                long noteBytes = note.content == null ? 0L
-                                        : note.content.getBytes(StandardCharsets.UTF_8).length;
+                                String noteContent = note.content;
+                                List<NoteAttachment> prepared = new ArrayList<>();
+                                Map<String, NoteAttachment> byResourceId = new HashMap<>();
+                                List<String> attachmentMessages = attachJoplinResources(
+                                        note, resources, prepared, byResourceId);
+                                long attachmentBytes = prepared.stream()
+                                        .mapToLong(a -> a.byteSize)
+                                        .sum();
+                                long noteBytes = (noteContent == null ? 0L
+                                        : noteContent.getBytes(StandardCharsets.UTF_8).length)
+                                        + attachmentBytes;
                                 if (quotaWouldExceed(currentUsed, importedBytes, noteBytes, planLimitBytes)) {
                                     throw importLimitExceeded(
                                             "This import would exceed your plan storage limit (" + planLimitLabel
                                                     + "). Please upgrade your plan or delete notes to free up space.");
                                 }
+                                // Persist order matters for the note_id FK and link ids:
+                                // note row first, then attachments (their UUIDs are only
+                                // assigned at flush, and noteId is only known once the
+                                // note row has been written), then the rewritten content.
                                 note.persist();
+                                note.flush();
+                                for (NoteAttachment attachment : prepared) {
+                                    attachment.noteId = note.id;
+                                    attachment.persist();
+                                }
+                                note.flush(); // flushes new attachments, assigning their ids
+                                note.content = rewriteJoplinResourceLinks(noteContent, byResourceId);
+                                note.flush();
                                 importedBytes += noteBytes;
+                                attachmentsImported += prepared.size();
                                 imported++;
+                                if (!attachmentMessages.isEmpty()) {
+                                    messages.addAll(attachmentMessages);
+                                }
                             } catch (WebApplicationException we) {
                                 throw we;
                             } catch (Exception e) {
@@ -759,7 +845,9 @@ public class NoteResource {
                         .entity("Failed to process JEX file").build();
             }
 
-            return Response.ok(new ImportResult(imported, errors, messages)).build();
+            // Deduplicate messages so a 10,000-entry failure doesn't flood the UI.
+            List<String> distinctMessages = new ArrayList<>(new LinkedHashSet<>(messages));
+            return Response.ok(new ImportResult(imported, errors, attachmentsImported, distinctMessages)).build();
         } finally {
             IMPORT_SEMAPHORE.release();
         }
@@ -861,6 +949,26 @@ public class NoteResource {
         sanitized = sanitized.replaceAll("(?i)(href|src)\\s*=\\s*([\"']?)\\s*(javascript|vbscript|data\\s*:\\s*text/html)\\s*:[^\"'\\s>]*\\2", "$1=$2#$2");
         sanitized = sanitized.replaceAll("(?i)\\]\\(\\s*(javascript|vbscript|data\\s*:\\s*text/html)\\s*:[^)]*\\)", "](#)");
         return sanitized;
+    }
+
+    /**
+     * Read a binary archive entry (a Joplin resource/attachment) fully, charging
+     * every byte to the import's {@link ExpansionBudget}. Throws IOException when the
+     * entry exceeds the per-attachment limit, which surfaces as a per-note error (not
+     * an import abort).
+     */
+    private byte[] readResourceEntry(InputStream entryStream, byte[] buffer, ExpansionBudget budget) throws IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        int len;
+        while ((len = entryStream.read(buffer)) > 0) {
+            if (out.size() + len > StorageQuota.MAX_ATTACHMENT_BYTES) {
+                throw new IOException("archive entry exceeds "
+                        + (StorageQuota.MAX_ATTACHMENT_BYTES / (1024 * 1024)) + " MB");
+            }
+            budget.add(len);
+            out.write(buffer, 0, len);
+        }
+        return out.toByteArray();
     }
 
     private String readZipEntryAsString(ZipInputStream zis, byte[] buffer, ExpansionBudget budget) throws IOException {
@@ -968,6 +1076,145 @@ public class NoteResource {
             }
         }
         return sb.toString().replaceAll("\n+$", "");
+    }
+
+    /** One Joplin in-note resource reference: {@code [text](:/<resourceId>)} or its {@code !}-marked image form. */
+    record JexRef(boolean image, String linkText, String resourceId, String fullMatch) {}
+
+    /**
+     * Joplin embeds attachments in note markdown as {@code [filename.ext](:/<resourceId>)};
+     * images carry a leading {@code !} ({@code ![alt](:/<resourceId>)}). The resource id is
+     * the 32-hex content hash Joplin stores files under, matching the <code>resources/</code>
+     * directory of the JEX archive.
+     */
+    private static final Pattern JEX_REF_PATTERN = Pattern.compile(
+            "(?i)(!?)(\\[([^\\]\\r\\n]*)\\]\\(:\\/([a-f0-9]{32})\\))");
+
+    /** Parse every resource reference out of a note's markdown, in document order. */
+    static List<JexRef> parseJoplinResourceRefs(String content) {
+        if (content == null || content.isEmpty()) {
+            return List.of();
+        }
+        List<JexRef> refs = new ArrayList<>();
+        Matcher m = JEX_REF_PATTERN.matcher(content);
+        while (m.find()) {
+            refs.add(new JexRef(!m.group(1).isEmpty(), m.group(3), m.group(4).toLowerCase(Locale.ROOT), m.group(0)));
+        }
+        return refs;
+    }
+
+    /**
+     * Resolve the note's {@code [name](:/id)} references against the archive's extracted
+     * resources: builds the {@link NoteAttachment} rows to import (files only, no persist
+     * yet — the caller persists the note first so the {@code note_id} FK can resolve) and
+     * collects human-readable warnings. A resource that is missing from the archive (or
+     * that was skipped for size) keeps its original link.
+     */
+    private List<String> attachJoplinResources(
+            Note note,
+            Map<String, JexResource> resources,
+            List<NoteAttachment> prepared,
+            Map<String, NoteAttachment> byResourceId) {
+        List<String> messages = new ArrayList<>();
+        for (JexRef ref : parseJoplinResourceRefs(note.content)) {
+            if (byResourceId.containsKey(ref.resourceId())) {
+                // Same resource referenced twice in one note — one attachment serves both links.
+                continue;
+            }
+            JexResource resource = resources.get(ref.resourceId());
+            if (resource == null) {
+                String displayName = ref.linkText().isBlank() ? ref.resourceId() : ref.linkText();
+                messages.add("Warning: attachment '" + displayName + "' referenced by note '"
+                        + note.title + "' is not in the import archive; its link was left as-is");
+                continue;
+            }
+            NoteAttachment attachment = new NoteAttachment();
+            attachment.ownerId = note.ownerId;
+            attachment.contentType = contentTypeForExtension(resource.extension());
+            attachment.filename = joplinAttachmentFileName(ref, resource.extension());
+            attachment.byteSize = resource.data().length;
+            attachment.data = resource.data();
+            prepared.add(attachment);
+            byResourceId.put(ref.resourceId(), attachment);
+        }
+        return messages;
+    }
+
+    /**
+     * Where the file name for an imported attachment comes from: the link's display text
+     * (e.g. {@code [gpu-optimizer-camera-ready.pdf](:/…)} → {@code gpu-optimizer-camera-ready.pdf}),
+     * sanitized; falling back to {@code <resourceId>.<extension>} when the text is empty
+     * (image refs typically are).
+     */
+    static String joplinAttachmentFileName(JexRef ref, String extension) {
+        String raw = ref.linkText() == null ? "" : ref.linkText();
+        if (raw.isBlank()) {
+            raw = ref.resourceId() + (extension == null || extension.isEmpty() ? "" : "." + extension);
+        }
+        String name = raw.replaceAll("[\\r\\n\\\\/<>:*?\"|\\u0000-\\u001F]", "_").trim();
+        if (name.isEmpty()) {
+            name = "attachment" + (extension == null || extension.isEmpty() ? "" : "." + extension);
+        }
+        if (name.length() > 255) {
+            // Keep the tail so the extension survives.
+            name = name.substring(name.length() - 255);
+        }
+        return name;
+    }
+
+    /**
+     * Content type for an imported attachment, derived from the extension Joplin
+     * exported it under. Whitelisted types (the same set the manual upload endpoint
+     * accepts) keep their real type so images render inline and PDFs preview; every
+     * other type is stored as a plain download — imports migrate legacy data of any
+     * kind, the upload endpoint's whitelist stays tight.
+     */
+    static String contentTypeForExtension(String extension) {
+        return switch (extension == null ? "" : extension.toLowerCase(Locale.ROOT)) {
+            case "png" -> "image/png";
+            case "jpg", "jpeg" -> "image/jpeg";
+            case "gif" -> "image/gif";
+            case "webp" -> "image/webp";
+            case "pdf" -> "application/pdf";
+            default -> "application/octet-stream";
+        };
+    }
+
+    /**
+     * Rewrite the note's Joplin resource links to point at the imported attachments.
+     * Images keep their {@code ![…]} form and render inline; every other attachment
+     * becomes a {@code ?download=1} link so clicking always saves the file (mirroring
+     * the UI's blob-download behavior). Links whose resource was not imported keep
+     * the original {@code :/…} form untouched.
+     */
+    static String rewriteJoplinResourceLinks(String content, Map<String, NoteAttachment> byResourceId) {
+        if (content == null || content.isEmpty() || byResourceId == null || byResourceId.isEmpty()) {
+            return content;
+        }
+        Matcher m = JEX_REF_PATTERN.matcher(content);
+        StringBuilder sb = new StringBuilder();
+        while (m.find()) {
+            NoteAttachment attachment = byResourceId.get(m.group(4).toLowerCase(Locale.ROOT));
+            String replacement;
+            if (attachment == null || attachment.id == null) {
+                replacement = m.group(0);
+            } else {
+                String url = "/api/attachments/" + attachment.id;
+                String text = m.group(3);
+                if (!m.group(1).isEmpty()) {
+                    // Image: preserve the !…() form so it renders inline.
+                    replacement = "![" + text + "](" + url + ")";
+                } else {
+                    // Document: labeled (empty-text links become the filename) so it reads
+                    // sensibly, and saved to disk on click instead of navigating.
+                    String label = text.isBlank() ? attachment.filename : text;
+                    replacement = "[" + label + "](" + url + "?download=1)";
+                }
+            }
+            m.appendReplacement(sb, Matcher.quoteReplacement(replacement));
+        }
+        m.appendTail(sb);
+        return sb.toString();
     }
 
     /**

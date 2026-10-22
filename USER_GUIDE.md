@@ -283,6 +283,13 @@ What you get:
 - **Metadata tags** (`tags:` lines in Joplin's footer) are picked up too.
 - **Title** comes from the first markdown heading, else the first content line.
 - **Content** stays markdown, with Joplin's trailing metadata block (id, parent_id, etc.) stripped.
+- **Attachments** are imported as well: the archive's `resources/` directory holds every attachment,
+  and each `[name.ext](:/<resourceId>)` link in a note points at one of them. The importer creates
+  the attachment, **names it after the link's display text** (e.g. `gpu-optimizer-camera-ready.pdf`),
+  and rewrites the link to point at the imported copy — images render inline, everything else
+  downloads when clicked. Images whose link text is empty are named `<resourceId>.<extension>`.
+  A missing or oversized (over **10 MB**) resource keeps its dead link and is reported in the
+  result list.
 - Imports with no tags at all get a `joplin-import` tag automatically, so imported notes are easy to find.
 
 > **Re-importing does not de-duplicate.** The importer treats every `.md` entry as a new note —
@@ -296,7 +303,7 @@ Upload one `.md` file (up to **10 MB**). The **first line becomes the title**, t
 
 ### Reading the result
 
-The modal shows *"Imported N note(s) [with N error(s)]."* — with a bulleted list of any per-note problems. If some notes failed, the rest still imported; fix the source and import only those notes individually (re-running the whole JEX would duplicate everything that already imported). Imports respect your plan's storage limit: if the import would overshoot your plan, **nothing is saved** and the error names your plan's limit (see the next section).
+The modal shows *"Imported N note(s) [and N attachment(s)] [with N error(s)]."* — with a bulleted list of any per-note problems. If some notes failed, the rest still imported; fix the source and import only those notes individually (re-running the whole JEX would duplicate everything that already imported). Imports respect your plan's storage limit: if the import would overshoot your plan, **nothing is saved** and the error names your plan's limit (see the next section).
 
 ---
 
