@@ -367,6 +367,7 @@ UPDATE users SET superuser = FALSE WHERE email = 'user@example.com';
 
 - **GET** `/api/notes` also accepts filter parameters, combined with AND (and with any search query):
   - `tags` – repeatable query parameter; a note must have every listed tag to match. Example: `?tags=work&tags=important`
+  - `tagPrefix` – repeatable query parameter for hierarchical (`grandparent/parent/child`) tags; a note matches when it carries the token itself or any deeper token. Example: `?tagPrefix=work` matches `work` and `work/2024`
   - `untagged` – `true` to return only notes without any tags
   - `pinned` – `true` to return only pinned notes
   - `createdFrom` / `createdTo` – ISO-8601 instants for note creation date range (inclusive)
@@ -376,6 +377,7 @@ UPDATE users SET superuser = FALSE WHERE email = 'user@example.com';
   - Examples:
     - `?tags=work` – notes tagged with "work"
     - `?tags=work&tags=important` – notes tagged with both "work" AND "important"
+    - `?tagPrefix=work` – notes in folder `work` or any sub-folder of it
     - `?untagged=true` – notes with no tags
     - `?pinned=true` – pinned notes only
     - `?createdFrom=2024-01-01T00:00:00Z&createdTo=2024-12-31T23:59:59Z` – notes created in 2024
@@ -401,7 +403,7 @@ UPDATE users SET superuser = FALSE WHERE email = 'user@example.com';
 - `POST /api/notes/import/joplin` – Import from Joplin JEX archive
   - **Content-Type:** `application/octet-stream`
   - **Request body:** Binary .jex file (ZIP or TAR archive), max 50 MB
-  - **Response:** `{ "imported": N, "errors": N, "messages": [...] }`
+  - **Response:** `{ "imported": N, "errors": N, "attachments": N, "messages": [...] }`
   - Returns 401 if not authenticated
   - Returns 400 if file is invalid
   - Returns 413 if the archive exceeds 50 MB (individual entries are also capped at 10 MB)
@@ -410,7 +412,13 @@ UPDATE users SET superuser = FALSE WHERE email = 'user@example.com';
     `[name.ext](:/<resourceId>)` links become attachments named after the link text, and the note's
     links are rewritten to `/api/attachments/{id}` (images inline, other files force-download).
     Dangling/over-10 MB resources keep their original link and are reported in the response messages
-  - Flattens Joplin's folder hierarchy into space-delimited tags
+  - Folder hierarchy becomes hierarchical tags: each folder level joined with `/`
+    (`Work/Projects/Acme`), folder names lowercased with whitespace becoming `_`.
+    For TAR (JEX) the hierarchy is reconstructed from the archive's `type_: 2` folder items;
+    for ZIP from the folder JSON metadata
+  - Only note items (`type_: 1`, and todos `type_: 3` when present) are imported; folder, resource,
+    and tag metadata items are skipped and summarized in the response messages. Archives with no
+    Joplin metadata at all (bare markdown TARs) import every `.md` entry
   - Applies any `tags:` values found in the Joplin metadata footer as Tags
   - Strips the trailing Joplin metadata block (`id:`, `parent_id:`, etc.) from note content
   - Extracts title from first markdown heading, else the first content line, else the filename
@@ -555,7 +563,7 @@ The interactive Swagger UI allows you to test all endpoints directly from your b
 - **Import button** – Upload notes from external sources
 - **Joplin JEX import** – Import entire note collections from Joplin
   - Upload .jex files (Joplin's native export format)
-  - Preserves folder structure as space-delimited tags
+  - Folder structure becomes hierarchical tags (`Work/Projects/Acme`), filterable with the Find by Tag panel
   - Extracts title from markdown headings
   - Imports note attachments referenced by `[name.ext](:/…)` links, named from the link text, with the links rewritten to point at the uploaded files (images render inline; other files download on click)
   - Shows import progress and results

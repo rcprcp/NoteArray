@@ -204,6 +204,7 @@ The header **Pinned** button is a *filter toggle* — click it to show **only pi
 Click **Find by Tag** in the header (List Notes view) to open the tag-filter panel:
 
 - **Search tags**: a searchable multi-select of the tags that exist across your notes. Pick one or more — only notes with **all** selected tags match (AND logic, not OR).
+- **Folders (include sub-folders)**: hierarchical tags such as `work/projects/acme` (typically created by importing a Joplin archive) appear here as selectable **folders**. Selecting a folder matches notes in it **and all sub-folders** (e.g. picking `work` also matches `work/projects`); an active folder shows as a `Folder: work` chip.
 - **"Find notes with no tags" checkbox**: shows only untagged notes. Checking it clears your tag selection; selecting a tag clears it, since the two are mutually exclusive.
 
 ### Active filters
@@ -279,7 +280,11 @@ Click **Import** in the header (List Notes view) to open the **Import notes** mo
 
 What you get:
 
-- **Folder hierarchy → tags**: Joplin notebooks and sub-notebooks become space-delimited tags.
+- **Folder hierarchy → hierarchical tags**: each Joplin folder level becomes a `/`-joined segment —
+  a note in `Work ▸ Projects ▸ Acme` is tagged `work/projects/acme` (folder names are lowercased,
+  spaces become `_`). The Find by Tag panel lists these as selectable **Folders**: picking
+  `work` matches that folder and every sub-folder in it. Sub-notebooks therefore still land
+  in the right place.
 - **Metadata tags** (`tags:` lines in Joplin's footer) are picked up too.
 - **Title** comes from the first markdown heading, else the first content line.
 - **Content** stays markdown, with Joplin's trailing metadata block (id, parent_id, etc.) stripped.

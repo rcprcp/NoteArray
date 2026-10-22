@@ -198,6 +198,7 @@ public class NoteResource {
                          @QueryParam("searchTitles") @jakarta.ws.rs.DefaultValue("false") boolean searchTitles,
                          @QueryParam("searchContent") @jakarta.ws.rs.DefaultValue("false") boolean searchContent,
                          @QueryParam("tags") List<String> tags,
+                         @QueryParam("tagPrefix") List<String> tagPrefixes,
                          @QueryParam("untagged") @jakarta.ws.rs.DefaultValue("false") boolean untagged,
                          @QueryParam("pinned") @jakarta.ws.rs.DefaultValue("false") boolean pinned,
                          @QueryParam("createdFrom") String createdFrom,
@@ -259,6 +260,21 @@ public class NoteResource {
                 String name = "tag" + i++;
                 sql.append(" AND (' ' || lower(coalesce(n.tags, '')) || ' ') LIKE :").append(name);
                 params.put(name, "% " + escaped + " %");
+            }
+        }
+        if (tagPrefixes != null) {
+            for (String prefix : tagPrefixes) {
+                if (prefix == null || prefix.isBlank()) continue;
+                String escaped = prefix.trim().toLowerCase(Locale.ROOT)
+                        .replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
+                // Hierarchical tags: prefix:Work matches the token Work itself AND
+                // every deeper token Work/… (one LIKE per alternative, both escaped).
+                String exact = "prefix" + i++;
+                String deeper = "prefix" + i++;
+                sql.append(" AND ((' ' || lower(coalesce(n.tags, '')) || ' ') LIKE :").append(exact)
+                        .append(" OR (' ' || lower(coalesce(n.tags, '')) || ' ') LIKE :").append(deeper).append(")");
+                params.put(exact, "% " + escaped + " %");
+                params.put(deeper, "% " + escaped + "/% %");
             }
         }
         if (cFrom != null) { sql.append(" AND n.created_at >= :cFrom"); params.put("cFrom", cFrom); }
@@ -625,6 +641,7 @@ public class NoteResource {
             }
 
             Map<String, String> folderMap = new HashMap<>();
+            Map<String, String> folderParentMap = new HashMap<>();
             Map<String, String> noteMap = new HashMap<>();
 
             boolean isZip = data.length > 3 && data[0] == 0x50 && data[1] == 0x4B && data[2] == 0x03 && data[3] == 0x04;
@@ -638,6 +655,7 @@ public class NoteResource {
             long importedBytes = 0;
             int noteEntries = 0;
             int attachmentsImported = 0;
+            int skippedItems = 0;
 
             try {
                 if (isZip) {
@@ -655,10 +673,14 @@ public class NoteResource {
                                 JsonNode node = objectMapper.readTree(readZipEntryAsString(zis, buffer, budget));
                                 String type = node.has("type_") ? node.get("type_").asText() : "";
                                 String id = node.has("id") ? node.get("id").asText() : "";
-                                if (!id.isEmpty() && "2".equals(type)) {
+                                if (!id.isEmpty() && JOPLIN_TYPE_FOLDER.equals(type)) {
                                     String title = node.has("title") ? node.get("title").asText() : "Untitled";
                                     folderMap.put(id, title);
-                                } else if (!id.isEmpty() && "1".equals(type)) {
+                                    String folderParent = node.has("parent_id") ? node.get("parent_id").asText() : "";
+                                    if (!folderParent.isEmpty()) {
+                                        folderParentMap.put(id, folderParent);
+                                    }
+                                } else if (!id.isEmpty() && (JOPLIN_TYPE_NOTE.equals(type) || JOPLIN_TYPE_TODO.equals(type))) {
                                     String parentId = node.has("parent_id") ? node.get("parent_id").asText() : "";
                                     if (!parentId.isEmpty()) {
                                         noteMap.put(id, parentId);
@@ -695,10 +717,10 @@ public class NoteResource {
                                 String noteId = filename.substring(0, dot);
                                 List<String> folderTags = new ArrayList<>();
                                 String folderId = noteMap.get(noteId);
-                                if (folderId != null && folderMap.containsKey(folderId)) {
-                                    String folderTag = folderMap.get(folderId).replaceAll("[^a-zA-Z0-9\\s-]", "").trim();
-                                    if (!folderTag.isEmpty()) {
-                                        folderTags.add(folderTag);
+                                if (folderId != null) {
+                                    String chain = folderPathTag(folderId, folderMap, folderParentMap);
+                                    if (chain != null) {
+                                        folderTags.add(chain);
                                     }
                                 }
                                 Note note = buildJoplinNote(user, noteId, content, folderTags);
@@ -735,8 +757,18 @@ public class NoteResource {
                      *      named after the link text,
                      *   3. rewrite the note's links to /api/attachments/{id}
                      *      so they keep working after the migration.
+                     *
+                     * The same index pass also catalogs Joplin item metadata:
+                     * every .md is an item (note type_ 1, todo type_ 3, folder
+                     * type_ 2, resource stub type_ 4) and the folders supply
+                     * the hierarchy notes are filed under. Only real notes (and
+                     * todos) make it to pass 2 — folders and resource stubs are
+                     * org data, not content to import. Hand-built archives of
+                     * bare .md files (no metadata footer anywhere) keep the
+                     * legacy all-notes behavior.
                      */
                     Map<String, JexResource> resources = new HashMap<>();
+                    boolean joplinArchive = false;
                     try (TarArchiveInputStream tis = new TarArchiveInputStream(new ByteArrayInputStream(data))) {
                         TarArchiveEntry entry;
                         byte[] buffer = new byte[8192];
@@ -745,20 +777,45 @@ public class NoteResource {
                                 continue;
                             }
                             String name = entry.getName().replaceFirst("^\\./", "");
-                            if (!name.startsWith("resources/")) {
+                            if (name.startsWith("resources/")) {
+                                try {
+                                    byte[] blob = readResourceEntry(tis, buffer, budget);
+                                    resources.put(JexResource.resourceIdOf(name),
+                                            new JexResource(JexResource.extensionOf(name), blob));
+                                } catch (IOException oversized) {
+                                    // Per-blob cap (10 MB): skip it and let the note pass
+                                    // report the dangling link later.
+                                    LOG.debugf(oversized, "Resource %s exceeds the per-attachment limit", name);
+                                    messages.add("Warning: resource '" + name
+                                            + "' exceeds the " + (StorageQuota.MAX_ATTACHMENT_BYTES / (1024 * 1024))
+                                            + " MB per-attachment limit and was skipped");
+                                }
+                                continue;
+                            }
+                            if (!name.endsWith(".md")) {
                                 continue;
                             }
                             try {
-                                byte[] blob = readResourceEntry(tis, buffer, budget);
-                                resources.put(JexResource.resourceIdOf(name),
-                                        new JexResource(JexResource.extensionOf(name), blob));
+                                String itemContent = readTarEntryAsString(tis, buffer, budget);
+                                JoplinItemMeta meta = joplinItemMeta(itemContent);
+                                if (meta == null) {
+                                    continue; // bare markdown; decides nothing on its own
+                                }
+                                joplinArchive = true;
+                                if (JOPLIN_TYPE_FOLDER.equals(meta.type())) {
+                                    folderMap.put(meta.id(), firstContentLine(itemContent));
+                                    if (!meta.parentId().isEmpty()) {
+                                        folderParentMap.put(meta.id(), meta.parentId());
+                                    }
+                                } else if (JOPLIN_TYPE_NOTE.equals(meta.type())
+                                        || JOPLIN_TYPE_TODO.equals(meta.type())) {
+                                    noteMap.put(meta.id(), meta.parentId());
+                                }
                             } catch (IOException oversized) {
-                                // Per-blob cap (10 MB): skip it and let the note pass
-                                // report the dangling link later.
-                                LOG.debugf(oversized, "Resource %s exceeds the per-attachment limit", name);
-                                messages.add("Warning: resource '" + name
-                                        + "' exceeds the " + (StorageQuota.MAX_ATTACHMENT_BYTES / (1024 * 1024))
-                                        + " MB per-attachment limit and was skipped");
+                                throw oversized; // budget aborts bubble up as 413
+                            } catch (Exception e) {
+                                LOG.debugf(e, "Could not parse Joplin item entry %s", name);
+                                messages.add("Warning: Could not parse metadata file");
                             }
                         }
                     }
@@ -774,6 +831,16 @@ public class NoteResource {
                             if (!name.endsWith(".md")) {
                                 continue;
                             }
+                            String basename = name.replaceFirst("^.*/", "");
+                            String itemKey = basename.lastIndexOf('.') > 0
+                                    ? basename.substring(0, basename.lastIndexOf('.'))
+                                    : basename;
+                            if (joplinArchive && !noteMap.containsKey(itemKey)) {
+                                // Folders (type_ 2), resource stubs (type_ 4), tag/master-key
+                                // items (type_ 5+) are organizational — not content to import.
+                                skippedItems++;
+                                continue;
+                            }
                             if (++noteEntries > maxImportEntries) {
                                 throw importLimitExceeded(
                                         "Archive contains too many notes (limit "
@@ -781,16 +848,23 @@ public class NoteResource {
                             }
                             try {
                                 String content = readTarEntryAsString(tis, buffer, budget);
-                                String filename = name.replaceFirst("^.*/", "");
-                                if (filename.isEmpty()) {
+                                if (basename.isEmpty()) {
                                     continue;
                                 }
-                                int dot = filename.lastIndexOf('.');
+                                int dot = basename.lastIndexOf('.');
                                 if (dot < 0) {
                                     continue;
                                 }
-                                String noteId = filename.substring(0, dot);
-                                Note note = buildJoplinNote(user, noteId, content, List.of());
+                                String noteId = basename.substring(0, dot);
+                                List<String> folderTags = new ArrayList<>();
+                                String folderId = noteMap.get(noteId);
+                                if (folderId != null) {
+                                    String chain = folderPathTag(folderId, folderMap, folderParentMap);
+                                    if (chain != null) {
+                                        folderTags.add(chain);
+                                    }
+                                }
+                                Note note = buildJoplinNote(user, noteId, content, folderTags);
                                 String noteContent = note.content;
                                 List<NoteAttachment> prepared = new ArrayList<>();
                                 Map<String, NoteAttachment> byResourceId = new HashMap<>();
@@ -843,6 +917,11 @@ public class NoteResource {
                 LOG.warn("Failed to process JEX file", e);
                 return Response.status(Response.Status.BAD_REQUEST)
                         .entity("Failed to process JEX file").build();
+            }
+
+            if (skippedItems > 0) {
+                messages.add("Info: skipped " + skippedItems
+                        + " archive item(s) that are folder/attachment metadata, not note content");
             }
 
             // Deduplicate messages so a 10,000-entry failure doesn't flood the UI.
@@ -1007,14 +1086,9 @@ public class NoteResource {
         note.title = title.isEmpty() ? "Untitled" : truncateTitle(title);
         note.content = sanitizeContent(content);
 
-        List<String> tagParts = new ArrayList<>(folderTags);
-        if (!metaTags.isEmpty()) {
-            tagParts.add(metaTags);
-        }
-        if (tagParts.isEmpty()) {
-            tagParts.add("joplin-import");
-        }
-        note.tags = String.join(" ", tagParts);
+        note.tags = buildJoplinTags(
+                folderTags != null && !folderTags.isEmpty() ? String.join(" ", folderTags) : null,
+                metaTags);
         return note;
     }
 
@@ -1023,7 +1097,7 @@ public class NoteResource {
      * or -1 if no such block is present. The block must be contiguous to the end
      * and contain both "id:" and "type_:" keys.
      */
-    private int joplinMetadataStart(String[] lines) {
+    private static int joplinMetadataStart(String[] lines) {
         int i = lines.length - 1;
         while (i >= 0 && lines[i].isBlank()) {
             i--;
@@ -1080,6 +1154,137 @@ public class NoteResource {
 
     /** One Joplin in-note resource reference: {@code [text](:/<resourceId>)} or its {@code !}-marked image form. */
     record JexRef(boolean image, String linkText, String resourceId, String fullMatch) {}
+
+    /** The Joplin item type bits we care about from a {@code type_:} metadata footer line. */
+    static final String JOPLIN_TYPE_NOTE = "1";
+    static final String JOPLIN_TYPE_TODO = "3";
+    static final String JOPLIN_TYPE_FOLDER = "2";
+    /** Ancestor chain cap: deeper folder runs keep the segments closest to the note. */
+    static final int MAX_FOLDER_DEPTH = 24;
+    /** Per-segment cap on a sanitized folder name inside a path tag. */
+    static final int MAX_FOLDER_SEGMENT_LENGTH = 100;
+
+    /** id / type_ / parent_id parsed out of a Joplin item's metadata footer. */
+    record JoplinItemMeta(String id, String type, String parentId) {}
+
+    /**
+     * Parse {@code id:}, {@code type_:} and {@code parent_id:} from the item's trailing
+     * Joplin metadata block, or return null when there is no valid block (e.g. plain
+     * markdown files in a hand-built archive).
+     */
+    static JoplinItemMeta joplinItemMeta(String content) {
+        if (content == null || content.isEmpty()) {
+            return null;
+        }
+        String[] lines = content.split("\r?\n", -1);
+        int blockStart = joplinMetadataStart(lines);
+        if (blockStart < 0) {
+            return null;
+        }
+        java.util.regex.Pattern keyLine = java.util.regex.Pattern.compile("^\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*:\\s*(.*)$");
+        String id = "", type = "", parent = "";
+        for (int j = blockStart; j < lines.length; j++) {
+            Matcher m = keyLine.matcher(lines[j]);
+            if (!m.matches()) {
+                continue;
+            }
+            switch (m.group(1)) {
+                case "id" -> id = m.group(2).trim();
+                case "type_" -> type = m.group(2).trim();
+                case "parent_id" -> parent = m.group(2).trim();
+                default -> { }
+            }
+        }
+        if (id.isEmpty()) {
+            return null;
+        }
+        return new JoplinItemMeta(id, type, parent);
+    }
+
+    /** First non-blank line of the item body — a folder's title is its body's only line. */
+    private static String firstContentLine(String content) {
+        for (String line : content.split("\r?\n", -1)) {
+            String trimmed = line.trim();
+            if (!trimmed.isEmpty()) {
+                return trimmed;
+            }
+        }
+        return "";
+    }
+
+    /**
+     * One folder name inside a path tag: lowercase, whitespace runs (and any
+     * stray path separators inside the title) become {@code _}, unicode letters
+     * and digits survive, everything else is dropped. {@code /} is reserved
+     * strictly for the hierarchy itself, so it can never appear inside a segment.
+     */
+    static String sanitizeFolderSegment(String title) {
+        if (title == null || title.isBlank()) {
+            return "";
+        }
+        String segment = title.trim().toLowerCase(Locale.ROOT)
+                .replaceAll("[\\s/\\\\]+", "_")
+                .replaceAll("[^\\p{L}\\p{N}_-]", "");
+        if (segment.length() > MAX_FOLDER_SEGMENT_LENGTH) {
+            segment = segment.substring(0, MAX_FOLDER_SEGMENT_LENGTH);
+        }
+        return segment;
+    }
+
+    /**
+     * A note's full folder chain (grandparent/…/parent) as one hierarchical,
+     * {@code /}-separated tag, or null when the note is not in a folder (or the
+     * chain renders entirely empty). Guards against cycles and caps the chain
+     * at {@link #MAX_FOLDER_DEPTH} levels, keeping the ones closest to the note.
+     */
+    static String folderPathTag(String folderId,
+                                Map<String, String> folderTitles,
+                                Map<String, String> folderParents) {
+        java.util.Deque<String> segments = new java.util.ArrayDeque<>();
+        java.util.Set<String> visited = new java.util.HashSet<>();
+        String current = folderId;
+        while (current != null && !current.isEmpty()
+                && !visited.contains(current) && segments.size() < MAX_FOLDER_DEPTH) {
+            visited.add(current);
+            String segment = sanitizeFolderSegment(folderTitles.get(current));
+            if (!segment.isEmpty()) {
+                segments.addFirst(segment);
+            }
+            current = folderParents.get(current);
+        }
+        return segments.isEmpty() ? null : String.join("/", segments);
+    }
+
+    /**
+     * Assemble a note's Tags string from its folder path (if any) and the
+     * metadata footer's tags, defaulting to the {@code joplin-import} tag. The
+     * folder path is the first casualty when the result would overflow the
+     * tags column.
+     */
+    static String buildJoplinTags(String folderTag, String metaTags) {
+        List<String> parts = new ArrayList<>();
+        if (folderTag != null && !folderTag.isBlank()) {
+            parts.add(folderTag);
+        }
+        if (metaTags != null && !metaTags.isBlank()) {
+            parts.add(metaTags);
+        }
+        if (parts.isEmpty()) {
+            parts.add("joplin-import");
+        }
+        String tags = String.join(" ", parts);
+        if (tags.length() > MAX_TAGS_LENGTH && parts.size() > 1) {
+            parts.remove(0);
+            if (parts.isEmpty()) {
+                parts.add("joplin-import");
+            }
+            tags = String.join(" ", parts);
+        }
+        if (tags.length() > MAX_TAGS_LENGTH) {
+            tags = tags.substring(0, MAX_TAGS_LENGTH);
+        }
+        return tags;
+    }
 
     /**
      * Joplin embeds attachments in note markdown as {@code [filename.ext](:/<resourceId>)};
