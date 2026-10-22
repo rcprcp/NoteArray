@@ -1148,7 +1148,7 @@ export default function NotesPanel({ registerActions } = {}) {
             <TextInput label="Title" style={{ flex: 1, minWidth: 0 }} required maxLength={255} value={form.title} error={formError && !form.title.trim()} onChange={(e) => setForm({ ...form, title: e.currentTarget.value })} size={inputSize} />
             {editingNote && (
               <Button variant="light" color="red" size={inputSize} onClick={removeFromEditor} style={{ flex: '0 0 auto' }}>
-                Delete
+                Delete Note
               </Button>
             )}
           </Group>
