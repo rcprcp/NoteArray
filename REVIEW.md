@@ -81,18 +81,24 @@
   (`LoginPage.jsx`), and validates `local@domain.tld` (`something@x.y`) token structure and length limits
   on both sides (`EmailPolicyTest`).*
 
-- [ ] **5. Import limits are inconsistent and expandable** (`NoteResource.java:49,329`).
-  `MAX_IMPORT_BYTES` is 50 MB, but Quarkus's default `quarkus.http.limits.max-body-size` is ~10 MB —
-  legitimate >10 MB JEX files 413 before the app code runs (or, if raised, each request buffers 50 MB on
-  the heap with no concurrency cap → memory DoS by parallel uploads). Each *entry* is capped at 10 MB but
-  there is no cap on **total uncompressed bytes or entry count** — a zip bomb can expand far past 50 MB
-  across thousands of entries. Set the body limit explicitly, cap total expansion + notes-per-import,
-  and bound concurrent imports.
-  *Partially done: `quarkus.http.limits.max-body-size=55M` is now set explicitly
-  (`application.properties:17`), so the >10 MB 413 is fixed, and each archive entry is still capped at
-  10 MB (`readEntryAsString`). Still outstanding: no cap on total uncompressed bytes or entry count
-  (thousands of ≤10 MB entries still buffer and persist on the heap in one transaction) and no
-  concurrency bound — up to 55 MB buffered per in-flight import request.*
+- [x] **5. Import limits are inconsistent and expandable** (`NoteResource.java`).
+  `MAX_IMPORT_BYTES` was 50 MB with no cap on **total uncompressed bytes or entry count** (a zip bomb
+  could expand far past 50 MB across thousands of entries) and no concurrency cap (memory DoS by
+  parallel uploads).
+  *Done (branch `agent/import-limits`): the compressed archive cap and the bomb defenses are now
+  separate (`application.properties`, all configurable). `notearray.import.max-archive-bytes` stays
+  **50 MB** (body limit unchanged at 55 MB, so large legitimate JEX imports work); the real defenses:
+  `notearray.import.max-total-expansion-bytes` **256 MB** cumulative *uncompressed* across all entries
+  (`ExpansionBudget`, charged per buffer read in `readEntryAsString`, aborts the whole import with 413
+  where bombs actually expand), `notearray.import.max-entries` **10,000** notes per import, a
+  `Semaphore(2)` bounds concurrent imports (extra requests get 503 + `Retry-After: 60`), and plan
+  storage quota is now enforced **per note during the import** — `quotaWouldExceed` +
+  `StorageQuota.limitBytesForPlan` roll the whole transaction back with 413, so an import can fill but
+  never overshoot the plan (Free 100 MB / Pro 1 GB / Premium 5 GB). Limit breaches throw
+  `WebApplicationException` (unchecked → JTA rollback), per-entry reads rethrow it before the generic
+  catch. `ImportLimitsTest` (8 tests: budget, quota helper, config wiring); suite 80 tests / 13
+  classes. Note: notes still accumulate in one Hibernate session, so very large imports hold heap
+  until commit — batching (finding #11) addresses that.*
 
 - [x] **6. Swagger UI, OpenAPI, and Prometheus metrics are public in prod**
   (`application.properties:26-31`, `always-include=true`; `quarkus-micrometer`). Disable Swagger/OpenAPI
@@ -291,8 +297,8 @@
 | 1 | Login rate limiting + password policy | #1, #2 | ✓ (`agent/login-throttling`, `agent/password-policy`) |
 | 2 | Security headers + CSP + link/HTML sanitization | #3 | ✓ (`security-sanitization`, `agent/security-xss-headers`) |
 | 3 | Email normalization/validation + signup config flag | #4, #10 | ✓ (`agent/email-validation`) |
-| 4 | Fix body-size limit & import expansion caps | #5 | ◐ (body limit fixed in `application.properties:17`; total-expansion/entry-count/concurrency caps outstanding) |
-| 5 | Test suite + CI | #21, #22 | ◐ (unit suite done — 72 tests/12 classes; CI & lint/formatter config outstanding) |
+| 4 | Fix body-size limit & import expansion caps | #5 | ✅ (body limit 55M, expansion budget 256 MB, entry cap 10k, concurrency semaphore, per-note plan-quota rollback) |
+| 5 | Test suite + CI | #21, #22 | ◐ (unit suite done — 80 tests/13 classes; CI & lint/formatter config outstanding) |
 | 6 | Paginated list + lightweight projection + tags endpoint | #12 | ☐ |
 | 7 | Optimistic locking + serialized autosave | #9 | ✓ (`agent/optimistic-locking-autosave`) |
 | 8 | Trash/undo + note history | #15 | ☐ |
@@ -318,3 +324,4 @@
 | 2026-10-21 | #27 | `agent/delete-password-verification` | `DELETE /api/users/{id}` requires the current password (`DeleteRequest` → `validateDeleteConfirmation`, verified before Stripe calls), password field in the Personal Settings delete card with Delete disabled until entered, doc updates; `UserDeleteVerificationTest` (5 tests) |
 | 2026-10-21 | #23 | `agent/prod-config-hygiene` | `%prod` datasource requires `NOTEARRAY_DB_*` env vars (no dev fallbacks — verified jar refuses to start without them), `com.notearray` DEBUG moved to `%dev` only, `quarkus-smallrye-health` added (`/q/health` + DB readiness verified live + 200), access log enabled with `X-Request-Id` (generated/sanitized in `SecurityHeadersFilter`, caller-supplied ids echoed; verified in log), removed stale ignored `quarkus.http.cookie.same-site-cookie*` keys; 72 tests/12 classes |
 | 2026-10-21 | fix: Firefox attachment download quirk | `agent/attachment-download-fix` | Blob-based Download button (never a viewer navigation) + Firefox fix: blob and `?download` mode served as `application/octet-stream` so Firefox's built-in PDF handling ("Open in Firefox" / `open_pdf_attachments_inline`) cannot save-and-reopen the download despite `Content-Disposition: attachment` (Bugzilla 1756980); preview (`inline`) responses keep `application/pdf` |
+| 2026-10-21 | #5 | `agent/import-limits` | Import bounds made configurable + real zip-bomb defenses: `notearray.import.max-archive-bytes` 50 MB (env-tunable, body limit stays 55M), `notearray.import.max-total-expansion-bytes` 256 MB cumulative uncompressed (`ExpansionBudget` in `NoteResource`), `notearray.import.max-entries` 10,000, `Semaphore(2)` concurrency bound (503 + `Retry-After: 60`), and plan storage quota enforced per note during the import (whole transaction rolls back with 413 on overshoot — imports can fill but never exceed Free/Pro/Premium storage); `ImportLimitsTest`, suite 80 tests / 13 classes |

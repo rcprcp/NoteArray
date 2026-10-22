@@ -25,6 +25,7 @@ import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.WebApplicationException;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
@@ -38,10 +39,12 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.Semaphore;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
 @Path("/api/notes")
@@ -50,7 +53,14 @@ import org.jboss.logging.Logger;
 public class NoteResource {
 
     /** Maximum compressed size of an uploaded import archive (Joplin JEX). */
-    static final int MAX_IMPORT_BYTES = 50 * 1024 * 1024; // 50 MB
+    static final long DEFAULT_MAX_ARCHIVE_BYTES = 50L * 1024 * 1024;      // 50 MB
+    /** Default cumulative uncompressed budget for a whole import (anti zip-bomb). */
+    static final long DEFAULT_MAX_TOTAL_EXPANSION_BYTES = 256L * 1024 * 1024; // 256 MB
+    /** Default maximum number of notes (.md entries) per import. */
+    static final int DEFAULT_MAX_IMPORT_ENTRIES = 10_000;
+    /** Bounded parallel imports so each buffered archive fits comfortably in heap. */
+    private static final int IMPORT_PERMITS = 2;
+    private static final Semaphore IMPORT_SEMAPHORE = new Semaphore(IMPORT_PERMITS);
     /** Maximum size of a single imported note body, matching the notes.content column limit. */
     static final int MAX_CONTENT_LENGTH = 10 * 1024 * 1024; // 10 MB
     /** Maximum lengths matching the notes table column definitions. */
@@ -67,6 +77,60 @@ public class NoteResource {
 
     @Inject
     ObjectMapper objectMapper;
+
+    /** Limits are configurable so prod can raise them for larger accounts. */
+    @ConfigProperty(name = "notearray.import.max-archive-bytes",
+            defaultValue = "" + DEFAULT_MAX_ARCHIVE_BYTES)
+    long maxArchiveBytes;
+
+    @ConfigProperty(name = "notearray.import.max-total-expansion-bytes",
+            defaultValue = "" + DEFAULT_MAX_TOTAL_EXPANSION_BYTES)
+    long maxTotalExpansionBytes;
+
+    @ConfigProperty(name = "notearray.import.max-entries",
+            defaultValue = "" + DEFAULT_MAX_IMPORT_ENTRIES)
+    int maxImportEntries;
+
+    /**
+     * Cumulative expansion budget for one import request: total uncompressed
+     * bytes across every archive entry (notes and metadata alike). A zip bomb
+     * can inflate far past the compressed size; a 50 MB archive is useless as
+     * a defense on its own, so the abort condition lives on DEcompressed bytes.
+     */
+    static final class ExpansionBudget {
+        private final long maxTotal;
+        private long usedTotal;
+
+        ExpansionBudget(long maxTotal) {
+            this.maxTotal = maxTotal;
+        }
+
+        /** Throws {@link WebApplicationException} (413) when the budget is exhausted. */
+        void add(long bytes) {
+            usedTotal += Math.max(0L, bytes);
+            if (usedTotal > maxTotal) {
+                throw importLimitExceeded(
+                        "Archive expands beyond the maximum uncompressed import size ("
+                                + (maxTotal / (1024 * 1024)) + " MB)");
+            }
+        }
+
+        long used() {
+            return usedTotal;
+        }
+    }
+
+    /** 413 response for an import that breached a configured limit. */
+    static WebApplicationException importLimitExceeded(String message) {
+        return new WebApplicationException(Response.status(Response.Status.REQUEST_ENTITY_TOO_LARGE)
+                .entity(message)
+                .build());
+    }
+
+    /** True when admitting one more note of {@code nextNoteBytes} would pass the plan storage limit. */
+    static boolean quotaWouldExceed(long currentUsedBytes, long importedBytes, long nextNoteBytes, long limitBytes) {
+        return currentUsedBytes + importedBytes + Math.max(0L, nextNoteBytes) > limitBytes;
+    }
 
     /** Request body. ownerId is ignored; owner is always the authenticated user. */
     public record NoteRequest(String title, String content, String tags, Boolean pinned, Long version) {
@@ -479,6 +543,21 @@ public class NoteResource {
     /**
      * Import a Joplin JEX file (supports both ZIP and TAR archives).
      * Flattens folder hierarchy into space-delimited tags.
+     *
+     * <p>Resource bounds / anti zip-bombing (REVIEW finding #5):
+     * <ul>
+     *   <li>the compressed upload is capped at {@code notearray.import.max-archive-bytes}
+     *       (default 50 MB);</li>
+     *   <li>the <b>cumulative uncompressed</b> size of all entries is capped
+     *       ({@code notearray.import.max-total-expansion-bytes}, default 256 MB) — the
+     *       abort condition lives on decompressed bytes, where bombs actually expand;</li>
+     *   <li>the number of imported notes is capped ({@code notearray.import.max-entries},
+     *       default 10,000);</li>
+     *   <li>at most 2 imports run in parallel, additional requests get 503 + Retry-After;</li>
+     *   <li>plan storage quota is enforced per imported note; on exceed the whole
+     *       import transaction rolls back (413), so an import can fill the plan's
+     *       storage exactly but never overshoot it.</li>
+     * </ul>
      */
     @POST
     @Path("/import/joplin")
@@ -495,136 +574,195 @@ public class NoteResource {
             return initialQuotaError;
         }
 
-        List<String> messages = new ArrayList<>();
-        int imported = 0;
-        int errors = 0;
-
-        // Read at most MAX_IMPORT_BYTES + 1 so an oversized upload can be detected
-        // without buffering more than the limit.
-        byte[] data;
-        try {
-            data = jexStream.readNBytes(MAX_IMPORT_BYTES + 1);
-        } catch (IOException e) {
-            LOG.warn("Failed to read JEX upload", e);
-            return Response.status(Response.Status.BAD_REQUEST)
-                    .entity("Failed to read JEX file").build();
-        }
-        if (data.length > MAX_IMPORT_BYTES) {
-            return Response.status(Response.Status.REQUEST_ENTITY_TOO_LARGE)
-                    .entity("JEX file exceeds the maximum import size of "
-                            + (MAX_IMPORT_BYTES / (1024 * 1024)) + " MB").build();
+        // Bound concurrent imports: each request buffers its archive on the heap,
+        // so parallel unbounded imports are a memory-DoS vector.
+        if (!IMPORT_SEMAPHORE.tryAcquire()) {
+            return Response.status(Response.Status.SERVICE_UNAVAILABLE)
+                    .header("Retry-After", "60")
+                    .entity("A note import is already running; try again in a minute").build();
         }
 
-        Map<String, String> folderMap = new HashMap<>();
-        Map<String, String> noteMap = new HashMap<>();
-
-        boolean isZip = data.length > 3 && data[0] == 0x50 && data[1] == 0x4B && data[2] == 0x03 && data[3] == 0x04;
-        boolean isTar = data.length > 262 && (new String(data, 257, 5, StandardCharsets.US_ASCII)).equals("ustar");
-
         try {
-            if (isZip) {
-                try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(data))) {
-                    ZipEntry entry;
-                    byte[] buffer = new byte[8192];
-                    while ((entry = zis.getNextEntry()) != null) {
-                        if (entry.getName().endsWith(".md")) {
-                            continue;
-                        }
-                        if (!entry.getName().endsWith(".json")) {
-                            continue;
-                        }
-                        try {
-                            JsonNode node = objectMapper.readTree(readZipEntryAsString(zis, buffer));
-                            String type = node.has("type_") ? node.get("type_").asText() : "";
-                            String id = node.has("id") ? node.get("id").asText() : "";
-                            if (!id.isEmpty() && "2".equals(type)) {
-                                String title = node.has("title") ? node.get("title").asText() : "Untitled";
-                                folderMap.put(id, title);
-                            } else if (!id.isEmpty() && "1".equals(type)) {
-                                String parentId = node.has("parent_id") ? node.get("parent_id").asText() : "";
-                                if (!parentId.isEmpty()) {
-                                    noteMap.put(id, parentId);
-                                }
-                            }
-                        } catch (Exception e) {
-                            LOG.debugf(e, "Could not parse Joplin metadata entry %s", entry.getName());
-                            messages.add("Warning: Could not parse metadata file");
-                        }
-                    }
-                }
+            List<String> messages = new ArrayList<>();
+            int imported = 0;
+            int errors = 0;
 
-                try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(data))) {
-                    ZipEntry entry;
-                    byte[] buffer = new byte[8192];
-                    while ((entry = zis.getNextEntry()) != null) {
-                        if (!entry.getName().endsWith(".md")) {
-                            continue;
-                        }
-                        try {
-                            String content = readZipEntryAsString(zis, buffer);
-                            String filename = entry.getName();
-                            int dot = filename.lastIndexOf('.');
-                            if (dot < 0) {
-                                continue;
-                            }
-                            String noteId = filename.substring(0, dot);
-                            List<String> folderTags = new ArrayList<>();
-                            String folderId = noteMap.get(noteId);
-                            if (folderId != null && folderMap.containsKey(folderId)) {
-                                String folderTag = folderMap.get(folderId).replaceAll("[^a-zA-Z0-9\\s-]", "").trim();
-                                if (!folderTag.isEmpty()) {
-                                    folderTags.add(folderTag);
-                                }
-                            }
-                            buildJoplinNote(user, noteId, content, folderTags).persist();
-                            imported++;
-                        } catch (Exception e) {
-                            errors++;
-                            LOG.debugf(e, "Failed to import Joplin ZIP entry %s", entry.getName());
-                            messages.add("Error importing note: could not read entry");
-                        }
-                    }
-                }
-            } else {
-                try (TarArchiveInputStream tis = new TarArchiveInputStream(new ByteArrayInputStream(data))) {
-                    TarArchiveEntry entry;
-                    byte[] buffer = new byte[8192];
-                    while ((entry = tis.getNextTarEntry()) != null) {
-                        if (entry.isDirectory()) {
-                            continue;
-                        }
-                        String name = entry.getName();
-                        if (!name.endsWith(".md")) {
-                            continue;
-                        }
-                        try {
-                            String content = readTarEntryAsString(tis, buffer);
-                            String filename = name.replaceFirst("^.*/", "");
-                            if (filename.isEmpty()) {
-                                continue;
-                            }
-                            int dot = filename.lastIndexOf('.');
-                            if (dot < 0) {
-                                continue;
-                            }
-                            String noteId = filename.substring(0, dot);
-                            buildJoplinNote(user, noteId, content, List.of()).persist();
-                            imported++;
-                        } catch (Exception e) {
-                            errors++;
-                            LOG.debugf(e, "Failed to import Joplin TAR entry %s", name);
-                            messages.add("Error importing note: could not read entry");
-                        }
-                    }
-                }
+            // Read at most maxArchiveBytes + 1 so an oversized upload can be detected
+            // without buffering more than the limit.
+            int readLimit = (int) Math.min(maxArchiveBytes, (long) Integer.MAX_VALUE - 2);
+            byte[] data;
+            try {
+                data = jexStream.readNBytes(readLimit + 1);
+            } catch (IOException e) {
+                LOG.warn("Failed to read JEX upload", e);
+                return Response.status(Response.Status.BAD_REQUEST)
+                        .entity("Failed to read JEX file").build();
             }
-        } catch (Exception e) {
-            LOG.warn("Failed to process JEX file", e);
-            return Response.status(Response.Status.BAD_REQUEST)
-                    .entity("Failed to process JEX file").build();
-        }
+            if (data.length > maxArchiveBytes) {
+                return Response.status(Response.Status.REQUEST_ENTITY_TOO_LARGE)
+                        .entity("JEX file exceeds the maximum import size of "
+                                + (maxArchiveBytes / (1024 * 1024)) + " MB").build();
+            }
 
-        return Response.ok(new ImportResult(imported, errors, messages)).build();
+            Map<String, String> folderMap = new HashMap<>();
+            Map<String, String> noteMap = new HashMap<>();
+
+            boolean isZip = data.length > 3 && data[0] == 0x50 && data[1] == 0x4B && data[2] == 0x03 && data[3] == 0x04;
+            boolean isTar = data.length > 262 && (new String(data, 257, 5, StandardCharsets.US_ASCII)).equals("ustar");
+
+            // Cumulative uncompressed budget across every entry (notes + metadata).
+            ExpansionBudget budget = new ExpansionBudget(maxTotalExpansionBytes);
+            long planLimitBytes = StorageQuota.limitBytesForPlan(user.plan);
+            long importedBytes = 0;
+            int noteEntries = 0;
+
+            try {
+                if (isZip) {
+                    try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(data))) {
+                        ZipEntry entry;
+                        byte[] buffer = new byte[8192];
+                        while ((entry = zis.getNextEntry()) != null) {
+                            if (entry.getName().endsWith(".md")) {
+                                continue;
+                            }
+                            if (!entry.getName().endsWith(".json")) {
+                                continue;
+                            }
+                            try {
+                                JsonNode node = objectMapper.readTree(readZipEntryAsString(zis, buffer, budget));
+                                String type = node.has("type_") ? node.get("type_").asText() : "";
+                                String id = node.has("id") ? node.get("id").asText() : "";
+                                if (!id.isEmpty() && "2".equals(type)) {
+                                    String title = node.has("title") ? node.get("title").asText() : "Untitled";
+                                    folderMap.put(id, title);
+                                } else if (!id.isEmpty() && "1".equals(type)) {
+                                    String parentId = node.has("parent_id") ? node.get("parent_id").asText() : "";
+                                    if (!parentId.isEmpty()) {
+                                        noteMap.put(id, parentId);
+                                    }
+                                }
+                            } catch (WebApplicationException we) {
+                                throw we;
+                            } catch (Exception e) {
+                                LOG.debugf(e, "Could not parse Joplin metadata entry %s", entry.getName());
+                                messages.add("Warning: Could not parse metadata file");
+                            }
+                        }
+                    }
+
+                    try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(data))) {
+                        ZipEntry entry;
+                        byte[] buffer = new byte[8192];
+                        while ((entry = zis.getNextEntry()) != null) {
+                            if (!entry.getName().endsWith(".md")) {
+                                continue;
+                            }
+                            if (++noteEntries > maxImportEntries) {
+                                throw importLimitExceeded(
+                                        "Archive contains too many notes (limit "
+                                                + maxImportEntries + "); aborting the entire import");
+                            }
+                            try {
+                                String content = readZipEntryAsString(zis, buffer, budget);
+                                String filename = entry.getName();
+                                int dot = filename.lastIndexOf('.');
+                                if (dot < 0) {
+                                    continue;
+                                }
+                                String noteId = filename.substring(0, dot);
+                                List<String> folderTags = new ArrayList<>();
+                                String folderId = noteMap.get(noteId);
+                                if (folderId != null && folderMap.containsKey(folderId)) {
+                                    String folderTag = folderMap.get(folderId).replaceAll("[^a-zA-Z0-9\\s-]", "").trim();
+                                    if (!folderTag.isEmpty()) {
+                                        folderTags.add(folderTag);
+                                    }
+                                }
+                                Note note = buildJoplinNote(user, noteId, content, folderTags);
+                                long noteBytes = note.content == null ? 0L
+                                        : note.content.getBytes(StandardCharsets.UTF_8).length;
+                                if (quotaWouldExceed(currentUsed, importedBytes, noteBytes, planLimitBytes)) {
+                                    // Unchecked → the @Transactional import rolls back entirely.
+                                    throw importLimitExceeded(
+                                            "Import would exceed your plan storage limit of "
+                                                    + (planLimitBytes / (1024 * 1024)) + " MB; "
+                                                    + "the whole import was rolled back");
+                                }
+                                note.persist();
+                                importedBytes += noteBytes;
+                                imported++;
+                            } catch (WebApplicationException we) {
+                                throw we;
+                            } catch (Exception e) {
+                                errors++;
+                                LOG.debugf(e, "Failed to import Joplin ZIP entry %s", entry.getName());
+                                messages.add("Error importing note: could not read entry");
+                            }
+                        }
+                    }
+                } else {
+                    try (TarArchiveInputStream tis = new TarArchiveInputStream(new ByteArrayInputStream(data))) {
+                        TarArchiveEntry entry;
+                        byte[] buffer = new byte[8192];
+                        while ((entry = tis.getNextTarEntry()) != null) {
+                            if (entry.isDirectory()) {
+                                continue;
+                            }
+                            String name = entry.getName();
+                            if (!name.endsWith(".md")) {
+                                continue;
+                            }
+                            if (++noteEntries > maxImportEntries) {
+                                throw importLimitExceeded(
+                                        "Archive contains too many notes (limit "
+                                                + maxImportEntries + "); aborting the entire import");
+                            }
+                            try {
+                                String content = readTarEntryAsString(tis, buffer, budget);
+                                String filename = name.replaceFirst("^.*/", "");
+                                if (filename.isEmpty()) {
+                                    continue;
+                                }
+                                int dot = filename.lastIndexOf('.');
+                                if (dot < 0) {
+                                    continue;
+                                }
+                                String noteId = filename.substring(0, dot);
+                                Note note = buildJoplinNote(user, noteId, content, List.of());
+                                long noteBytes = note.content == null ? 0L
+                                        : note.content.getBytes(StandardCharsets.UTF_8).length;
+                                if (quotaWouldExceed(currentUsed, importedBytes, noteBytes, planLimitBytes)) {
+                                    throw importLimitExceeded(
+                                            "Import would exceed your plan storage limit of "
+                                                    + (planLimitBytes / (1024 * 1024)) + " MB; "
+                                                    + "the whole import was rolled back");
+                                }
+                                note.persist();
+                                importedBytes += noteBytes;
+                                imported++;
+                            } catch (WebApplicationException we) {
+                                throw we;
+                            } catch (Exception e) {
+                                errors++;
+                                LOG.debugf(e, "Failed to import Joplin TAR entry %s", name);
+                                messages.add("Error importing note: could not read entry");
+                            }
+                        }
+                    }
+                }
+            } catch (WebApplicationException we) {
+                // Unchecked → @Transactional rolls the whole import back.
+                throw we;
+            } catch (Exception e) {
+                LOG.warn("Failed to process JEX file", e);
+                return Response.status(Response.Status.BAD_REQUEST)
+                        .entity("Failed to process JEX file").build();
+            }
+
+            return Response.ok(new ImportResult(imported, errors, messages)).build();
+        } finally {
+            IMPORT_SEMAPHORE.release();
+        }
     }
     /**
      * Import a single Markdown file as a new note.
@@ -681,10 +819,11 @@ public class NoteResource {
      * whole entry is read, so multi-byte characters straddling the 8 KB buffer
      * boundary are not corrupted. A leading UTF-8 BOM is dropped so heading
      * detection ("# Title") is not defeated by it. Entries larger than the note
-     * content limit are rejected (defends against entries that expand to huge
-     * sizes).
+     * content limit are rejected, and every byte read is charged to the import's
+     * cumulative {@link ExpansionBudget} (which aborts the whole import with 413
+     * when decompressed data exceeds the configured total).
      */
-    private String readEntryAsString(InputStream entryStream, byte[] buffer) throws IOException {
+    private String readEntryAsString(InputStream entryStream, byte[] buffer, ExpansionBudget budget) throws IOException {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         int len;
         while ((len = entryStream.read(buffer)) > 0) {
@@ -692,6 +831,7 @@ public class NoteResource {
                 throw new IOException("archive entry exceeds "
                         + (MAX_CONTENT_LENGTH / (1024 * 1024)) + " MB");
             }
+            budget.add(len);
             out.write(buffer, 0, len);
         }
         return stripBom(out.toString(StandardCharsets.UTF_8));
@@ -723,12 +863,12 @@ public class NoteResource {
         return sanitized;
     }
 
-    private String readZipEntryAsString(ZipInputStream zis, byte[] buffer) throws IOException {
-        return readEntryAsString(zis, buffer);
+    private String readZipEntryAsString(ZipInputStream zis, byte[] buffer, ExpansionBudget budget) throws IOException {
+        return readEntryAsString(zis, buffer, budget);
     }
 
-    private String readTarEntryAsString(TarArchiveInputStream tis, byte[] buffer) throws IOException {
-        return readEntryAsString(tis, buffer);
+    private String readTarEntryAsString(TarArchiveInputStream tis, byte[] buffer, ExpansionBudget budget) throws IOException {
+        return readEntryAsString(tis, buffer, budget);
     }
 
     /**
