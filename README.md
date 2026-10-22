@@ -385,6 +385,13 @@ and kept, files only the deleted note used are removed immediately, and files th
 on another note start their grace clock right away. Deleting an **account** removes every note and attachment through
 `ON DELETE CASCADE` — instantly and completely.
 
+### Notes – Storage
+
+- `GET /api/notes/storage` – the authenticated user's usage:
+  - **Response:** `{ "usedBytes", "limitBytes", "noteCount", "notesBytes", "attachmentsBytes", "overQuota" }`
+  - `notesBytes` is the note markdown (`OCTET_LENGTH(content)`), `attachmentsBytes` the binary attachments, and
+    `usedBytes` their sum — so clients can show the plan meter split by kind
+
 ### Notes – Filters
 
 - **GET** `/api/notes` also accepts filter parameters, combined with AND (and with any search query):

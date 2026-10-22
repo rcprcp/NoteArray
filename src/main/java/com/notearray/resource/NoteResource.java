@@ -168,7 +168,8 @@ public class NoteResource {
 
     public record ImportResult(int imported, int errors, int attachments, List<String> messages) {}
 
-    public record StorageUsage(long usedBytes, long limitBytes, long noteCount, boolean overQuota) {}
+    public record StorageUsage(long usedBytes, long limitBytes, long noteCount,
+                               long notesBytes, long attachmentsBytes, boolean overQuota) {}
 
     /** Get the authenticated user from the session cookie. Returns null if not logged in. */
     private User getAuthenticatedUser() {
@@ -390,7 +391,8 @@ public class NoteResource {
 
     /**
      * Return the total storage (note markdown bytes + binary attachment bytes)
-     * across all notes owned by the authenticated user.
+     * across all notes owned by the authenticated user, split so clients can show
+     * how much of the plan the note text and the attachments each take.
      */
     @GET
     @Path("/storage")
@@ -402,16 +404,19 @@ public class NoteResource {
         Object[] row = (Object[]) Note.getEntityManager()
                 .createNativeQuery(
                         "SELECT "
-                                + "COALESCE((SELECT SUM(OCTET_LENGTH(content)) FROM notes WHERE owner_id = :owner), 0) "
-                                + "+ COALESCE((SELECT SUM(byte_size) FROM note_attachments WHERE owner_id = :owner), 0), "
+                                + "COALESCE((SELECT SUM(OCTET_LENGTH(content)) FROM notes WHERE owner_id = :owner), 0), "
+                                + "COALESCE((SELECT SUM(byte_size) FROM note_attachments WHERE owner_id = :owner), 0), "
                                 + "(SELECT COUNT(*) FROM notes WHERE owner_id = :owner)")
                 .setParameter("owner", user.id)
                 .getSingleResult();
-        long usedBytes = ((Number) row[0]).longValue();
-        long noteCount = ((Number) row[1]).longValue();
+        long notesBytes = ((Number) row[0]).longValue();
+        long attachmentsBytes = ((Number) row[1]).longValue();
+        long noteCount = ((Number) row[2]).longValue();
+        long usedBytes = notesBytes + attachmentsBytes;
         long limitBytes = StorageQuota.limitBytesForPlan(user.plan);
         boolean overQuota = usedBytes >= limitBytes;
-        return Response.ok(new StorageUsage(usedBytes, limitBytes, noteCount, overQuota)).build();
+        return Response.ok(new StorageUsage(usedBytes, limitBytes, noteCount,
+                notesBytes, attachmentsBytes, overQuota)).build();
     }
 
     /**

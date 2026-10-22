@@ -387,6 +387,8 @@ The **Storage Used** card in Personal Settings shows:
 
 - A badge like **"1.45 MB / 100 MB (Free)"** above a progress bar
 - Your plan limit, the number of notes, and the percent used
+- The bar has **two sections** — your note text and your attachments — with a legend underneath
+  (e.g. *Notes: 1.30 MB · Attachments: 6.49 MB*) so you can see which one is filling your plan
 - The bar turns **red at 90% or more** — a good signal to clean up or upgrade
 
 ### Upgrading or downgrading

@@ -74,7 +74,12 @@ export default function PersonalSettings({
   const [deletePassword, setDeletePassword] = useState('')
   const [deleteFieldError, setDeleteFieldError] = useState(null)
   const [deletingAccount, setDeletingAccount] = useState(false)
-  const [storageUsage, setStorageUsage] = useState({ usedBytes: 0, noteCount: 0 })
+  const [storageUsage, setStorageUsage] = useState({
+    usedBytes: 0,
+    noteCount: 0,
+    notesBytes: 0,
+    attachmentsBytes: 0,
+  })
 
   useEffect(() => {
     let active = true
@@ -85,6 +90,8 @@ export default function PersonalSettings({
           setStorageUsage({
             usedBytes: Number(res.usedBytes) || 0,
             noteCount: Number(res.noteCount) || 0,
+            notesBytes: Number(res.notesBytes) || 0,
+            attachmentsBytes: Number(res.attachmentsBytes) || 0,
           })
         }
       })
@@ -279,8 +286,17 @@ export default function PersonalSettings({
         {(() => {
           const currentPlanKey = (user.plan || 'free').toLowerCase()
           const currentPlan = PLANS.find((p) => p.key === currentPlanKey) || PLANS[0]
+          const { notesBytes, attachmentsBytes } = storageUsage
           const rawPct = (storageUsage.usedBytes / currentPlan.limitBytes) * 100
-          const displayPct = storageUsage.usedBytes > 0 ? Math.max(2, Math.min(100, rawPct)) : 0
+          // Two sections of the same bar: note text and attachments, each as a share
+          // of the plan limit. When the total is tiny the bar is scaled up so both
+          // parts stay visible (same minimum the single bar used to have).
+          const scale = rawPct > 0 && rawPct < 2 ? 2 / rawPct : 1
+          const notesPct = Math.min(100, (notesBytes / currentPlan.limitBytes) * 100 * scale)
+          const attachmentsPct = Math.min(100 - notesPct, (attachmentsBytes / currentPlan.limitBytes) * 100 * scale)
+          const over = rawPct >= 90
+          const notesColor = over ? 'red.7' : themeColor
+          const attachmentsColor = over ? 'red.4' : 'teal.6'
           return (
             <Stack gap="sm">
               <Group justify="space-between" align="center">
@@ -299,12 +315,20 @@ export default function PersonalSettings({
                     {formatBytes(storageUsage.usedBytes)} of {currentPlan.limitLabel} ({rawPct < 0.01 && storageUsage.usedBytes > 0 ? '<0.01' : rawPct.toFixed(2)}%) · {storageUsage.noteCount} note{storageUsage.noteCount === 1 ? '' : 's'}
                   </Text>
                 </Group>
-                <Progress
-                  value={displayPct}
-                  color={rawPct >= 90 ? 'red' : themeColor}
-                  size="lg"
-                  radius="xl"
-                />
+                <Progress.Root size="lg" radius="xl">
+                  <Progress.Section value={notesPct} color={notesColor} aria-label={`Notes ${formatBytes(notesBytes)}`} />
+                  <Progress.Section value={attachmentsPct} color={attachmentsColor} aria-label={`Attachments ${formatBytes(attachmentsBytes)}`} />
+                </Progress.Root>
+                <Group gap="lg" mt={6}>
+                  <Group gap={6} wrap="nowrap">
+                    <span style={{ width: 10, height: 10, borderRadius: 2, background: `var(--mantine-color-${notesColor.replace('.', '-')})`, display: 'inline-block' }} />
+                    <Text size="xs" c="dimmed">Notes: {formatBytes(notesBytes)}</Text>
+                  </Group>
+                  <Group gap={6} wrap="nowrap">
+                    <span style={{ width: 10, height: 10, borderRadius: 2, background: `var(--mantine-color-${attachmentsColor.replace('.', '-')})`, display: 'inline-block' }} />
+                    <Text size="xs" c="dimmed">Attachments: {formatBytes(attachmentsBytes)}</Text>
+                  </Group>
+                </Group>
               </div>
             </Stack>
           )
