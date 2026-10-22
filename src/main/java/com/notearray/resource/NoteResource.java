@@ -185,7 +185,8 @@ public class NoteResource {
      *   searchContent  - search the note content (default false)
      *   searchTags     - search the tags as a partial match (default false):
      *                    every tag token containing the query matches, so
-     *                    "grq" finds tokens like grq and grq/cobol
+     *                    "grq" finds tokens like grq and grq/cobol; notes
+     *                    without any tags are included as well
      * If q is provided, at least one of searchTitles / searchContent /
      * searchTags must be true (else 400).
      *
@@ -251,7 +252,10 @@ public class NoteResource {
                 // Partial tag search: every tag token containing the query
                 // matches (token = one space-delimited entry, possibly a
                 // hierarchical grq/cobol path), so "sup" finds super-duper.
-                or.append("(' ' || lower(coalesce(n.tags, '')) || ' ') LIKE :tagq");
+                // Notes with no tags at all are included too — they have no
+                // tags to match, so a tag search does not exclude them.
+                or.append("((' ' || lower(coalesce(n.tags, '')) || ' ') LIKE :tagq"
+                        + " OR btrim(coalesce(n.tags, '')) = '')");
                 params.put("tagq", "%" + escapeLike(q) + "%");
             }
             sql.append(or).append(")");

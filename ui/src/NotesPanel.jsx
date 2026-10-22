@@ -1327,7 +1327,8 @@ export default function NotesPanel({ registerActions } = {}) {
             <List.Item><b>Search Note Content</b> – match words in the body of your notes.</List.Item>
             <List.Item><b>Search Tags</b> – match tags by part of a word: "sup" finds
               tags like <i>super-duper</i> and <i>supper</i>, and "grq" finds notes in
-              folders like <i>grq</i> and <i>grq/cobol</i>.</List.Item>
+              folders like <i>grq</i> and <i>grq/cobol</i>. Notes with no tags are
+              included too.</List.Item>
           </List>
           <Text size="sm">
             Check any combination to search titles, content and tags together. Then type your

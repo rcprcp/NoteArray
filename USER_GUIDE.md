@@ -203,7 +203,7 @@ The header **Pinned** button is a *filter toggle* — click it to show **only pi
 Click **Search Notes** in the header (List Notes view) to open the search panel. It holds the text search and the list filters together:
 
 - **Text search**: the search box with its **Search** button (Enter also works) and **Clear**.
-- **Search Titles** / **Search Note Content** / **Search Tags**: choose where the text search looks. Tags are matched on **any part** of a tag — "sup" finds notes tagged *super-duper* or *supper*, and "grq" finds notes in folders *grq* and *grq/cobol* — so there is no separate tag picker.
+- **Search Titles** / **Search Note Content** / **Search Tags**: choose where the text search looks. Tags are matched on **any part** of a tag — "sup" finds notes tagged *super-duper* or *supper*, and "grq" finds notes in folders *grq* and *grq/cobol* — so there is no separate tag picker. Notes with **no tags** are included in tag searches too: they have no tags to match, so the tag scope does not exclude them.
 - **Find notes with attachments**: only notes that carry at least one attachment.
 - **Find notes with no tags**: only untagged notes. With no search text and no other boxes ticked it simply lists every untagged note. Ticking it unticks **Search Tags** (a note with no tags can't match a tag search), and ticking **Search Tags** unticks it again.
 

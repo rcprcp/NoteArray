@@ -393,7 +393,7 @@ UPDATE users SET superuser = FALSE WHERE email = 'user@example.com';
     - `q` – Search query (required when searching)
     - `searchTitles` – Search in note titles (boolean, default false)
     - `searchContent` – Search in note content (boolean, default false)
-    - `searchTags` – Search the tags as a partial match (boolean, default false): every tag token containing the query matches, so `q=sup` finds tags like `super-duper` and `supper`, and `q=grq` finds notes in folders `grq` and `grq/cobol`
+    - `searchTags` – Search the tags as a partial match (boolean, default false): every tag token containing the query matches, so `q=sup` finds tags like `super-duper` and `supper`, and `q=grq` finds notes in folders `grq` and `grq/cobol`. Notes with no tags at all are included too, since they have no tags to match
   - **Response:** Array of matching note objects, sorted by `createdAt` descending
   - Returns 401 if not authenticated
   - Returns 400 if q is provided but neither searchTitles nor searchContent nor searchTags is true
