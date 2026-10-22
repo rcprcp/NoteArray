@@ -58,7 +58,7 @@ Once signed in, the header at the top of every page is your control center:
 | Header item | What it does |
 |---|---|
 | **Create Note** | Opens the note editor to write a new note |
-| **List Notes** | Returns to your note list (clears active search/filters) |
+| **List Notes** | Returns to your note list (clears the search; the Pinned / Untagged / attachments filters stay as you set them) |
 | **Search Notes** | Toggles the search panel — text search with its scope checkboxes and the attachment / untagged filters (List Notes view only) |
 | **Pinned** | Filters the list to your pinned notes (List Notes view only) |
 | **Untagged** | Filters the list to notes with no tags (List Notes view only) |
@@ -197,11 +197,11 @@ Pin a note you use often:
 1. On the **List Notes** view (card or table), find the **pin icon** next to the note.
 2. Click it to pin (icon becomes filled). Click again to unpin.
 
-The header **Pinned** button is a *filter toggle* — click it to show **only pinned notes**; click again to show everything. It combines with your search text and the Search Notes panel's options, and stays on until you click it off (or press **List Notes**, which resets everything). Pinning does not change how the list is sorted (see [Sorting](#6-viewing-sorting--deleting) — sorting stays under your control).
+The header **Pinned** button is a *filter toggle* — click it to show **only pinned notes**; click again to show everything. It combines with your search text and the Search Notes panel's options, and stays on until you click it off (or clear it with the **Clear all filters** button). Pinning does not change how the list is sorted (see [Sorting](#6-viewing-sorting--deleting) — sorting stays under your control).
 
 ### Finding untagged notes
 
-The header **Untagged** button is a filter toggle like **Pinned**: click it to show **only notes with no tags**, click again to show everything. It combines with your search text, the Search Notes panel's options, and the **Pinned** button, and stays on until you click it off (or press **List Notes**).
+The header **Untagged** button is a filter toggle like **Pinned**: click it to show **only notes with no tags**, click again to show everything. It combines with your search text, the Search Notes panel's options, and the **Pinned** button, and stays on until you click it off (or clear it with the **Clear all filters** button).
 
 ### Search Notes panel
 
@@ -217,7 +217,7 @@ The header's **Pinned** and **Untagged** buttons are click-on, click-off list fi
 
 ### Active filters
 
-Any active search/filters appear as **removable chips** above the list, plus an **"N active filter(s)"** badge and a **Clear all filters** button. Your filter state is remembered in your browser (localStorage), so reloading the page keeps your view. Use **List Notes** in the header to reset everything.
+Any active search/filters appear as **removable chips** above the list, plus an **"N active filter(s)"** badge and a **Clear all filters** button. Your filter state is remembered in your browser (localStorage), so reloading the page keeps your view. **List Notes** in the header clears the search text but leaves the filter toggles (Pinned, Untagged, attachments) exactly as you set them — use the chips, the **Clear all filters** button, or the header buttons themselves to clear them.
 
 ---
 

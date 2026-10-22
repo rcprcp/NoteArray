@@ -469,7 +469,12 @@ export default function NotesPanel({ registerActions } = {}) {
 
   const reload = () => load(activeSearch, filters)
 
-  const resetAll = () => {
+  /**
+   * "List Notes": back to the plain list — closes the editor/panels and clears
+   * the search text. The Pinned / Untagged / attachments filters are *not*
+   * touched: they are modifiers the user switches on and off themselves.
+   */
+  const resetAll = async () => {
     clearAutoSaveTimer()
     setSearchVisible(false)
     setTagsVisible(false)
@@ -478,9 +483,10 @@ export default function NotesPanel({ registerActions } = {}) {
     setEditMode(false)
     setActiveSearch(null)
     setSearch(DEFAULT_SEARCH)
-    setFilters({ ...DEFAULT_FILTERS })
     setError(null)
     setFormError(null)
+    // filters are unchanged, so the filters effect will not reload for us.
+    await load(null, filters)
   }
 
   const openCreate = () => {
