@@ -22,7 +22,7 @@ NoteArray/
 │   │   │   │   ├── NoteResource.java          # REST endpoints for notes (CRUD + search + filter + import, ingest sanitization)
 │   │   │   │   └── SpaResource.java           # SPA route handler and unauthenticated redirect to /login
 │   │   │   ├── security/
-│   │   │   │   └── SecurityHeadersFilter.java # HTTP security headers (CSP, X-Frame-Options, nosniff, Referrer/Permissions, HSTS)
+│   │   │   │   └── SecurityHeadersFilter.java # Per-request X-Request-Id trace header (security headers live in application.properties)
 │   │   │   └── service/
 │   │   │       ├── SessionService.java        # Persisted session create/resolve/invalidate + scheduled purge
 │   │   │       ├── AuthenticationService.java # BCrypt credential check for login (timing-safe for unknown emails)
@@ -53,7 +53,7 @@ NoteArray/
 │       ├── resource/
 │       │   └── UserPasswordChangeTest.java    # Password change validation order and policy tests
 │       ├── security/
-│       │   └── SecurityHeadersFilterTest.java # Security headers, CSP, HSTS, and ingest sanitization tests
+│       │   └── SecurityHeadersFilterTest.java # Request-id handling, global security-header config, and ingest sanitization tests
 │       └── service/
 │           ├── LoginThrottlePolicyTest.java   # Backoff/lockout rule tests
 │           ├── ClientIpTest.java              # X-Forwarded-For parsing tests
@@ -613,7 +613,7 @@ The interactive Swagger UI allows you to test all endpoints directly from your b
 ### XSS Protection & Security Headers
 - **Render & Link Sanitization**: Note content is sanitized with **DOMPurify** on initial editor load and content updates, and the Tiptap `Link` extension restricts link protocols to `http:`, `https:`, `mailto:`, and relative URLs.
 - **Ingest Sanitization**: `NoteResource` strips `<script>`, `<iframe>`, `<object>`, `<embed>` elements, inline `on*=` attributes, and `javascript:`/`vbscript:`/`data:text/html` URIs on note create, update, and import.
-- **HTTP Security Headers**: `SecurityHeadersFilter` and `application.properties` emit `Content-Security-Policy` (`default-src 'self'; script-src 'self'; ... frame-ancestors 'none'`), `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy`, and `Strict-Transport-Security` (when `notearray.session.cookie-secure=true` in `prod`). The one deliberate exception: attachment downloads (`GET /api/attachments/{id}`) allow same-origin framing (`X-Frame-Options: SAMEORIGIN`, `frame-ancestors 'self'`) so the note preview modal can render PDFs in an `<iframe>`; no other site can embed them.
+- **HTTP Security Headers**: Set globally via `quarkus.http.header.*` in `application.properties`, so they apply to **every** response — including the static SPA document (`/`, `/index.html`, `/assets/*`) that a JAX-RS filter would never reach: `Content-Security-Policy` (`default-src 'self'; script-src 'self'; ... frame-ancestors 'self'`), `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy`, and `Strict-Transport-Security` in `prod`. `frame-ancestors 'self'` / `SAMEORIGIN` (rather than `'none'` / `DENY`) is deliberate: cross-site framing — i.e. clickjacking — stays blocked, while the note preview modal can still render attachments (`GET /api/attachments/{id}`) in a same-origin `<iframe>`. `SecurityHeadersFilter` now only generates/echoes `X-Request-Id`.
 
 ### Superuser Features (if applicable)
 - If you are a superuser, `GET /api/notes` returns all notes from all users
@@ -709,7 +709,7 @@ Backend unit tests run with JUnit 5 (no database or server required):
 mvn test
 ```
 
-Covered so far (36 unit tests across 6 test classes): login-throttle backoff/lockout rules (`LoginThrottlePolicyTest`), client-IP / `X-Forwarded-For` parsing (`ClientIpTest`), the password policy (`PasswordPolicyTest`), JAX-RS resource registration and SPA route redirects (`NoteArrayApplicationTest`), password change validation order and rules (`UserPasswordChangeTest`), and HTTP security headers + ingest XSS sanitization (`SecurityHeadersFilterTest`). `mvn clean package` runs the tests as part of the build.
+Covered so far (36 unit tests across 6 test classes): login-throttle backoff/lockout rules (`LoginThrottlePolicyTest`), client-IP / `X-Forwarded-For` parsing (`ClientIpTest`), the password policy (`PasswordPolicyTest`), JAX-RS resource registration and SPA route redirects (`NoteArrayApplicationTest`), password change validation order and rules (`UserPasswordChangeTest`), and request-id handling + global security-header config + ingest XSS sanitization (`SecurityHeadersFilterTest`). `mvn clean package` runs the tests as part of the build.
 
 ### Testing on Mobile Devices
 

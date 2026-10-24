@@ -109,7 +109,7 @@ Verify through the tunnel:
 ```bash
 URL=https://<your-domain>.ngrok-free.app
 curl -s -o /dev/null -w 'page: %{http_code}\n' $URL/
-curl -s $URL/q/health/ready | head -c 120                       # {"status":"UP",...}
+curl -s -o /dev/null -w 'api: %{http_code}\n' $URL/api/users/me  # 401 (app up; auth enforced)
 curl -s -o /dev/null -w 'signup: %{http_code}\n' -X POST $URL/api/users \
   -H 'Content-Type: application/json' \
   -d '{"name":"day0","email":"day0@example.com","password":"Smoke123!"}'
@@ -136,13 +136,13 @@ When you move to the Day-1 setup, **remove the ngrok hostname** from
 - [ ] **PostgreSQL** installed, role + database created, `max_connections` ≥ 100 (§3)
 - [ ] Application artifact built and deployed to `/opt/notearray/current` (§4)
 - [ ] `/etc/notearray/notearray.env` written with DB credentials + host validation, mode `0600` (§5)
-- [ ] `notearray.service` installed, `systemctl enable --now notearray`, health check green (§6 + §8)
+- [ ] `notearray.service` installed, `systemctl enable --now notearray`, service active (§6 + §8)
 - [ ] nginx site installed, `nginx -t` clean (§7)
 - [ ] **Let's Encrypt** certificate issued, HTTP→HTTPS redirect working, renewal timer enabled (§7)
 - [ ] Smoke tests pass (§8) — especially the **Host/Origin matrix** (proxy misconfiguration is the #1 day-one failure)
 - [ ] Backup timer installed **and a restore tested** (§9.1)
 - [ ] Certificate expiry monitoring in place (§9.5)
-- [ ] `/q/*` restricted at nginx except health; disk-space alerting on the DB volume (§7, §9.4)
+- [ ] `/q/*` blocked at nginx (health is disabled in prod); disk-space alerting on the DB volume (§7, §9.4)
 
 ---
 
@@ -470,9 +470,10 @@ Successfully validated 20 migrations … Current version of schema "public": 1.1
 Quick verification without nginx ✅:
 
 ```bash
-curl -fsS http://127.0.0.1:8080/q/health/ready | head -c 200   # {"status":"UP", ...}
-curl -fsS http://127.0.0.1:8080/q/health/live  | head -c 200
-curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/      # 200 (serves the built UI)
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/          # 200 (serves the built UI)
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/api/notes # 401 (auth route is up)
+# Health endpoints are disabled in the prod profile (§9.4), so a packaged jar has
+# no /q/health*; the two checks above are the availability check.
 ```
 
 ---
@@ -614,9 +615,8 @@ server {
         proxy_request_buffering on;      # spool big uploads to disk instead of memory
     }
 
-    # Health checks are for the host, not the internet. Block the rest of /q/* too.
-    location = /q/health/live  { allow 127.0.0.1; deny all; proxy_pass http://127.0.0.1:8080; proxy_set_header Host $host; }
-    location = /q/health/ready { allow 127.0.0.1; deny all; proxy_pass http://127.0.0.1:8080; proxy_set_header Host $host; }
+    # Block every /q/* (management) endpoint. There are none in prod — health is
+    # disabled, Swagger/OpenAPI/metrics too — but this is belt-and-braces.
     location /q/               { return 404; }
 }
 NGINX
@@ -626,8 +626,8 @@ sudo rm -f /etc/nginx/sites-enabled/default
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
-> `/q/swagger-ui`, `/q/openapi` and Prometheus metrics are **disabled in the prod profile** ✅ (they 404 in the
-> packaged jar). The `location /q/ { return 404; }` is belt-and-braces for the dev-only endpoints.
+> `/q/swagger-ui`, `/q/openapi`, Prometheus metrics and SmallRye Health are **disabled in the prod profile** ✅
+> (they 404 in the packaged jar). The `location /q/ { return 404; }` is belt-and-braces for dev-only endpoints.
 
 ### 7.3 Issue the certificate
 
@@ -703,9 +703,9 @@ curl -sI  http://<DNS_NAME>  | head -1                       # 301 → https
 curl -sI  https://<DNS_NAME> | head -1                       # 200
 curl -sI  https://<DNS_NAME> | grep -iE "strict-transport|content-security|x-frame" | head -4
 
-# 2. Health (direct and through nginx)
-curl -fsS http://127.0.0.1:8080/q/health/ready >/dev/null && echo "ready OK"
-curl -fsS https://<DNS_NAME>/q/health/ready -o /dev/null -w 'via nginx: %{http_code}\n'   # 403 from the internet is expected
+# 2. Health is disabled in prod (§9.4); check the app answers instead
+curl -s -o /dev/null -w 'direct: %{http_code}\n'    http://127.0.0.1:8080/   # 200
+curl -s -o /dev/null -w 'via nginx: %{http_code}\n' https://<DNS_NAME>/     # 200
 
 # 3. UI is served
 curl -s https://<DNS_NAME>/ | grep -o '<title>[^<]*</title>' | head -1
@@ -845,7 +845,7 @@ sudo cp -r /tmp/notearray-src/target/quarkus-app/. /opt/notearray/releases/$VERS
 sudo chown -R notearray:notearray /opt/notearray
 sudo ln -sfn /opt/notearray/releases/$VERSION /opt/notearray/current
 sudo systemctl restart notearray
-sleep 5 && curl -fsS http://127.0.0.1:8080/q/health/ready >/dev/null && echo "deploy OK"
+sleep 5 && curl -fsS -o /dev/null http://127.0.0.1:8080/ && echo "deploy OK"
 
 # rollback: point current at the previous release directory and restart
 sudo ln -sfn /opt/notearray/releases/<PREVIOUS_VERSION> /opt/notearray/current
@@ -861,12 +861,11 @@ if a release contains schema changes, roll back with a database restore (§9.1),
 ```bash
 # systemd knows when the service dies
 systemctl is-active notearray
-# liveness vs readiness (readiness includes a database check)
-curl -fsS http://127.0.0.1:8080/q/health/live  >/dev/null || echo "LIVENESS FAILED"
-curl -fsS http://127.0.0.1:8080/q/health/ready >/dev/null || echo "READINESS FAILED (db?)"
+# health endpoints are disabled in prod (§9.4); check the app still answers
+curl -fsS -o /dev/null http://127.0.0.1:8080/ || echo "APP NOT RESPONDING"
 ```
 
-Minimum alert set: service down (`systemctl is-active`), readiness failing, certificate expiry (§9.5),
+Minimum alert set: service down (`systemctl is-active`), app not responding, certificate expiry (§9.5),
 disk usage on the PostgreSQL data volume (attachments grow it), and backup timer failures
 (`systemctl list-timers`, journal for `notearray-backup`). Prometheus metrics are disabled in prod; if you
 want them, enable `quarkus.micrometer.export.prometheus.enabled=true` (then expose `/q/metrics` only to your
@@ -947,7 +946,7 @@ README/native notes before choosing that path.
 - [ ] TLS with auto-renewal verified (`certbot renew --dry-run`) and expiry alerting
 - [ ] `QUARKUS_HTTP_HOST_VALIDATION_ALLOWED_HOSTS` set to the real hostname (do not disable host validation)
 - [ ] `NOTEARRAY_RATE_LIMIT_TRUST_PROXY=true` **only** behind the reverse proxy that overwrites `X-Forwarded-For`
-- [ ] `/q/*` blocked publicly except the health endpoints (allowed from localhost)
+- [ ] `/q/*` blocked publicly (health endpoints are disabled in prod)
 - [ ] SSH key-only, root login disabled, fail2ban active, `unattended-upgrades` enabled
 - [ ] Backups encrypted, copied off-host, and a restore has been rehearsed
 - [ ] Superuser accounts reviewed and minimal
@@ -971,7 +970,7 @@ Useful one-liners:
 
 ```bash
 systemctl restart notearray && journalctl -u notearray -f          # restart + follow logs
-curl -fsS http://127.0.0.1:8080/q/health/ready                     # readiness (includes DB)
+curl -fsS -o /dev/null -w 'app: %{http_code}\n' http://127.0.0.1:8080/   # 200
 sudo -u postgres psql -d notearray -c "\dt"                        # tables (Flyway-managed)
 sudo -u postgres psql -d notearray -c "select version from flyway_schema_history order by installed_rank desc limit 1;"
 du -sh /var/lib/postgresql/*/main                                  # data volume size (attachments!)

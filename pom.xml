@@ -82,8 +82,10 @@
             <artifactId>quarkus-scheduler</artifactId>
         </dependency>
 
-        <!-- Liveness/readiness endpoints at /q/health (REVIEW finding #23);
-             the PostgreSQL datasource contributes a readiness check automatically. -->
+        <!-- SmallRye Health: supplies /q/health (liveness/readiness, with an
+             automatic PostgreSQL readiness check). Disabled in the prod profile
+             (%prod.quarkus.smallrye-health.enabled=false) because the endpoints
+             answer unauthenticated and report datastore connectivity. -->
         <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-smallrye-health</artifactId>
