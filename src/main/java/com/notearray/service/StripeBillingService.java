@@ -21,7 +21,7 @@ import org.jboss.logging.Logger;
 
 /**
  * Coordinates subscription cancellation with Stripe before deleting a paid
- * ('pro' or 'premium') user account.
+ * ('pro' or 'premium') user account or downgrading that account to the free plan.
  */
 @ApplicationScoped
 public class StripeBillingService {
@@ -58,7 +58,12 @@ public class StripeBillingService {
     /**
      * Cancel the user's recurring Stripe subscription (if they are on a paid plan
      * or have an active {@code stripeSubscriptionId}) and await confirmation from
-     * Stripe before allowing account deletion.
+     * Stripe before allowing an account deletion or a downgrade to the free plan.
+     *
+     * <p>When a subscription id is present the cancellation is mandatory: without
+     * a configured API key, or when Stripe does not confirm the cancellation,
+     * this returns {@code false} and the caller must not commit its free-plan /
+     * deletion change — otherwise the customer would keep being charged.
      *
      * @return {@code true} when the subscription is confirmed canceled (or no
      *         active paid subscription exists in Stripe), {@code false} if Stripe
@@ -76,11 +81,16 @@ public class StripeBillingService {
             return true;
         }
 
+        String apiKey = stripeApiKey != null ? stripeApiKey.orElse(null) : null;
+        if (hasSubscriptionId && (apiKey == null || apiKey.isBlank())) {
+            LOG.warn("Cannot cancel the Stripe subscription: notearray.stripe.api-key is not configured");
+            return false;
+        }
+
         user.planStatus = User.PLAN_STATUS_PENDING_CANCELLATION;
         user.planUpdatedAt = Instant.now();
 
-        String apiKey = stripeApiKey != null ? stripeApiKey.orElse(null) : null;
-        if (hasSubscriptionId && apiKey != null && !apiKey.isBlank()) {
+        if (hasSubscriptionId) {
             boolean confirmed = cancelStripeSubscriptionHttp(apiKey.trim(), user.stripeSubscriptionId.trim());
             if (!confirmed) {
                 return false;
@@ -218,7 +228,7 @@ public class StripeBillingService {
         }
     }
 
-    boolean cancelStripeSubscriptionHttp(String apiKey, String subscriptionId) {
+    protected boolean cancelStripeSubscriptionHttp(String apiKey, String subscriptionId) {
         try {
             HttpClient client = HttpClient.newBuilder()
                     .connectTimeout(STRIPE_TIMEOUT)

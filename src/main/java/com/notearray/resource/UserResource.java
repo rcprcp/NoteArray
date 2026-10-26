@@ -395,7 +395,8 @@ public class UserResource {
                 user,
                 req,
                 stripeProCheckoutUrl != null ? stripeProCheckoutUrl.orElse(null) : null,
-                stripePremiumCheckoutUrl != null ? stripePremiumCheckoutUrl.orElse(null) : null);
+                stripePremiumCheckoutUrl != null ? stripePremiumCheckoutUrl.orElse(null) : null,
+                stripeBilling);
     }
 
     @POST
@@ -420,7 +421,8 @@ public class UserResource {
             User user,
             PlanCheckoutRequest req,
             String proCheckoutUrl,
-            String premiumCheckoutUrl) {
+            String premiumCheckoutUrl,
+            StripeBillingService billing) {
         if (req == null || isBlank(req.plan())) {
             return Response.status(Response.Status.BAD_REQUEST).entity("plan is required").build();
         }
@@ -429,12 +431,7 @@ public class UserResource {
             return Response.status(Response.Status.BAD_REQUEST).entity("invalid plan").build();
         }
         if ("free".equals(targetPlan)) {
-            user.plan = "free";
-            user.planStatus = User.PLAN_STATUS_ACTIVE;
-            user.pendingPlan = null;
-            user.stripeSubscriptionId = null;
-            user.planUpdatedAt = Instant.now();
-            return Response.ok(new PlanCheckoutResponse(user, null, user.planStatus)).build();
+            return downgradeToFree(user, billing);
         }
         // Paid tier ('pro' or 'premium'): record pending Stripe checkout state.
         user.pendingPlan = targetPlan;
@@ -442,6 +439,46 @@ public class UserResource {
         user.planUpdatedAt = Instant.now();
         String checkoutUrl = "pro".equals(targetPlan) ? proCheckoutUrl : premiumCheckoutUrl;
         return Response.ok(new PlanCheckoutResponse(user, checkoutUrl, user.planStatus)).build();
+    }
+
+    /**
+     * Downgrade to the free plan. A live Stripe subscription is cancelled first
+     * ({@code DELETE /v1/subscriptions/{id}}) and the local plan only moves to
+     * free once Stripe confirms it; otherwise the customer would keep being
+     * charged for a plan the app no longer shows. On failure the pre-request
+     * state is restored so the user stays on their paid plan and can retry.
+     */
+    static Response downgradeToFree(User user, StripeBillingService billing) {
+        String previousStatus = user.planStatus;
+        Instant previousUpdatedAt = user.planUpdatedAt;
+
+        boolean cancelled;
+        if (billing == null) {
+            // No billing service: only safe when there is nothing that could be
+            // live in Stripe (free plan and no stored subscription id).
+            cancelled = (user.plan == null || "free".equalsIgnoreCase(user.plan.trim()))
+                    && isBlank(user.stripeSubscriptionId);
+        } else {
+            cancelled = billing.awaitSubscriptionCancellation(user);
+        }
+
+        if (!cancelled) {
+            // The helper flags pending_cancellation before calling Stripe; put
+            // the row back exactly as it was so a failed downgrade is a no-op.
+            user.planStatus = previousStatus;
+            user.planUpdatedAt = previousUpdatedAt;
+            return Response.status(Response.Status.BAD_GATEWAY)
+                    .entity("Could not confirm subscription cancellation with Stripe. "
+                            + "Your plan was not changed to Free.")
+                    .build();
+        }
+
+        user.plan = "free";
+        user.planStatus = User.PLAN_STATUS_ACTIVE;
+        user.pendingPlan = null;
+        user.stripeSubscriptionId = null;
+        user.planUpdatedAt = Instant.now();
+        return Response.ok(new PlanCheckoutResponse(user, null, user.planStatus)).build();
     }
 
     static Response applyPlanSync(User user, PlanSyncRequest req, StripeBillingService billing) {

@@ -52,7 +52,7 @@ NoteArray/
 │   │   └── resources/
 │   │       ├── application.properties         # Quarkus config (DB, Flyway, OpenAPI, sessions, limits, headers, Stripe)
 │   │       └── db/migration/                  # Flyway migrations V1.0.0 … V1.1.9 (20 files)
-│   └── test/java/com/notearray/               # 138 JUnit 5 unit tests across 18 classes
+│   └── test/java/com/notearray/               # 146 JUnit 5 unit tests across 19 classes
 │       ├── NoteArrayApplicationTest.java      # JAX-RS registration and SPA route redirects
 │       ├── resource/                          # AttachmentQuota, ImportLimits, JoplinAttachmentImport,
 │       │                                      # JoplinFolderTags, NoteVersionConflict, StripeWebhook,
@@ -60,7 +60,7 @@ NoteArray/
 │       │                                      # UserPasswordChange, UserPlanSync
 │       ├── security/                          # CsrfFilterTest, SecurityHeadersFilterTest
 │       └── service/                           # AttachmentCleanupService, ClientIp, EmailPolicy,
-│                                              # LoginThrottlePolicy, PasswordPolicy
+│                                              # LoginThrottlePolicy, PasswordPolicy, StripeBillingService
 ├── ui/                                        # React + Vite frontend (mobile-responsive)
 │   ├── src/
 │   │   ├── App.jsx                            # App shell, responsive header, routes (/login, /notes, /settings, /help/*)
@@ -360,9 +360,12 @@ requires verifying a Stripe Checkout session with the server's API key, and the 
 - `POST /api/users/{id}/plan/checkout` – Start or change a plan
   - **Request body:** `{ "plan": "free" | "pro" | "premium" }`
   - **Response:** `{ "user", "checkoutUrl", "status" }`
-  - `free` is applied immediately (`checkoutUrl` is `null`) and clears any Stripe subscription id
+  - `free` cancels any live Stripe subscription first, then clears the plan and subscription id;
+    if Stripe cannot confirm the cancellation the request fails with **502** and the paid plan is left
+    unchanged, so a downgrade can never leave a recurring charge behind
   - `pro` / `premium` return the configured Stripe Payment Link URL and mark the account `pending_checkout`
-  - Returns 400 for a missing/unknown plan; 401/404 as for other user endpoints
+  - Returns 400 for a missing/unknown plan, **502** when a required Stripe cancellation is not confirmed;
+    401/404 as for other user endpoints
 
 - `POST /api/users/{id}/plan/sync` – Confirm or cancel a pending checkout
   - **Request body:** `{ "action": "confirm" | "cancel", "checkoutSessionId": "cs_..." }`
@@ -616,8 +619,9 @@ The interactive Swagger UI allows you to test all endpoints directly from your b
 - Three tiers: **Free** (100 MB), **Pro** (1 GB, $2/month) and **Premium** (5 GB, $4/month); storage counts note text **and** attachments
 - Upgrading opens **Stripe Checkout** and records a pending plan; returning to the app verifies the session server-side,
   and **Cancel Checkout** clears the pending state
-- Downgrading to Free applies immediately in NoteArray; it does **not** contact Stripe, so a paid subscription must
-  still be cancelled from the Stripe customer portal/dashboard (or by the operator) to stop future charges
+- Downgrading to Free cancels the paid Stripe subscription first (server-side) and only then applies the Free
+  limits; if Stripe cannot be reached or does not confirm, the downgrade is refused and the paid plan stays
+  active, so a recurring charge is never silently left running
 - At the storage limit a banner disables **Create Note** and **Import**; deleting or shrinking notes is always allowed
 - See [USER_GUIDE.md](USER_GUIDE.md) §9 and [STRIPE.md](STRIPE.md) for the operator setup
 
@@ -830,7 +834,7 @@ Backend unit tests run with JUnit 5 (no database or server required):
 mvn test
 ```
 
-Covered so far (**138 unit tests across 18 test classes**): login-throttle backoff/lockout rules (`LoginThrottlePolicyTest`), client-IP / `X-Forwarded-For` parsing (`ClientIpTest`), password and email policies (`PasswordPolicyTest`, `EmailPolicyTest`), JAX-RS registration and SPA redirects (`NoteArrayApplicationTest`), password change and account-deletion confirmation (`UserPasswordChangeTest`, `UserDeleteVerificationTest`), CSRF filtering (`CsrfFilterTest`), security headers / request-id / ingest XSS sanitization (`SecurityHeadersFilterTest`), note version conflicts (`NoteVersionConflictTest`), tag prefix filtering (`TagPrefixFilterTest`), imports and Joplin folder/attachment mapping (`ImportLimitsTest`, `JoplinFolderTagsTest`, `JoplinAttachmentImportTest`), attachment quotas and cleanup (`AttachmentQuotaTest`, `AttachmentCleanupServiceTest`), and plan/Stripe handling (`UserPlanSyncTest`, `StripeWebhookResourceTest`). `mvn clean package` runs the tests as part of the build.
+Covered so far (**146 unit tests across 19 test classes**): login-throttle backoff/lockout rules (`LoginThrottlePolicyTest`), client-IP / `X-Forwarded-For` parsing (`ClientIpTest`), password and email policies (`PasswordPolicyTest`, `EmailPolicyTest`), JAX-RS registration and SPA redirects (`NoteArrayApplicationTest`), password change and account-deletion confirmation (`UserPasswordChangeTest`, `UserDeleteVerificationTest`), CSRF filtering (`CsrfFilterTest`), security headers / request-id / ingest XSS sanitization (`SecurityHeadersFilterTest`), note version conflicts (`NoteVersionConflictTest`), tag prefix filtering (`TagPrefixFilterTest`), imports and Joplin folder/attachment mapping (`ImportLimitsTest`, `JoplinFolderTagsTest`, `JoplinAttachmentImportTest`), attachment quotas and cleanup (`AttachmentQuotaTest`, `AttachmentCleanupServiceTest`), plan/Stripe handling (`UserPlanSyncTest`, `StripeWebhookResourceTest`), and the Stripe subscription cancellation that precedes a downgrade or account deletion (`StripeBillingServiceTest`, wire-level `DELETE /v1/subscriptions/{id}` against a local HTTP server). `mvn clean package` runs the tests as part of the build.
 
 ### Testing on Mobile Devices
 

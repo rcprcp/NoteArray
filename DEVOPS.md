@@ -388,6 +388,9 @@ NOTEARRAY_RATE_LIMIT_TRUST_PROXY=true
 # NOTEARRAY_ATTACHMENTS_PURGE_INTERVAL=1h
 
 # ---- Stripe billing (optional — leave out to disable paid plans; see STRIPE.md) ----
+# If an account is on a paid plan, the api-key is also required to cancel that
+# subscription before a downgrade to Free or an account deletion; otherwise the
+# request is refused with 502 rather than leaving a recurring charge running.
 # NOTEARRAY_STRIPE_API_KEY=sk_live_...
 # NOTEARRAY_STRIPE_PRO_PRICE_ID=price_...
 # NOTEARRAY_STRIPE_PREMIUM_PRICE_ID=price_...
@@ -930,6 +933,7 @@ README/native notes before choosing that path.
 | Login "succeeds" then immediately logged out | Secure cookie not stored (plain HTTP) or clock skew | use HTTPS (prod sets `cookie-secure=true`); check `timedatectl` |
 | **413** on import/upload | nginx `client_max_body_size` too small | set `client_max_body_size 64m;` and reload nginx |
 | **503 "A note import is already running"** | more than 2 concurrent imports (by design) | retry later (`Retry-After: 60`) |
+| **502 on downgrade/deletion: "Could not confirm subscription cancellation with Stripe"** | Stripe cancellation failed, or `NOTEARRAY_STRIPE_API_KEY` is missing while a subscription id is stored | configure the API key / retry when Stripe is reachable; the paid plan is intentionally left unchanged |
 | **504** during a big import | nginx `proxy_read_timeout` too low | raise to `600s` (§7.2) |
 | 5xx under load, log shows JDBC connection acquisition timeout | DB pool exhausted (default 20) | raise `QUARKUS_DATASOURCE_JDBC_MAX_SIZE` (and PostgreSQL `max_connections`), or add capacity |
 | UI loads but API calls fail | mixing origins (UI on another vhost) or CSP/CORS assumptions violated | serve UI and API from the same hostname (§7.2) |

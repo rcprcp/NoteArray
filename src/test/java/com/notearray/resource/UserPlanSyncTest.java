@@ -9,8 +9,10 @@ import com.notearray.entity.User;
 import com.notearray.resource.UserResource.PlanCheckoutRequest;
 import com.notearray.resource.UserResource.PlanCheckoutResponse;
 import com.notearray.resource.UserResource.PlanSyncRequest;
+import com.notearray.service.FakeStripeBillingService;
 import com.notearray.service.StripeBillingService;
 import jakarta.ws.rs.core.Response;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -31,7 +33,8 @@ class UserPlanSyncTest {
                 user,
                 new PlanCheckoutRequest("pro"),
                 "https://checkout.stripe.com/pay/pro_123",
-                "https://checkout.stripe.com/pay/premium_456");
+                "https://checkout.stripe.com/pay/premium_456",
+                null);
 
         assertEquals(200, res.getStatus());
         PlanCheckoutResponse body = (PlanCheckoutResponse) res.getEntity();
@@ -44,7 +47,7 @@ class UserPlanSyncTest {
 
     @Test
     void syncConfirmRequiresCheckoutSessionId() {
-        UserResource.applyPlanCheckout(user, new PlanCheckoutRequest("premium"), null, null);
+        UserResource.applyPlanCheckout(user, new PlanCheckoutRequest("premium"), null, null, null);
 
         Response res = UserResource.applyPlanSync(
                 user, new PlanSyncRequest("confirm", null), new StripeBillingService());
@@ -56,7 +59,7 @@ class UserPlanSyncTest {
 
     @Test
     void syncConfirmOnlyActivatesWhenStripeVerifiesTheSession() {
-        UserResource.applyPlanCheckout(user, new PlanCheckoutRequest("premium"), null, null);
+        UserResource.applyPlanCheckout(user, new PlanCheckoutRequest("premium"), null, null, null);
 
         // A billing service without a configured API key cannot verify anything,
         // so the plan must NOT be activated even though a session id is presented.
@@ -76,7 +79,7 @@ class UserPlanSyncTest {
     @Test
     void syncCancelRevertsPendingPlanAndKeepsCurrentPlanActive() {
         user.plan = "pro";
-        UserResource.applyPlanCheckout(user, new PlanCheckoutRequest("premium"), null, null);
+        UserResource.applyPlanCheckout(user, new PlanCheckoutRequest("premium"), null, null, null);
 
         Response res = UserResource.applyPlanSync(user, new PlanSyncRequest("cancel", null), null);
 
@@ -87,13 +90,19 @@ class UserPlanSyncTest {
     }
 
     @Test
-    void downgradeToFreeImmediatelyActivatesFreeAndClearsSubscription() {
+    void downgradeToFreeCancelsStripeSubscriptionBeforeClearingThePlan() {
         user.plan = "premium";
         user.stripeSubscriptionId = "sub_xyz789";
+        FakeStripeBillingService billing = new FakeStripeBillingService(true).samplingPlanOf(user);
 
-        Response res = UserResource.applyPlanCheckout(user, new PlanCheckoutRequest("free"), null, null);
+        Response res = UserResource.applyPlanCheckout(
+                user, new PlanCheckoutRequest("free"), null, null, billing);
 
         assertEquals(200, res.getStatus());
+        assertEquals(List.of("sub_xyz789"), billing.cancelledSubscriptionIds);
+        // Stripe was asked to cancel while the local plan was still premium; the
+        // row only becomes free after the cancellation was confirmed.
+        assertEquals(List.of("premium"), billing.plansDuringCancellation);
         assertEquals("free", user.plan);
         assertNull(user.pendingPlan);
         assertNull(user.stripeSubscriptionId);
@@ -101,8 +110,51 @@ class UserPlanSyncTest {
     }
 
     @Test
+    void downgradeToFreeLeavesThePaidPlanWhenStripeRefusesToCancel() {
+        user.plan = "pro";
+        user.planStatus = User.PLAN_STATUS_PAST_DUE;
+        user.stripeSubscriptionId = "sub_keep_me";
+        FakeStripeBillingService billing = new FakeStripeBillingService(false).samplingPlanOf(user);
+
+        Response res = UserResource.applyPlanCheckout(
+                user, new PlanCheckoutRequest("free"), null, null, billing);
+
+        assertEquals(502, res.getStatus());
+        assertEquals(List.of("sub_keep_me"), billing.cancelledSubscriptionIds);
+        assertEquals("pro", user.plan);
+        assertEquals("sub_keep_me", user.stripeSubscriptionId);
+        // A failed attempt must be a no-op, not leave a half-applied downgrade.
+        assertEquals(User.PLAN_STATUS_PAST_DUE, user.planStatus);
+    }
+
+    @Test
+    void downgradeToFreeWithNothingInStripeDoesNotCallTheBillingService() {
+        user.plan = "free";
+        FakeStripeBillingService billing = new FakeStripeBillingService(false);
+
+        Response res = UserResource.applyPlanCheckout(
+                user, new PlanCheckoutRequest("free"), null, null, billing);
+
+        assertEquals(200, res.getStatus());
+        assertTrue(billing.cancelledSubscriptionIds.isEmpty());
+        assertEquals("free", user.plan);
+        assertEquals(User.PLAN_STATUS_ACTIVE, user.planStatus);
+    }
+
+    @Test
+    void downgradeToFreeWithoutBillingServiceRefusesToDropAPaidPlan() {
+        user.plan = "pro";
+
+        Response res = UserResource.applyPlanCheckout(
+                user, new PlanCheckoutRequest("free"), null, null, null);
+
+        assertEquals(502, res.getStatus());
+        assertEquals("pro", user.plan);
+    }
+
+    @Test
     void rejectsInvalidPlanOrSyncAction() {
-        Response badPlan = UserResource.applyPlanCheckout(user, new PlanCheckoutRequest("enterprise"), null, null);
+        Response badPlan = UserResource.applyPlanCheckout(user, new PlanCheckoutRequest("enterprise"), null, null, null);
         assertEquals(400, badPlan.getStatus());
 
         Response badAction = UserResource.applyPlanSync(user, new PlanSyncRequest("unknown", null), null);
@@ -130,11 +182,11 @@ class UserPlanSyncTest {
 
     @Test
     void deleteAccountAwaitsStripeCancellationForPaidPlansAndBlocksPendingUpgrades() {
-        StripeBillingService billing = new StripeBillingService();
+        StripeBillingService billing = new FakeStripeBillingService(true);
         assertNull(UserResource.cancelSubscriptionAndValidateDeletion(user, billing));
 
         // Free user who is in the middle of upgrading to Pro (pending_checkout) is blocked until resolved
-        UserResource.applyPlanCheckout(user, new PlanCheckoutRequest("pro"), null, null);
+        UserResource.applyPlanCheckout(user, new PlanCheckoutRequest("pro"), null, null, null);
         Response pendingRes = UserResource.cancelSubscriptionAndValidateDeletion(user, billing);
         assertNotNull(pendingRes);
         assertEquals(400, pendingRes.getStatus());
@@ -157,5 +209,19 @@ class UserPlanSyncTest {
         assertEquals("free", user.plan);
         assertEquals(User.PLAN_STATUS_CANCELED, user.planStatus);
         assertNull(user.stripeSubscriptionId);
+    }
+
+    @Test
+    void deleteAccountIsRefusedWhenStripeDoesNotConfirmCancellation() {
+        user.plan = "pro";
+        user.stripeSubscriptionId = "sub_live_999";
+        FakeStripeBillingService failing = new FakeStripeBillingService(false);
+
+        Response res = UserResource.cancelSubscriptionAndValidateDeletion(user, failing);
+
+        assertNotNull(res);
+        assertEquals(502, res.getStatus());
+        assertEquals("pro", user.plan);
+        assertEquals("sub_live_999", user.stripeSubscriptionId);
     }
 }

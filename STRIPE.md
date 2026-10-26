@@ -18,6 +18,10 @@ in a request body is ever trusted for billing state. Concretely:
   `stripeSubscriptionId` **exclusively from `StripeBillingService
   .verifyCheckoutSession(...)` output**, which calls Stripe with the server API
   key. Unverifiable confirm → 422; pending checkout state is kept so it can be retried.
+- `POST /api/users/{id}/plan/checkout` with `plan: free` cancels the stored
+  subscription (`DELETE /v1/subscriptions/{id}`) **before** writing `plan=free`;
+  an unconfirmed cancellation (or a missing API key while a subscription id
+  exists) returns 502 and leaves the paid plan unchanged.
 - Downgrade-ish sync actions (`cancel`, `past_due`, `subscription_deleted`) are
   client-callable but can only *lower* billing state — they are interim until
   Layer 3 moves them behind the webhook.
@@ -105,7 +109,7 @@ Implementation (`StripeWebhookResource`, branch `agent/stripe-webhook`):
    boundaries (300 s passes, 301 fails, future-dated fails), wrong secret,
    tampered body, multi-`v1` acceptance; lifecycle handlers keep/clear exactly
    the right fields; sync endpoint asserts legacy client actions now 400
-   while `cancel`/`confirm` round-trip. Suite 138 tests / 18 classes.
+   while `cancel`/`confirm` round-trip. Suite 146 tests / 19 classes.
 
 ### Stripe-side prerequisite (user action, one-time)
 

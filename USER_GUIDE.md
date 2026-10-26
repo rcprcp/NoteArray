@@ -400,7 +400,7 @@ The **Storage Used** card in Personal Settings shows:
 What happens next:
 
 - **Upgrading to Pro or Premium** sends you to a **Stripe checkout page** to enter payment. NoteArray marks your plan as *"Pending Stripe Checkout."* After payment, Stripe sends you back to the app; the plan is **verified with Stripe and activated automatically** — there is no confirmation button to click. If you cancel at checkout, click **Cancel Checkout** to stay on your old plan.
-- **Downgrading to Free is instant** — no Stripe step, since there's nothing to pay in the app. NoteArray does **not** contact Stripe here, so if you subscribed to a paid plan, cancel that subscription too (from the Stripe receipt/customer portal, or ask the operator) to stop future charges.
+- **Downgrading to Free** cancels your paid Stripe subscription first and applies the Free plan once Stripe confirms the cancellation. If Stripe cannot confirm, your plan is left unchanged — retry later; no recurring charge is left running in the background.
 - If a payment falls behind (*past due*), a red alert appears asking you to update your payment method.
 
 Changing plans keeps all your notes; only your limit changes.
@@ -473,6 +473,8 @@ Where messages come from and what to do:
 | *"Failed to load notes: …"* | Note list couldn't be fetched. | Usually transient. Reload the page; sign in again if it also says *"Session expired"*. |
 | *"Plan change failed"* / *"Stripe sync failed"* | The Stripe step couldn't complete. | Retry from Personal Settings; check your Stripe checkout session. |
 | *"Payment not verified"* | The Stripe return URL had no checkout session id, so the plan could not be confirmed. | Click the plan again so the session can be verified, or contact support if you were charged. |
+| *"Could not confirm subscription cancellation with Stripe. Your plan was not changed to Free."* | A downgrade needs Stripe to confirm the subscription is cancelled, and that call failed. | Retry the downgrade later; if it keeps failing, contact the operator. |
+| *"Could not confirm subscription cancellation with Stripe. Your account was not deleted to prevent recurring charges."* | Account deletion on a paid plan stops when Stripe cannot confirm cancellation. | Retry later; the account and its notes are still intact. |
 | *"Password is required to delete your account"* / *"Current password is incorrect"* | Account deletion needs your current password. | Re-enter it carefully. |
 | *"Please cancel or complete your pending Stripe checkout before deleting your account."* | A plan upgrade is mid-flight. | Finish the Stripe checkout, or click **Cancel Checkout**, then delete the account. |
 | *"A note import is already running; try again in a minute"* | Two imports are already running (the server allows two at a time). | Wait a minute and retry. |
