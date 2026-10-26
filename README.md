@@ -2,6 +2,17 @@
 
 A modern note-taking application built with **Quarkus** (Java 25), **Panache ORM**, **PostgreSQL**, and a **React** UI with **Vite** and **Mantine**. Works great on desktop, tablet, and mobile devices.
 
+## Documentation
+
+| Document | Audience | Contents |
+|---|---|---|
+| **README.md** (this file) | developers & operators | features, REST API, configuration, build |
+| **[USER_GUIDE.md](USER_GUIDE.md)** | end users | day-to-day use, plans and billing, troubleshooting |
+| **[DEVOPS.md](DEVOPS.md)** | operators | fresh-server deployment, nginx/TLS, backups, runbook |
+| **[STRIPE.md](STRIPE.md)** | operators | Stripe products, Payment Links, webhook setup |
+| **[SECURITY_SCAN.md](SECURITY_SCAN.md)** | developers & operators | security scan results and hardened defaults |
+| **[REVIEW.md](REVIEW.md)** | developers | code-review findings and their resolutions |
+
 ## Project Structure
 
 ```
@@ -13,15 +24,19 @@ NoteArray/
 │   │   │   ├── NoteArrayApplication.java       # JAX-RS application root (@ApplicationPath "/")
 │   │   │   ├── entity/
 │   │   │   │   ├── BaseEntity.java            # Base class with UUID id and timestamps
-│   │   │   │   ├── User.java                  # User entity with unique name/email, theme_color, last_login, superuser flag
-│   │   │   │   ├── Note.java                  # Note entity with title, markdown content, and space-delimited tags
+│   │   │   │   ├── User.java                  # User entity: unique name/email, theme_color, last_login, superuser, plan + Stripe state
+│   │   │   │   ├── Note.java                  # Note entity with title, markdown content, tags, pinned flag, version
+│   │   │   │   ├── NoteAttachment.java        # Attachment blob (BYTEA) + filename/content type, orphan tracking
 │   │   │   │   ├── Session.java               # Session entity backing persistent logins (token hash, user, expiry)
 │   │   │   │   └── LoginThrottle.java         # Throttle state (per-email backoff, per-IP hourly windows)
 │   │   │   ├── resource/
-│   │   │   │   ├── UserResource.java          # REST endpoints for users (CRUD + login/logout, throttled, password policy)
-│   │   │   │   ├── NoteResource.java          # REST endpoints for notes (CRUD + search + filter + import, ingest sanitization)
+│   │   │   │   ├── UserResource.java          # Users: CRUD + login/logout, plan checkout/sync, throttle, password/email policy
+│   │   │   │   ├── NoteResource.java          # Notes: CRUD, search, filters, storage, imports, attachment upload/list
+│   │   │   │   ├── AttachmentResource.java    # Attachment download/preview (?download=1) and delete
+│   │   │   │   ├── StripeWebhookResource.java # Signature-verified, downgrade-only Stripe lifecycle webhook
 │   │   │   │   └── SpaResource.java           # SPA route handler and unauthenticated redirect to /login
 │   │   │   ├── security/
+│   │   │   │   ├── CsrfFilter.java            # Origin / Sec-Fetch-Site check for state-changing requests
 │   │   │   │   └── SecurityHeadersFilter.java # Per-request X-Request-Id trace header (security headers live in application.properties)
 │   │   │   └── service/
 │   │   │       ├── SessionService.java        # Persisted session create/resolve/invalidate + scheduled purge
@@ -29,47 +44,36 @@ NoteArray/
 │   │   │       ├── LoginThrottleService.java  # Rate-limit decisions: backoff/lockout + per-IP hourly budgets
 │   │   │       ├── LoginThrottlePolicy.java   # Pure backoff rules (1s doubling to 64s, lockout after 8 failures)
 │   │   │       ├── ClientIp.java              # Client address for rate limiting (X-Forwarded-For opt-in)
-│   │   │       └── PasswordPolicy.java        # Password rules (8+ chars, uppercase, lowercase, digit)
+│   │   │       ├── PasswordPolicy.java        # Password rules (8+ chars, uppercase, lowercase, digit)
+│   │   │       ├── EmailPolicy.java           # Email/name normalization and format validation
+│   │   │       ├── StorageQuota.java          # Plan storage limits and per-attachment size cap
+│   │   │       ├── AttachmentCleanupService.java # Orphan marking, note-deletion settlement, scheduled purge
+│   │   │       └── StripeBillingService.java  # Stripe Checkout verification and subscription cancellation (see STRIPE.md)
 │   │   └── resources/
-│   │       ├── application.properties         # Quarkus config (DB, Flyway, OpenAPI, sessions, rate limits, security headers)
-│   │       └── db/migration/
-│   │           ├── V1.0.0__create_users_and_notes.sql
-│   │           ├── V1.0.1__add_theme_color_to_users.sql
-│   │           ├── V1.0.2__add_title_to_notes.sql
-│   │           ├── V1.0.3__add_last_login_to_users.sql
-│   │           ├── V1.0.4__add_superuser_to_users.sql
-│   │           ├── V1.0.5__insert_initial_user.sql
-│   │           ├── V1.0.6__add_fulltext_search_to_notes.sql
-│   │           ├── V1.0.7__add_tags_to_notes.sql
-│   │           ├── V1.0.8__add_pinned_to_notes.sql
-│   │           ├── V1.0.9__add_session_to_users.sql
-│   │           ├── V1.1.0__create_sessions_table.sql
-│   │           ├── V1.1.1__add_unique_constraint_to_users_name.sql
-│   │           ├── V1.1.2__remove_seeded_test_user.sql
-│   │           ├── V1.1.3__add_notes_created_at_index.sql
-│   │           └── V1.1.4__create_login_throttle.sql
-│   └── test/java/com/notearray/
-│       ├── NoteArrayApplicationTest.java      # JAX-RS registration and SPA route redirect tests
-│       ├── resource/
-│       │   └── UserPasswordChangeTest.java    # Password change validation order and policy tests
-│       ├── security/
-│       │   └── SecurityHeadersFilterTest.java # Request-id handling, global security-header config, and ingest sanitization tests
-│       └── service/
-│           ├── LoginThrottlePolicyTest.java   # Backoff/lockout rule tests
-│           ├── ClientIpTest.java              # X-Forwarded-For parsing tests
-│           └── PasswordPolicyTest.java        # Password rule tests
+│   │       ├── application.properties         # Quarkus config (DB, Flyway, OpenAPI, sessions, limits, headers, Stripe)
+│   │       └── db/migration/                  # Flyway migrations V1.0.0 … V1.1.9 (20 files)
+│   └── test/java/com/notearray/               # 138 JUnit 5 unit tests across 18 classes
+│       ├── NoteArrayApplicationTest.java      # JAX-RS registration and SPA route redirects
+│       ├── resource/                          # AttachmentQuota, ImportLimits, JoplinAttachmentImport,
+│       │                                      # JoplinFolderTags, NoteVersionConflict, StripeWebhook,
+│       │                                      # TagPrefixFilter, UserDeleteVerification,
+│       │                                      # UserPasswordChange, UserPlanSync
+│       ├── security/                          # CsrfFilterTest, SecurityHeadersFilterTest
+│       └── service/                           # AttachmentCleanupService, ClientIp, EmailPolicy,
+│                                              # LoginThrottlePolicy, PasswordPolicy
 ├── ui/                                        # React + Vite frontend (mobile-responsive)
 │   ├── src/
-│   │   ├── App.jsx                            # Main app shell with responsive header and routing (/login, /notes, /settings)
+│   │   ├── App.jsx                            # App shell, responsive header, routes (/login, /notes, /settings, /help/*)
 │   │   ├── HeaderActions.jsx                  # Dynamic right-to-left header action overflow menu
-│   │   ├── PersonalSettings.jsx               # Personal settings view (profile details, light/dark/auto + color theme, password change, logout)
-│   │   ├── main.jsx                           # React entry point with session check and theme management
+│   │   ├── HelpPage.jsx                       # In-app FAQ, Privacy Policy and Security Notes pages
+│   │   ├── PersonalSettings.jsx               # Profile, appearance, password, storage meter, plans, delete account
+│   │   ├── main.jsx                           # React entry point with session check, theme and plan syncing
 │   │   ├── api.js                             # Fetch wrapper for REST API (includes credentials)
+│   │   ├── filters.js                         # Persisted list filters, API serialization, active-filter chips
 │   │   ├── LoginPage.jsx                      # Login and signup page
-│   │   ├── NotesPanel.jsx                     # Note management UI with rich text editor, tags, search, import, auto-save, and DOMPurify sanitization
-│   │   ├── FilterPanel.jsx                    # Tag filters panel
+│   │   ├── NotesPanel.jsx                     # Notes UI: editor, tags, search panel, attachments, import, auto-save
 │   │   ├── ThemeButton.jsx                    # Theme color palette constants and picker
-│   │   ├── UserMenu.jsx                       # Legacy user menu components
+│   │   ├── UserMenu.jsx                       # Legacy user menu components (unused)
 │   │   └── index.css                          # Mobile-first responsive styles
 │   ├── vite.config.js                         # Vite configuration
 │   ├── index.html                             # HTML template with viewport meta
@@ -80,7 +84,7 @@ NoteArray/
 ## Prerequisites
 
 - **Java 25** (JDK)
-- **Maven 3.8+**
+- **Maven 3.9+** (required by Quarkus 3.40)
 - **Node.js 20.19+** (or 22.12+) and **npm**
 - **PostgreSQL** running locally (or configure DB connection)
 
@@ -142,11 +146,16 @@ UPDATE users SET superuser = TRUE WHERE email = 'you@example.com';
 ### `users` Table
 - `id` (UUID, primary key)
 - `name` (VARCHAR 255, unique, required)
-- `email` (VARCHAR 320, unique, required)
+- `email` (VARCHAR 320, unique, required; trimmed and lowercased on write)
 - `password_hash` (VARCHAR 255, BCrypt hashed, never returned in API responses)
 - `theme_color` (VARCHAR 32, Mantine color name, default: `'blue'`)
 - `last_login` (TIMESTAMP, nullable, updated on successful login)
 - `superuser` (BOOLEAN, default: FALSE, read-only for application, set via psql only)
+- `plan` (VARCHAR 32, default `'free'`; `free`, `pro` or `premium`)
+- `plan_status` (VARCHAR 32, default `'active'`; also `pending_checkout`, `pending_cancellation`, `past_due`, `canceled`)
+- `pending_plan` (VARCHAR 32, nullable, target tier while a Stripe Checkout is pending)
+- `stripe_customer_id` / `stripe_subscription_id` (VARCHAR 255, nullable)
+- `plan_updated_at` (TIMESTAMP, nullable, last plan/Stripe transition)
 - `created_at` (TIMESTAMP, set on insert)
 - `updated_at` (TIMESTAMP, auto-updated on modification)
 
@@ -164,6 +173,19 @@ UPDATE users SET superuser = TRUE WHERE email = 'you@example.com';
 - `updated_at` (TIMESTAMP, auto-updated on modification)
 
 Indexed on `owner_id` for efficient owner-based queries. GIN indexes on `title_tsv` and `content_tsv` for fast full-text search.
+
+### `note_attachments` Table
+- `id` (UUID, primary key)
+- `note_id` (UUID, foreign key → notes.id, ON DELETE CASCADE) – the note the file was uploaded to
+- `owner_id` (UUID, foreign key → users.id, ON DELETE CASCADE)
+- `filename` (VARCHAR 255), `content_type` (VARCHAR 128), `byte_size` (BIGINT)
+- `data` (BYTEA, the binary file; max 10 MB per file)
+- `orphaned_at` (TIMESTAMP, nullable) – set when no note links the file any more; the purge job deletes it after the grace window
+- `created_at` / `updated_at` (TIMESTAMP)
+
+Indexed on `note_id`, `owner_id`, and (partially) `orphaned_at`. Attachments are **linked from note markdown**
+(`/api/attachments/{id}`), not owned exclusively by one note: a file referenced by several notes is kept until the
+last link is gone. Because blobs live in PostgreSQL, they are included in a normal `pg_dump` backup.
 
 ### `sessions` Table
 - `token_hash` (VARCHAR 64, primary key, SHA-256 hash of the session token; the raw token is never stored)
@@ -293,7 +315,7 @@ UPDATE users SET superuser = FALSE WHERE email = 'user@example.com';
 - `POST /api/users` – Create a new user (public, no authentication required)
   - **Request body:** `{ "name": "...", "email": "...", "password": "..." }`
   - **Response:** User object
-  - Returns 400 if any required field is missing or the password fails the policy (see Password Policy)
+  - Returns 400 if any required field is missing, the email/name is malformed, the password fails the policy (see Password Policy), or a `plan` is supplied (`plan cannot be set directly; use /plan/checkout`)
   - Returns 409 if name or email already exists
   - Returns 429 with a `Retry-After` header when the IP's hourly signup budget is exhausted
 
@@ -318,11 +340,42 @@ UPDATE users SET superuser = FALSE WHERE email = 'user@example.com';
   - Changing the password invalidates **all** of that user's sessions and expires the caller's session cookie so they must log in again with the new password
 
 - `DELETE /api/users/{id}` – Delete a user
+  - **Request body:** `{ "currentPassword": "..." }` (required)
   - **Response:** 204 No Content
   - Returns 401 if not authenticated
   - Returns 404 if user doesn't exist or caller lacks permission
-  - Cascades to all notes owned by that user
+  - Returns 400 if the password is missing or does not match (`Password is required to delete your account` / `Current password is incorrect`)
+  - Returns 400 while a Stripe checkout is pending (“cancel or complete it first”)
+  - For paid plans the subscription is cancelled with Stripe **first** and deletion proceeds only once Stripe
+    confirms; otherwise the request fails with **502** (`Could not confirm subscription cancellation with Stripe…`),
+    so no recurring charge is left behind
+  - Cascades to all notes and attachments owned by that user
   - Superusers can delete any user; regular users can only delete themselves
+
+### Plans & Billing
+
+Plan state is written **only** by the server: the tier is never accepted from a request body, paid activation
+requires verifying a Stripe Checkout session with the server's API key, and the webhook is downgrade-only.
+
+- `POST /api/users/{id}/plan/checkout` – Start or change a plan
+  - **Request body:** `{ "plan": "free" | "pro" | "premium" }`
+  - **Response:** `{ "user", "checkoutUrl", "status" }`
+  - `free` is applied immediately (`checkoutUrl` is `null`) and clears any Stripe subscription id
+  - `pro` / `premium` return the configured Stripe Payment Link URL and mark the account `pending_checkout`
+  - Returns 400 for a missing/unknown plan; 401/404 as for other user endpoints
+
+- `POST /api/users/{id}/plan/sync` – Confirm or cancel a pending checkout
+  - **Request body:** `{ "action": "confirm" | "cancel", "checkoutSessionId": "cs_..." }`
+  - `confirm` requires `checkoutSessionId`; the session is fetched from Stripe and the plan is taken from the verified
+    price id, never from the request. Returns **400** without a session id, **422** if Stripe cannot verify it
+  - `cancel` clears the pending state
+  - `past_due` / `canceled` cannot be reported by a client — those are webhook-only
+
+- `POST /api/stripe/webhook` – Stripe lifecycle webhook (public, no session)
+  - Requires a valid `Stripe-Signature` HMAC-SHA256 header; missing/invalid/stale signatures return **400**
+  - Returns **503** when `notearray.stripe.webhook-secret` is not configured
+  - Handles downgrade-only events (subscription deleted → `free`, payment failure → `past_due`); unknown events return 200
+  - See [STRIPE.md](STRIPE.md) for dashboard setup
 
 ### Notes – CRUD
 
@@ -340,7 +393,7 @@ UPDATE users SET superuser = FALSE WHERE email = 'user@example.com';
   - **Request body:** `{ "title": "...", "content": "...", "tags": "..." }`
   - **Response:** Note object with id and timestamps
   - Returns 401 if not authenticated
-  - Returns 400 if title is missing or blank
+  - Returns 400 if `title` is missing/blank or `content` is missing (send `""` for an empty note)
   - Content is stored as markdown
   - Tags are space-delimited and optional
   - Note is always owned by the authenticated user (ownerId is not accepted in the request)
@@ -362,13 +415,16 @@ UPDATE users SET superuser = FALSE WHERE email = 'user@example.com';
   - Returns 401 if not authenticated
   - Returns 404 if note doesn't exist or caller lacks permission
   - Superusers can delete any note; regular users can only delete their own
-  - The note's attachments are removed with it (database `ON DELETE CASCADE`)
+  - Attachments are settled in the same request: a file that another note still links is kept (re-homed to that
+    note), a file only this note used is removed immediately, and a file this note referenced but that lives on
+    another note starts its orphan grace clock
 
 ### Notes – Attachments
 
 - `POST /api/notes/{id}/attachments?filename=...` – Upload one image (PNG/JPEG/GIF/WebP) or PDF (body is the raw file, max 10 MB)
-  - **Response:** `{ "id", "noteId", "filename", "contentType", "byteSize", "url" }`
-  - Counts against the plan's storage; returns 413 when the plan quota would be exceeded
+  - **Response:** 201 with `{ "id", "noteId", "filename", "contentType", "byteSize", "url" }`
+  - Returns 400 for an unsupported type or empty body, 413 when the file exceeds 10 MB or the plan quota would be exceeded
+  - Counts against the plan's storage
 - `GET /api/notes/{id}/attachments` – Metadata for the attachments the note's text **links to** (a file shared by several notes is listed by each of them)
 - `GET /api/attachments/{id}` – Download/preview the bytes (`?download=1` forces a save)
 - `DELETE /api/attachments/{id}?fromNote={noteId}` – Delete an attachment
@@ -391,6 +447,8 @@ on another note start their grace clock right away. Deleting an **account** remo
   - **Response:** `{ "usedBytes", "limitBytes", "noteCount", "notesBytes", "attachmentsBytes", "overQuota" }`
   - `notesBytes` is the note markdown (`OCTET_LENGTH(content)`), `attachmentsBytes` the binary attachments, and
     `usedBytes` their sum — so clients can show the plan meter split by kind
+  - Limits are per plan: **free 100 MB**, **pro 1 GB**, **premium 5 GB**. Creating notes/imports and uploading
+    attachments is refused with **413** at the limit, while shrinking or deleting an existing note is always allowed
 
 ### Notes – Filters
 
@@ -440,6 +498,9 @@ on another note start their grace clock right away. Deleting an **account** remo
   - Returns 401 if not authenticated
   - Returns 400 if file is invalid
   - Returns 413 if the archive exceeds 50 MB (individual entries are also capped at 10 MB)
+  - Decompressed size is capped at 256 MB cumulatively (anti zip-bomb) and at 10,000 notes per import; at most
+    **2 imports** run at a time — further requests get **503** with `Retry-After`
+  - The plan quota is enforced per note; if the import would overshoot the plan the whole transaction rolls back with **413**, so an import can fill but never exceed a plan
   - Detects archive format: ZIP (folder/note JSON metadata) or TAR (raw markdown export)
   - TAR (JEX) imports also bring attachments: `resources/<resourceId>.<ext>` blobs referenced by
     `[name.ext](:/<resourceId>)` links become attachments named after the link text, and the note's
@@ -476,6 +537,10 @@ When the backend is running in development mode (`mvn quarkus:dev`), you can acc
 - **OpenAPI Spec (JSON):** http://localhost:8080/q/openapi?format=json
 - **Swagger UI (Interactive):** http://localhost:8080/q/swagger-ui
 - **Metrics (Prometheus):** http://localhost:8080/q/metrics
+- **Health:** http://localhost:8080/q/health (`/q/health/live`, `/q/health/ready`)
+
+The packaged (`prod`) build **disables all four** (OpenAPI, Swagger UI, metrics and health), so `/q/*` 404s on a
+production jar. A plain `GET /` is the production availability check; see [DEVOPS.md](DEVOPS.md) §9.4.
 
 The interactive Swagger UI allows you to test all endpoints directly from your browser.
 
@@ -512,17 +577,21 @@ The interactive Swagger UI allows you to test all endpoints directly from your b
   - Auto-login after successful signup
 - **Personal Settings & Logout** – Clicking the avatar in the header opens the Personal Settings page in the main content area:
   - **Logout button** in the upper-right of the main content area (directly below the avatar) clears the session cookie and returns to the login page
-  - **My profile** table displaying Name, Email, Theme, Last login, Created, Updated, and ID
+  - **My profile** table displaying Name, Email, Plan (with Stripe status), Theme, Last login, Created, Updated, and ID
+  - **Storage Used** card with a two-section bar (note text vs. attachments), plan limit, note count and percentage; the bar turns red at 90%
+  - **Available Plans** cards (Free / Pro / Premium) with upgrade/downgrade, Stripe checkout return handling and a past-due alert
   - **Theme** card with **Appearance** (**Light / Dark / Auto**) above the 14 Mantine **Color** palettes
   - **Security / Change Password** form requiring Current Password (verified first), New Password, and Verify New Password; upon success, all sessions are invalidated and the user is logged out to `/login`
+  - **Delete Account** card requiring the current password (and Stripe cancellation confirmation on paid plans)
 
 ### Note Management
-- **List notes** – Responsive view that adapts to screen size
+- **List notes** – Responsive view that adapts to screen size, with a **card / list view toggle** on every device
   - **Desktop:** Table with Created, Updated, and Title columns (all sortable)
   - **Mobile:** Card view with note title, dates, and tags
   - Default sort: Created, descending (newest first)
   - Click column headers (desktop) to sort; click again to reverse direction
   - Tags displayed as badges below each note's title
+  - A paperclip badge marks notes with attachments (hover shows the count)
   - Star icon to pin/unpin notes as favorites
 - **Create note** – "Create note" in the header opens an inline editor with Title, Tags, and Rich Text Editor fields
   - Title is required and shown in the list
@@ -534,6 +603,27 @@ The interactive Swagger UI allows you to test all endpoints directly from your b
   - Only changed fields are sent to the server on update
   - Pin/unpin toggle from the note list
 - **Delete note** – Confirmation shows the note's title
+
+### Attachments
+- **Drag-and-drop or paste** images (PNG/JPEG/GIF/WebP) and PDFs directly into the editor; each file is max **10 MB**
+- Images render inline; PDFs appear as a `📄` file link
+- An **Attachments (n)** list under the Tags field shows Preview / Download / Delete for the files the note links to
+- A **preview modal** renders the file in a same-origin frame with **Download** and **Open in New Tab**
+- Dropping a file into an untitled note fills the title from the file name
+- Deleting a note keeps files that another note still links; files no longer linked by any note are reclaimed after a 24 h grace period (configurable)
+
+### Plans, Storage & Billing
+- Three tiers: **Free** (100 MB), **Pro** (1 GB, $2/month) and **Premium** (5 GB, $4/month); storage counts note text **and** attachments
+- Upgrading opens **Stripe Checkout** and records a pending plan; returning to the app verifies the session server-side,
+  and **Cancel Checkout** clears the pending state
+- Downgrading to Free applies immediately in NoteArray; it does **not** contact Stripe, so a paid subscription must
+  still be cancelled from the Stripe customer portal/dashboard (or by the operator) to stop future charges
+- At the storage limit a banner disables **Create Note** and **Import**; deleting or shrinking notes is always allowed
+- See [USER_GUIDE.md](USER_GUIDE.md) §9 and [STRIPE.md](STRIPE.md) for the operator setup
+
+### Help & About
+- The header **Help/About** menu opens the in-app **FAQ**, **Privacy Policy** and **Security Notes** pages (`/help/faq`,
+  `/help/privacy`, `/help/security`)
 
 ### Tags
 - **Tags field** – Space-delimited text input in note editor
@@ -567,16 +657,18 @@ The interactive Swagger UI allows you to test all endpoints directly from your b
 - **Live preview** – Editor supports TipTap's rich text rendering with markdown shortcuts
 
 ### Advanced Search & Filtering
-- **Responsive header actions** – Header includes **Create Note**, **List Notes**, **Search Notes**, **Pinned**, **Untagged**, **Import**, and the user avatar. When viewport width is constrained, items collapse right-to-left into an overflow (`...`) menu, and Search/Pinned/Untagged/Import controls are disabled when outside the List Notes view.
+- **Responsive header actions** – Header includes **Create Note**, **List Notes**, **Search Notes**, **Pinned**, **Untagged**, **Import**, **Help/About** and the user avatar. When viewport width is constrained, items collapse right-to-left into an overflow (`...`) menu, and Search/Pinned/Untagged/Import controls are disabled when outside the List Notes view.
 - **Search Notes panel** – One header button opens the combined search panel: the text search box with its **Search Titles / Search Note Content / Search Tags** scope checkboxes plus the **Find notes with attachments** filter. Toggled with the **Search Notes** header button
-  - Add tags by typing (space-delimited) or multi-select from existing tags
-  - Notes must have all selected tags
+  - There is no separate tag picker: tags are found through the **Search Tags** scope, which matches any part of a tag
+    (so `sup` finds `super-duper`, and `grq` finds notes in `grq` and `grq/cobol`)
 - **Pinned button** – **Pinned** toggle button in the header filters directly to pinned notes
+- **Untagged button** – **Untagged** toggle filters to notes with no tags
 - **Active filter badges** showing which filters are applied
   - Clear individual filters with X button
   - "Clear all filters" button to reset all filters
   - Active filter count indicator
   - Filter state persists to browser `localStorage` and restores on page reload
+  - **List Notes** clears the search text but keeps the Pinned / Untagged / attachment filters
 
 ### Full-Text Search
 - **Search bar** – Type your search query
@@ -585,9 +677,12 @@ The interactive Swagger UI allows you to test all endpoints directly from your b
   - **Desktop:** Always-visible checkboxes
   - **Search Titles** – Match words in note titles
   - **Search Note Content** – Match words in note content
-  - Both can be checked together for comprehensive search
+  - **Search Tags** – Partial match inside tag tokens (including hierarchical `a/b/c` tags); notes with no tags are
+    included because they have no tags to exclude them
+  - Any combination can be checked together for comprehensive search
 - **Search results** – Shows matching notes with result count
-- **Smart search** – Word-based, case-insensitive, ignores common words and word endings
+- **Smart search** – Word-based and case-insensitive for titles/content (stop words ignored, word endings normalized);
+  tag matching is a partial substring match
 - **Help modal** – Click search with no checkboxes to see instructions
 - **Combined with filters** – Use search and filters together for powerful discovery
 
@@ -654,9 +749,10 @@ The app will be available at `http://localhost:8080` with both the backend API a
 
 ### Production Configuration
 
-Database credentials are read from environment variables. **Set these in production** — the built-in defaults point at the local dev database (`localhost:5432/bob`):
+Database credentials are read from environment variables. In the `prod` profile there are **no defaults** — a packaged
+JAR refuses to start unless all three are set (the defaults below apply to local development only):
 
-| Variable | Default | Description |
+| Variable | Dev default | Description |
 |---|---|---|
 | `NOTEARRAY_DB_URL` | `jdbc:postgresql://localhost:5432/bob` | JDBC connection URL |
 | `NOTEARRAY_DB_USERNAME` | `bob` | Database username |
@@ -669,6 +765,31 @@ Rate-limit settings (defaults suit local development):
 | `NOTEARRAY_RATE_LIMIT_LOGIN_PER_HOUR_PER_IP` | `120` | Hourly login request budget per client IP |
 | `NOTEARRAY_RATE_LIMIT_SIGNUP_PER_HOUR_PER_IP` | `30` | Hourly signup request budget per client IP |
 | `NOTEARRAY_RATE_LIMIT_TRUST_PROXY` | `false` | Honor `X-Forwarded-For` when resolving client IPs (only enable behind a trusted reverse proxy) |
+
+Import and attachment bounds:
+
+| Variable | Default | Description |
+|---|---|---|
+| `NOTEARRAY_IMPORT_MAX_ARCHIVE_BYTES` | `52428800` (50 MB) | Maximum compressed JEX upload |
+| `NOTEARRAY_IMPORT_MAX_TOTAL_EXPANSION_BYTES` | `268435456` (256 MB) | Cumulative decompressed size cap (zip-bomb defense) |
+| `NOTEARRAY_IMPORT_MAX_ENTRIES` | `10000` | Maximum notes per import |
+| `NOTEARRAY_ATTACHMENTS_ORPHAN_GRACE` | `PT24H` | Grace window before an unreferenced attachment is purged |
+| `NOTEARRAY_ATTACHMENTS_PURGE_INTERVAL` | `1h` | How often the orphan purge job runs |
+
+Stripe billing (optional — leave unset to keep paid plans unavailable; full setup in [STRIPE.md](STRIPE.md)):
+
+| Variable | Default | Description |
+|---|---|---|
+| `NOTEARRAY_STRIPE_API_KEY` | — | Secret key used to verify Checkout sessions and cancel subscriptions |
+| `NOTEARRAY_STRIPE_PRO_PRICE_ID` | — | Stripe price id mapped to the `pro` tier during verification |
+| `NOTEARRAY_STRIPE_PREMIUM_PRICE_ID` | — | Stripe price id mapped to the `premium` tier |
+| `NOTEARRAY_STRIPE_PRO_CHECKOUT_URL` | — | Payment Link for Pro (must include `{CHECKOUT_SESSION_ID}` in its success URL) |
+| `NOTEARRAY_STRIPE_PREMIUM_CHECKOUT_URL` | — | Payment Link for Premium |
+| `NOTEARRAY_STRIPE_WEBHOOK_SECRET` | — | `whsec_…` signing secret; without it `/api/stripe/webhook` returns 503 |
+
+Production also sets `notearray.session.cookie-secure=true` and sends HSTS. The OpenAPI, Swagger UI, metrics and
+health endpoints are disabled in `prod`. See [DEVOPS.md](DEVOPS.md) for the systemd environment file and proxy
+requirements (host validation + CSRF rely on `Host`/`Origin` being forwarded correctly).
 
 ### Mobile Deployment
 - The app is fully responsive and works on mobile devices
@@ -709,7 +830,7 @@ Backend unit tests run with JUnit 5 (no database or server required):
 mvn test
 ```
 
-Covered so far (36 unit tests across 6 test classes): login-throttle backoff/lockout rules (`LoginThrottlePolicyTest`), client-IP / `X-Forwarded-For` parsing (`ClientIpTest`), the password policy (`PasswordPolicyTest`), JAX-RS resource registration and SPA route redirects (`NoteArrayApplicationTest`), password change validation order and rules (`UserPasswordChangeTest`), and request-id handling + global security-header config + ingest XSS sanitization (`SecurityHeadersFilterTest`). `mvn clean package` runs the tests as part of the build.
+Covered so far (**138 unit tests across 18 test classes**): login-throttle backoff/lockout rules (`LoginThrottlePolicyTest`), client-IP / `X-Forwarded-For` parsing (`ClientIpTest`), password and email policies (`PasswordPolicyTest`, `EmailPolicyTest`), JAX-RS registration and SPA redirects (`NoteArrayApplicationTest`), password change and account-deletion confirmation (`UserPasswordChangeTest`, `UserDeleteVerificationTest`), CSRF filtering (`CsrfFilterTest`), security headers / request-id / ingest XSS sanitization (`SecurityHeadersFilterTest`), note version conflicts (`NoteVersionConflictTest`), tag prefix filtering (`TagPrefixFilterTest`), imports and Joplin folder/attachment mapping (`ImportLimitsTest`, `JoplinFolderTagsTest`, `JoplinAttachmentImportTest`), attachment quotas and cleanup (`AttachmentQuotaTest`, `AttachmentCleanupServiceTest`), and plan/Stripe handling (`UserPlanSyncTest`, `StripeWebhookResourceTest`). `mvn clean package` runs the tests as part of the build.
 
 ### Testing on Mobile Devices
 
@@ -744,7 +865,7 @@ Covered so far (36 unit tests across 6 test classes): login-throttle backoff/loc
 - **Markdown in notes:** Content is stored as markdown, so you can export, version control, and sync notes easily.
 - **Tags and search:** Tags are space-delimited and searchable with the **Search Tags** scope (partial tag matches) in the Search Notes panel.
 - **Importing notes:** Use the Import feature to migrate notes from Joplin or upload individual markdown files. Imports automatically preserve metadata and convert folder structures to tags.
-- **Auto-save behavior:** Changes to existing notes are automatically saved after 2 seconds of inactivity. New notes require manual save first. The debounce delay prevents excessive server requests while providing responsive save behavior. No changes are lost when closing the modal—pending changes are flushed before closing.
+- **Auto-save behavior:** Both new and existing notes are saved automatically after 2 seconds of inactivity — the first save creates the note (once it has a title or an attachment), later ones update it in place. Pending changes are flushed when the editor closes. The debounce delay prevents excessive server requests while providing responsive save behavior.
 - **Responsive design:** Mobile-first CSS approach with breakpoints at 768px and 1024px. Use browser DevTools to test different screen sizes. Touch targets are 44px minimum on mobile for accessibility.
 - **Mobile optimization:** Modals go full-screen on mobile, search filters collapse, notes display as cards instead of tables. Font sizes scale with viewport using `clamp()`.
 - **Filter state management:** Active filters are managed in NotesPanel state and persisted to `localStorage` for recovery on page reload. Filters are combined with search queries using AND logic.
@@ -764,8 +885,10 @@ Covered so far (36 unit tests across 6 test classes): login-throttle backoff/loc
 - **BCrypt** (Quarkus Elytron) – password hashing and verification
 - **SmallRye OpenAPI** – automatic OpenAPI 3.0 spec generation and Swagger UI
 - **Micrometer Prometheus** – application metrics export
-- **Quarkus Scheduler** – periodic cleanup of expired sessions and stale throttle rows
-- **Jackson** – JSON processing for import parsing
+- **Quarkus Scheduler** – periodic cleanup of expired sessions, stale throttle rows and orphaned attachments
+- **Jackson** – JSON processing for import parsing and Stripe webhook events
+- **Apache Commons Compress** – TAR (JEX) archive support
+- **Stripe REST API** – server-side Checkout verification and subscription cancellation (plain JDK HTTP client)
 - **JUnit 5** – backend unit tests (`src/test`)
 
 ### Frontend

@@ -12,7 +12,7 @@ nginx + Let's Encrypt TLS, backups and day-2 operations.
 > `<DNS_NAME>` (e.g. `notes.example.com`), `<DB_PASSWORD>`, `<OPS_EMAIL>`.
 >
 > **Verified:** the commands marked ✅ were executed against a real production-mode run while writing this
-> guide (prod profile, health checks, CSRF/host matrix, cookie flags, migration validation, smoke tests).
+> guide (prod profile with `/q/*` disabled, CSRF/host matrix, cookie flags, migration validation, smoke tests).
 > The ngrok behaviour in “Day-0” was verified with a dummy local server (ngrok 3.39.12) — **not** against a
 > live instance holding real data.
 
@@ -260,7 +260,7 @@ sudo sed -i 's/^\(host\s\+all\s\+all\s\+127\.0\.0\.1\/32\s\+\)\S*/\1scram-sha-25
 sudo systemctl reload postgresql
 ```
 
-Connection budget: the app's pool is **50** connections by default (`quarkus.datasource.jdbc.max-size`),
+Connection budget: the app's pool is **20** connections by default (`quarkus.datasource.jdbc.max-size`),
 PostgreSQL's default `max_connections` is **100**. That is fine for **one** app instance. If you later run
 *N* instances, either lower the pool (`QUARKUS_DATASOURCE_JDBC_MAX_SIZE=$((100/N - reserve))`) or raise
 `max_connections`. Verify:
@@ -292,7 +292,7 @@ sudo -u postgres psql -tAc "show config_file; show hba_file;"
 # /etc/postgresql/18/main/pg_hba.conf
 ```
 
-Raise `max_connections` (default **100** — enough for one app instance with its 50-connection pool; raise it
+Raise `max_connections` (default **100** — enough for one app instance with its 20-connection pool; raise it
 when you run more instances or add other clients):
 
 ```bash
@@ -373,13 +373,13 @@ QUARKUS_HTTP_PORT=8080
 # ---- reverse proxy / host header ----
 # The app rejects requests whose Host header is not one of these (400) and its CSRF
 # filter requires Origin's host to equal the Host header (403). nginx forwards the
-# public Host, so list it here together with the loopback names used by health checks.
+# public Host, so list it here together with the loopback names used by local checks.
 QUARKUS_HTTP_HOST_VALIDATION_ALLOWED_HOSTS=<DNS_NAME>,localhost,127.0.0.1
 # Trust X-Forwarded-For for rate limiting — ONLY behind a proxy that overwrites it.
 NOTEARRAY_RATE_LIMIT_TRUST_PROXY=true
 
 # ---- optional tuning ----
-# QUARKUS_DATASOURCE_JDBC_MAX_SIZE=50          # DB pool (keep pool x instances < max_connections)
+# QUARKUS_DATASOURCE_JDBC_MAX_SIZE=20          # DB pool (default 20; keep pool × instances < max_connections)
 # QUARKUS_THREAD_POOL_MAX_THREADS=256          # blocking-request ceiling (default max(8*cores,200))
 # QUARKUS_LOG_LEVEL=INFO
 # NOTEARRAY_RATE_LIMIT_LOGIN_PER_HOUR_PER_IP=120
@@ -861,7 +861,7 @@ if a release contains schema changes, roll back with a database restore (§9.1),
 ```bash
 # systemd knows when the service dies
 systemctl is-active notearray
-# health endpoints are disabled in prod (§9.4); check the app still answers
+# health endpoints are disabled in prod; check the app still answers
 curl -fsS -o /dev/null http://127.0.0.1:8080/ || echo "APP NOT RESPONDING"
 ```
 
@@ -903,7 +903,7 @@ PGPASSWORD="$DB_PASSWORD" psql -h 127.0.0.1 -U notearray -d notearray \
 
 | Knob | Default | Notes |
 |---|---|---|
-| `QUARKUS_DATASOURCE_JDBC_MAX_SIZE` | 50 | Keep `pool × instances < PostgreSQL max_connections` |
+| `QUARKUS_DATASOURCE_JDBC_MAX_SIZE` | 20 | Keep `pool × instances < PostgreSQL max_connections` |
 | `QUARKUS_DATASOURCE_JDBC_ACQUISITION_TIMEOUT` | 5s | Requests wait this long for a connection, then fail — raise with the pool |
 | `QUARKUS_THREAD_POOL_MAX_THREADS` | `max(8 × cores, 200)` | Blocking-request ceiling; queue is unbounded (overload = latency, then 5xx) |
 | `QUARKUS_HTTP_LIMITS_MAX_CONNECTIONS` | unlimited | Optional hard socket cap |
@@ -931,7 +931,7 @@ README/native notes before choosing that path.
 | **413** on import/upload | nginx `client_max_body_size` too small | set `client_max_body_size 64m;` and reload nginx |
 | **503 "A note import is already running"** | more than 2 concurrent imports (by design) | retry later (`Retry-After: 60`) |
 | **504** during a big import | nginx `proxy_read_timeout` too low | raise to `600s` (§7.2) |
-| 5xx under load, log shows JDBC connection acquisition timeout | DB pool exhausted (50) | raise `QUARKUS_DATASOURCE_JDBC_MAX_SIZE` (and PostgreSQL `max_connections`), or add capacity |
+| 5xx under load, log shows JDBC connection acquisition timeout | DB pool exhausted (default 20) | raise `QUARKUS_DATASOURCE_JDBC_MAX_SIZE` (and PostgreSQL `max_connections`), or add capacity |
 | UI loads but API calls fail | mixing origins (UI on another vhost) or CSP/CORS assumptions violated | serve UI and API from the same hostname (§7.2) |
 | Attachments disappear after editing a note | expected behaviour | links removed → file is orphaned and purged after 24 h (grace); a file still linked elsewhere is kept |
 | Disk filling up | attachment blobs live in PostgreSQL | monitor the data volume, raise storage, review large imports; plan quotas are app-level only |
@@ -978,4 +978,5 @@ sudo -u postgres psql -d notearray -c "select count(*) notes, pg_size_pretty(pg_
 ```
 
 Related docs in this repository: `README.md` (features, API, production build), `USER_GUIDE.md` (end-user
-behaviour), `STRIPE.md` (billing setup), `REVIEW.md` (security review notes).
+behaviour), `STRIPE.md` (billing setup), `SECURITY_SCAN.md` (security scan results and hardened defaults),
+`REVIEW.md` (security review notes).

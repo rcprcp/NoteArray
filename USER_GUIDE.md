@@ -269,7 +269,8 @@ You can pair a search with the Search Titles / Search Note Content / Search Tags
 
 ### The notes list
 
-The default view is **List Notes**. On desktop it's a table:
+The default view is **List Notes**. A **card / list toggle** at the top right switches the display on any device (on
+phones the card view suits best; the list view is a compact table). On desktop the list is a table:
 
 - **Created / Updated / Title** columns
 - Tags shown as badges under the title
@@ -277,7 +278,7 @@ The default view is **List Notes**. On desktop it's a table:
 - Untitled notes show as italic *"Untitled"*
 - Row actions: **Pin** (a pin/star icon button), **Edit**, and **Delete**
 
-On mobile, the list becomes **cards** with the created/updated dates, a 2-line-clamped title, tags, and the same Pin/Edit/Delete actions.
+On mobile, the default is **cards** with the created/updated dates, a 2-line-clamped title, tags, and the same Pin/Edit/Delete actions (you can switch to the table with the toggle).
 
 ### Sorting
 
@@ -308,9 +309,9 @@ What you get:
 
 - **Folder hierarchy → hierarchical tags**: each Joplin folder level becomes a `/`-joined segment —
   a note in `Work ▸ Projects ▸ Acme` is tagged `work/projects/acme` (folder names are lowercased,
-  spaces become `_`). The Search Notes panel lists these as selectable **Folders**: picking
-  `work` matches that folder and every sub-folder in it. Sub-notebooks therefore still land
-  in the right place.
+  spaces become `_`). To find a whole folder, search its name with the **Search Tags** scope: `work`
+  matches that folder and every sub-folder in it, because tags are matched on any part of the token
+  (`grq` finds `grq/cobol` too). Sub-notebooks therefore still land in the right place.
 - **Metadata tags** (`tags:` lines in Joplin's footer) are picked up too.
 - **Title** comes from the first markdown heading, else the first content line.
 - **Content** stays markdown, with Joplin's trailing metadata block (id, parent_id, etc.) stripped.
@@ -394,12 +395,12 @@ The **Storage Used** card in Personal Settings shows:
 ### Upgrading or downgrading
 
 1. In Personal Settings, find the **Available Plans** cards.
-2. Click **Upgrade to Pro** (green), **Upgrade to Premium**, or **Downgrade** — each card shows a badge: **Current Plan**, **Pending Stripe**, **Upgrade ⬆**, or **Downgrade ⬇**.
+2. Click **Upgrade to Pro** (green), **Upgrade to Premium**, or **Downgrade** — each card shows a badge: **Current Plan**, **Pending Stripe**, **Upgrade**, or **Downgrade**.
 
 What happens next:
 
-- **Upgrading to Pro or Premium** sends you to a **Stripe checkout page** to enter payment. NoteArray marks your plan as *"Pending Stripe Checkout.*" Back in the app after payment, you'll see *"Pending Stripe Checkout for {PLAN}"* with a **Confirm Stripe Payment** button — click it to activate the plan. If you cancel at checkout, click **Cancel Checkout** to stay on your old plan.
-- **Downgrading to Free is instant** — no Stripe step, since there's nothing to pay. Billing stops on your current subscription.
+- **Upgrading to Pro or Premium** sends you to a **Stripe checkout page** to enter payment. NoteArray marks your plan as *"Pending Stripe Checkout."* After payment, Stripe sends you back to the app; the plan is **verified with Stripe and activated automatically** — there is no confirmation button to click. If you cancel at checkout, click **Cancel Checkout** to stay on your old plan.
+- **Downgrading to Free is instant** — no Stripe step, since there's nothing to pay in the app. NoteArray does **not** contact Stripe here, so if you subscribed to a paid plan, cancel that subscription too (from the Stripe receipt/customer portal, or ask the operator) to stop future charges.
 - If a payment falls behind (*past due*), a red alert appears asking you to update your payment method.
 
 Changing plans keeps all your notes; only your limit changes.
@@ -459,10 +460,10 @@ Where messages come from and what to do:
 | *"invalid email or password"* | Wrong credentials. | Check for typos / Caps Lock. Wait out any throttle timer. |
 | *"too many attempts; try again in N seconds"* | Throttling after repeated failures or heavy traffic. | Wait the stated time (or 15 min after 8 consecutive failures). |
 | *"Note was modified in another session. Close and reopen the note to load the latest version."* | The same note was saved from another window/device while you edited. | Close and reopen the note to load the latest saved version. |
-| *"Storage quota exceeded for your {Plan} plan. Please upgrade your plan or delete notes to free up space."* | You hit your plan's storage limit. | Delete notes to recover space, or upgrade your plan. |
+| *"Storage quota exceeded. Please upgrade your plan or delete notes to free up space."* | You hit your plan's storage limit (returned as **413**). | Delete notes or attachments to recover space, or upgrade your plan. |
 | *"Only PNG, JPEG, GIF, WebP images and PDF files are supported"* | An attachment type outside the whitelist was dropped. | Convert the file, or link text describing it and attach a PDF where possible. |
 | *"Attachment exceeds the maximum size of 10 MB"* | A single file was too big. | Compress / split it. |
-| *"JEX file exceeds the maximum import size of 50 MB"* / *"Markdown file exceeds the maximum import size of 10 MB"* | Import file too large. | Split the Joplin export into multiple notebooks and import them separately. |
+| *"JEX file exceeds the maximum import size of 50 MB"* / *"Markdown file exceeds the maximum size of 10 MB"* | Import file too large. | Split the Joplin export into multiple notebooks and import them separately. |
 | *"Imported N note(s) with N error(s)"* | Some notes failed during import (each listed in a bulleted message list). The rest imported normally. | Fix the failing entries in the source export and import just those notes as individual `.md` files — re-running the whole JEX duplicates the notes that already imported. |
 | *"Email already in use"* / *"Name already in use"* | That email or name is already an account. | Pick a different one, or log in if it's yours. |
 | *"password must be at least 8 characters"* (and similar) | Password policy failure. | Follow the rules shown on the form. |
@@ -471,6 +472,10 @@ Where messages come from and what to do:
 | *"Auto-save failed…"* | A transient network/server error during auto-save. | Keep editing — it will retry. If it persists, copy your text somewhere safe and reload. |
 | *"Failed to load notes: …"* | Note list couldn't be fetched. | Usually transient. Reload the page; sign in again if it also says *"Session expired"*. |
 | *"Plan change failed"* / *"Stripe sync failed"* | The Stripe step couldn't complete. | Retry from Personal Settings; check your Stripe checkout session. |
+| *"Payment not verified"* | The Stripe return URL had no checkout session id, so the plan could not be confirmed. | Click the plan again so the session can be verified, or contact support if you were charged. |
+| *"Password is required to delete your account"* / *"Current password is incorrect"* | Account deletion needs your current password. | Re-enter it carefully. |
+| *"Please cancel or complete your pending Stripe checkout before deleting your account."* | A plan upgrade is mid-flight. | Finish the Stripe checkout, or click **Cancel Checkout**, then delete the account. |
+| *"A note import is already running; try again in a minute"* | Two imports are already running (the server allows two at a time). | Wait a minute and retry. |
 
 ### Where to find more help
 
