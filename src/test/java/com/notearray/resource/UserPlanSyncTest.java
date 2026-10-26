@@ -34,7 +34,8 @@ class UserPlanSyncTest {
                 new PlanCheckoutRequest("pro"),
                 "https://checkout.stripe.com/pay/pro_123",
                 "https://checkout.stripe.com/pay/premium_456",
-                null);
+                null,
+                true);
 
         assertEquals(200, res.getStatus());
         PlanCheckoutResponse body = (PlanCheckoutResponse) res.getEntity();
@@ -47,7 +48,7 @@ class UserPlanSyncTest {
 
     @Test
     void syncConfirmRequiresCheckoutSessionId() {
-        UserResource.applyPlanCheckout(user, new PlanCheckoutRequest("premium"), null, null, null);
+        UserResource.applyPlanCheckout(user, new PlanCheckoutRequest("premium"), null, null, null, true);
 
         Response res = UserResource.applyPlanSync(
                 user, new PlanSyncRequest("confirm", null), new StripeBillingService());
@@ -59,7 +60,7 @@ class UserPlanSyncTest {
 
     @Test
     void syncConfirmOnlyActivatesWhenStripeVerifiesTheSession() {
-        UserResource.applyPlanCheckout(user, new PlanCheckoutRequest("premium"), null, null, null);
+        UserResource.applyPlanCheckout(user, new PlanCheckoutRequest("premium"), null, null, null, true);
 
         // A billing service without a configured API key cannot verify anything,
         // so the plan must NOT be activated even though a session id is presented.
@@ -79,7 +80,7 @@ class UserPlanSyncTest {
     @Test
     void syncCancelRevertsPendingPlanAndKeepsCurrentPlanActive() {
         user.plan = "pro";
-        UserResource.applyPlanCheckout(user, new PlanCheckoutRequest("premium"), null, null, null);
+        UserResource.applyPlanCheckout(user, new PlanCheckoutRequest("premium"), null, null, null, true);
 
         Response res = UserResource.applyPlanSync(user, new PlanSyncRequest("cancel", null), null);
 
@@ -96,7 +97,7 @@ class UserPlanSyncTest {
         FakeStripeBillingService billing = new FakeStripeBillingService(true).samplingPlanOf(user);
 
         Response res = UserResource.applyPlanCheckout(
-                user, new PlanCheckoutRequest("free"), null, null, billing);
+                user, new PlanCheckoutRequest("free"), null, null, billing, true);
 
         assertEquals(200, res.getStatus());
         assertEquals(List.of("sub_xyz789"), billing.cancelledSubscriptionIds);
@@ -117,7 +118,7 @@ class UserPlanSyncTest {
         FakeStripeBillingService billing = new FakeStripeBillingService(false).samplingPlanOf(user);
 
         Response res = UserResource.applyPlanCheckout(
-                user, new PlanCheckoutRequest("free"), null, null, billing);
+                user, new PlanCheckoutRequest("free"), null, null, billing, true);
 
         assertEquals(502, res.getStatus());
         assertEquals(List.of("sub_keep_me"), billing.cancelledSubscriptionIds);
@@ -133,7 +134,7 @@ class UserPlanSyncTest {
         FakeStripeBillingService billing = new FakeStripeBillingService(false);
 
         Response res = UserResource.applyPlanCheckout(
-                user, new PlanCheckoutRequest("free"), null, null, billing);
+                user, new PlanCheckoutRequest("free"), null, null, billing, true);
 
         assertEquals(200, res.getStatus());
         assertTrue(billing.cancelledSubscriptionIds.isEmpty());
@@ -146,15 +147,32 @@ class UserPlanSyncTest {
         user.plan = "pro";
 
         Response res = UserResource.applyPlanCheckout(
-                user, new PlanCheckoutRequest("free"), null, null, null);
+                user, new PlanCheckoutRequest("free"), null, null, null, true);
 
         assertEquals(502, res.getStatus());
         assertEquals("pro", user.plan);
     }
 
     @Test
+    void checkoutIsRefusedWhenBillingIsDisabled() {
+        Response res = UserResource.applyPlanCheckout(
+                user,
+                new PlanCheckoutRequest("pro"),
+                "https://checkout.stripe.com/pay/pro_123",
+                null,
+                null,
+                false);
+
+        assertEquals(503, res.getStatus());
+        // Nothing may be written while the switch is off.
+        assertEquals("free", user.plan);
+        assertNull(user.pendingPlan);
+        assertEquals(User.PLAN_STATUS_ACTIVE, user.planStatus);
+    }
+
+    @Test
     void rejectsInvalidPlanOrSyncAction() {
-        Response badPlan = UserResource.applyPlanCheckout(user, new PlanCheckoutRequest("enterprise"), null, null, null);
+        Response badPlan = UserResource.applyPlanCheckout(user, new PlanCheckoutRequest("enterprise"), null, null, null, true);
         assertEquals(400, badPlan.getStatus());
 
         Response badAction = UserResource.applyPlanSync(user, new PlanSyncRequest("unknown", null), null);
@@ -186,7 +204,7 @@ class UserPlanSyncTest {
         assertNull(UserResource.cancelSubscriptionAndValidateDeletion(user, billing));
 
         // Free user who is in the middle of upgrading to Pro (pending_checkout) is blocked until resolved
-        UserResource.applyPlanCheckout(user, new PlanCheckoutRequest("pro"), null, null, null);
+        UserResource.applyPlanCheckout(user, new PlanCheckoutRequest("pro"), null, null, null, true);
         Response pendingRes = UserResource.cancelSubscriptionAndValidateDeletion(user, billing);
         assertNotNull(pendingRes);
         assertEquals(400, pendingRes.getStatus());

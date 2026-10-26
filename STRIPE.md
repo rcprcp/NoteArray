@@ -22,6 +22,10 @@ in a request body is ever trusted for billing state. Concretely:
   subscription (`DELETE /v1/subscriptions/{id}`) **before** writing `plan=free`;
   an unconfirmed cancellation (or a missing API key while a subscription id
   exists) returns 502 and leaves the paid plan unchanged.
+- Feature switch `notearray.billing.enabled` (default `true`): `false` hides the
+  plans card and returns 503 from `/plan/checkout`. It does not cancel existing
+  subscriptions; webhooks, downgrade/deletion cancellation and pending/past-due
+  alerts keep working.
 - Downgrade-ish sync actions (`cancel`, `past_due`, `subscription_deleted`) are
   client-callable but can only *lower* billing state — they are interim until
   Layer 3 moves them behind the webhook.
@@ -109,7 +113,7 @@ Implementation (`StripeWebhookResource`, branch `agent/stripe-webhook`):
    boundaries (300 s passes, 301 fails, future-dated fails), wrong secret,
    tampered body, multi-`v1` acceptance; lifecycle handlers keep/clear exactly
    the right fields; sync endpoint asserts legacy client actions now 400
-   while `cancel`/`confirm` round-trip. Suite 146 tests / 19 classes.
+   while `cancel`/`confirm` round-trip. Suite 148 tests / 20 classes.
 
 ### Stripe-side prerequisite (user action, one-time)
 

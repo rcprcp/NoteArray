@@ -29,6 +29,10 @@ async function request(path, options = {}) {
   return text ? JSON.parse(text) : null
 }
 
+export const billingApi = {
+  config: () => request('/api/billing/config'),
+}
+
 export const usersApi = {
   getCurrentUser: () => request('/api/users/me'),
   login: (email, password) => request('/api/users/login', { method: 'POST', body: JSON.stringify({ email, password }) }),

@@ -33,6 +33,7 @@ NoteArray/
 │   │   │   │   ├── UserResource.java          # Users: CRUD + login/logout, plan checkout/sync, throttle, password/email policy
 │   │   │   │   ├── NoteResource.java          # Notes: CRUD, search, filters, storage, imports, attachment upload/list
 │   │   │   │   ├── AttachmentResource.java    # Attachment download/preview (?download=1) and delete
+│   │   │   │   ├── BillingConfigResource.java # Public client config: billing feature switch
 │   │   │   │   ├── StripeWebhookResource.java # Signature-verified, downgrade-only Stripe lifecycle webhook
 │   │   │   │   └── SpaResource.java           # SPA route handler and unauthenticated redirect to /login
 │   │   │   ├── security/
@@ -52,9 +53,9 @@ NoteArray/
 │   │   └── resources/
 │   │       ├── application.properties         # Quarkus config (DB, Flyway, OpenAPI, sessions, limits, headers, Stripe)
 │   │       └── db/migration/                  # Flyway migrations V1.0.0 … V1.1.9 (20 files)
-│   └── test/java/com/notearray/               # 146 JUnit 5 unit tests across 19 classes
+│   └── test/java/com/notearray/               # 148 JUnit 5 unit tests across 20 classes
 │       ├── NoteArrayApplicationTest.java      # JAX-RS registration and SPA route redirects
-│       ├── resource/                          # AttachmentQuota, ImportLimits, JoplinAttachmentImport,
+│       ├── resource/                          # AttachmentQuota, BillingConfig, ImportLimits, JoplinAttachmentImport,
 │       │                                      # JoplinFolderTags, NoteVersionConflict, StripeWebhook,
 │       │                                      # TagPrefixFilter, UserDeleteVerification,
 │       │                                      # UserPasswordChange, UserPlanSync
@@ -357,9 +358,15 @@ UPDATE users SET superuser = FALSE WHERE email = 'user@example.com';
 Plan state is written **only** by the server: the tier is never accepted from a request body, paid activation
 requires verifying a Stripe Checkout session with the server's API key, and the webhook is downgrade-only.
 
+The paid-plan UI and checkout sit behind a feature switch, `notearray.billing.enabled` (default **true**).
+Setting it to `false` hides the **Available Plans** card and makes checkout return **503**; existing paid
+subscriptions keep working (including downgrade/deletion cancellation and the webhook), and pending-checkout /
+past-due alerts stay visible so a stuck checkout can still be cancelled.
+
 - `POST /api/users/{id}/plan/checkout` – Start or change a plan
   - **Request body:** `{ "plan": "free" | "pro" | "premium" }`
   - **Response:** `{ "user", "checkoutUrl", "status" }`
+  - Returns **503** (`Plan upgrades are currently disabled`) when `notearray.billing.enabled=false`
   - `free` cancels any live Stripe subscription first, then clears the plan and subscription id;
     if Stripe cannot confirm the cancellation the request fails with **502** and the paid plan is left
     unchanged, so a downgrade can never leave a recurring charge behind
@@ -623,6 +630,8 @@ The interactive Swagger UI allows you to test all endpoints directly from your b
   limits; if Stripe cannot be reached or does not confirm, the downgrade is refused and the paid plan stays
   active, so a recurring charge is never silently left running
 - At the storage limit a banner disables **Create Note** and **Import**; deleting or shrinking notes is always allowed
+- The **Available Plans** card is shown only when the operator enables billing (`NOTEARRAY_BILLING_ENABLED=true`,
+  the default); when disabled, the card is hidden and checkout is refused server-side
 - See [USER_GUIDE.md](USER_GUIDE.md) §9 and [STRIPE.md](STRIPE.md) for the operator setup
 
 ### Help & About
@@ -784,6 +793,7 @@ Stripe billing (optional — leave unset to keep paid plans unavailable; full se
 
 | Variable | Default | Description |
 |---|---|---|
+| `NOTEARRAY_BILLING_ENABLED` | `true` | Feature switch for the plans UI and `/plan/checkout`; `false` hides plans and returns 503 |
 | `NOTEARRAY_STRIPE_API_KEY` | — | Secret key used to verify Checkout sessions and cancel subscriptions |
 | `NOTEARRAY_STRIPE_PRO_PRICE_ID` | — | Stripe price id mapped to the `pro` tier during verification |
 | `NOTEARRAY_STRIPE_PREMIUM_PRICE_ID` | — | Stripe price id mapped to the `premium` tier |
@@ -834,7 +844,7 @@ Backend unit tests run with JUnit 5 (no database or server required):
 mvn test
 ```
 
-Covered so far (**146 unit tests across 19 test classes**): login-throttle backoff/lockout rules (`LoginThrottlePolicyTest`), client-IP / `X-Forwarded-For` parsing (`ClientIpTest`), password and email policies (`PasswordPolicyTest`, `EmailPolicyTest`), JAX-RS registration and SPA redirects (`NoteArrayApplicationTest`), password change and account-deletion confirmation (`UserPasswordChangeTest`, `UserDeleteVerificationTest`), CSRF filtering (`CsrfFilterTest`), security headers / request-id / ingest XSS sanitization (`SecurityHeadersFilterTest`), note version conflicts (`NoteVersionConflictTest`), tag prefix filtering (`TagPrefixFilterTest`), imports and Joplin folder/attachment mapping (`ImportLimitsTest`, `JoplinFolderTagsTest`, `JoplinAttachmentImportTest`), attachment quotas and cleanup (`AttachmentQuotaTest`, `AttachmentCleanupServiceTest`), plan/Stripe handling (`UserPlanSyncTest`, `StripeWebhookResourceTest`), and the Stripe subscription cancellation that precedes a downgrade or account deletion (`StripeBillingServiceTest`, wire-level `DELETE /v1/subscriptions/{id}` against a local HTTP server). `mvn clean package` runs the tests as part of the build.
+Covered so far (**148 unit tests across 20 test classes**): login-throttle backoff/lockout rules (`LoginThrottlePolicyTest`), client-IP / `X-Forwarded-For` parsing (`ClientIpTest`), password and email policies (`PasswordPolicyTest`, `EmailPolicyTest`), JAX-RS registration and SPA redirects (`NoteArrayApplicationTest`), password change and account-deletion confirmation (`UserPasswordChangeTest`, `UserDeleteVerificationTest`), CSRF filtering (`CsrfFilterTest`), security headers / request-id / ingest XSS sanitization (`SecurityHeadersFilterTest`), note version conflicts (`NoteVersionConflictTest`), tag prefix filtering (`TagPrefixFilterTest`), imports and Joplin folder/attachment mapping (`ImportLimitsTest`, `JoplinFolderTagsTest`, `JoplinAttachmentImportTest`), attachment quotas and cleanup (`AttachmentQuotaTest`, `AttachmentCleanupServiceTest`), plan/Stripe handling and the billing feature switch (`UserPlanSyncTest`, `StripeWebhookResourceTest`, `BillingConfigResourceTest`), and the Stripe subscription cancellation that precedes a downgrade or account deletion (`StripeBillingServiceTest`, wire-level `DELETE /v1/subscriptions/{id}` against a local HTTP server). `mvn clean package` runs the tests as part of the build.
 
 ### Testing on Mobile Devices
 

@@ -20,7 +20,7 @@ function initials(name) {
   return (parts[0][0] + (parts[1]?.[0] || '')).toUpperCase()
 }
 
-export default function App({ themeColor, onThemeChange, onPlanChange, onPlanSync, currentUser, onLogin, onLogout }) {
+export default function App({ themeColor, onThemeChange, onPlanChange, onPlanSync, billingEnabled = false, currentUser, onLogin, onLogout }) {
   const navigate = useNavigate()
   const location = useLocation()
   const [actions, setActions] = useState(null)
@@ -186,6 +186,7 @@ export default function App({ themeColor, onThemeChange, onPlanChange, onPlanSyn
                 onThemeChange={onThemeChange}
                 onPlanChange={onPlanChange}
                 onPlanSync={onPlanSync}
+                billingEnabled={billingEnabled}
                 onLogout={onLogout}
                 wideMode={wideMode}
               />

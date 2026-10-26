@@ -79,6 +79,10 @@ public class UserResource {
     @ConfigProperty(name = "notearray.stripe.premium-checkout-url")
     Optional<String> stripePremiumCheckoutUrl;
 
+    /** Feature switch for plans/checkout; see BillingConfigResource and application.properties. */
+    @ConfigProperty(name = "notearray.billing.enabled", defaultValue = "true")
+    boolean billingEnabled;
+
     /** Request body for create/update. For update, every field is optional.
      *
      * {@code plan} is intentionally accepted-but-rejected (REVIEW finding #26):
@@ -396,7 +400,8 @@ public class UserResource {
                 req,
                 stripeProCheckoutUrl != null ? stripeProCheckoutUrl.orElse(null) : null,
                 stripePremiumCheckoutUrl != null ? stripePremiumCheckoutUrl.orElse(null) : null,
-                stripeBilling);
+                stripeBilling,
+                billingEnabled);
     }
 
     @POST
@@ -422,7 +427,12 @@ public class UserResource {
             PlanCheckoutRequest req,
             String proCheckoutUrl,
             String premiumCheckoutUrl,
-            StripeBillingService billing) {
+            StripeBillingService billing,
+            boolean billingEnabled) {
+        if (!billingEnabled) {
+            return Response.status(Response.Status.SERVICE_UNAVAILABLE)
+                    .entity("Plan upgrades are currently disabled").build();
+        }
         if (req == null || isBlank(req.plan())) {
             return Response.status(Response.Status.BAD_REQUEST).entity("plan is required").build();
         }

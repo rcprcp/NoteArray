@@ -382,6 +382,10 @@ NoteArray has three tiers:
 
 Storage counts **note text + note attachments** combined.
 
+> **Paid plans may be disabled.** The operator can hide the paid tiers (e.g. while Stripe billing is not yet
+> configured). In that case the **Available Plans** card is not shown, and only the Free plan is available —
+> existing paid subscriptions are unaffected.
+
 ### Watching your usage
 
 The **Storage Used** card in Personal Settings shows:

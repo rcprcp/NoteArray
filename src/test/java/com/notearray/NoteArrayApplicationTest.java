@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.notearray.resource.AttachmentResource;
+import com.notearray.resource.BillingConfigResource;
 import com.notearray.resource.NoteResource;
 import com.notearray.resource.SpaResource;
 import com.notearray.resource.StripeWebhookResource;
@@ -26,6 +27,8 @@ class NoteArrayApplicationTest {
 
         assertTrue(classes.contains(AttachmentResource.class),
             "AttachmentResource should be registered in NoteArrayApplication");
+        assertTrue(classes.contains(BillingConfigResource.class),
+            "BillingConfigResource should be registered in NoteArrayApplication");
         assertTrue(classes.contains(UserResource.class),
             "UserResource should be registered in NoteArrayApplication");
         assertTrue(classes.contains(StripeWebhookResource.class),

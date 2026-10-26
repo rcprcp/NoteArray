@@ -4,7 +4,7 @@ import { BrowserRouter } from 'react-router-dom'
 import { MantineProvider } from '@mantine/core'
 import { Notifications, notifications } from '@mantine/notifications'
 import App from './App'
-import { usersApi } from './api'
+import { billingApi, usersApi } from './api'
 import '@mantine/core/styles.css'
 import '@mantine/tiptap/styles.css'
 import '@mantine/notifications/styles.css'
@@ -30,12 +30,19 @@ function Root() {
   const [themeColor, setThemeColor] = useState(getInitialThemeColor)
   const [currentUser, setCurrentUser] = useState(null)
   const [isLoading, setIsLoading] = useState(true)
+  // Feature switch sourced from GET /api/billing/config. Defaults to hidden:
+  // an unreachable/older backend must not advertise plans it cannot sell.
+  const [billingEnabled, setBillingEnabled] = useState(false)
 
-  // Check if user is already logged in (session cookie exists)
+  // Check if user is already logged in (session cookie exists) and load the
+  // public client config in parallel, before the first real render.
   useEffect(() => {
+    let active = true
+
     const checkSession = async () => {
       try {
         const user = await usersApi.getCurrentUser()
+        if (!active) return
         setCurrentUser(user)
         if (user?.themeColor) {
           setThemeColor(user.themeColor)
@@ -43,12 +50,26 @@ function Root() {
         }
       } catch (e) {
         // Not logged in or session expired
-        setCurrentUser(null)
-      } finally {
-        setIsLoading(false)
+        if (active) setCurrentUser(null)
       }
     }
-    checkSession()
+
+    const loadBillingConfig = async () => {
+      try {
+        const config = await billingApi.config()
+        if (active) setBillingEnabled(config?.enabled === true)
+      } catch (e) {
+        if (active) setBillingEnabled(false)
+      }
+    }
+
+    Promise.allSettled([checkSession(), loadBillingConfig()]).finally(() => {
+      if (active) setIsLoading(false)
+    })
+
+    return () => {
+      active = false
+    }
   }, [])
 
   const handleLogin = async () => {
@@ -145,6 +166,7 @@ function Root() {
           onThemeChange={changeTheme}
           onPlanChange={changePlan}
           onPlanSync={syncPlan}
+          billingEnabled={billingEnabled}
           currentUser={currentUser}
           onLogin={handleLogin}
           onLogout={handleLogout}

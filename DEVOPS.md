@@ -136,6 +136,7 @@ When you move to the Day-1 setup, **remove the ngrok hostname** from
 - [ ] **PostgreSQL** installed, role + database created, `max_connections` ≥ 100 (§3)
 - [ ] Application artifact built and deployed to `/opt/notearray/current` (§4)
 - [ ] `/etc/notearray/notearray.env` written with DB credentials + host validation, mode `0640` (§5); session-cookie mode matches the browser origin — default `Secure` for HTTPS, `NOTEARRAY_SESSION_COOKIE_SECURE=false` only for plain HTTP (§5.1)
+- [ ] Billing switch matches readiness: `NOTEARRAY_BILLING_ENABLED=true` only with the Stripe variables configured, otherwise `false` to hide plans (§5)
 - [ ] `notearray.service` installed, `systemctl enable --now notearray`, service active (§6 + §8)
 - [ ] nginx site installed, `nginx -t` clean (§7)
 - [ ] **Let's Encrypt** certificate issued, HTTP→HTTPS redirect working, renewal timer enabled (§7)
@@ -393,6 +394,12 @@ NOTEARRAY_RATE_LIMIT_TRUST_PROXY=true
 # NOTEARRAY_SESSION_COOKIE_SECURE=false
 
 # ---- Stripe billing (optional — leave out to disable paid plans; see STRIPE.md) ----
+# Master switch for the plans UI and POST /plan/checkout. false hides the
+# "Available Plans" card and returns 503 from checkout; existing subscriptions,
+# webhooks and cancellation-on-downgrade/deletion keep working. Read at startup:
+# toggling needs an env change + restart (no rebuild); browsers see it on reload.
+# Keep this true only once the Stripe variables below are configured and tested.
+# NOTEARRAY_BILLING_ENABLED=true
 # If an account is on a paid plan, the api-key is also required to cancel that
 # subscription before a downgrade to Free or an account deletion; otherwise the
 # request is refused with 502 rather than leaving a recurring charge running.
@@ -962,6 +969,7 @@ PGPASSWORD="$DB_PASSWORD" psql -h 127.0.0.1 -U notearray -d notearray \
 | `NOTEARRAY_IMPORT_*` | 50 MB / 256 MB / 10k entries | Import bounds; imports also limited to **2 concurrent** (503 + `Retry-After`) |
 | Attachments | 10 MB per file | Code constant (`StorageQuota.MAX_ATTACHMENT_BYTES`) — needs a rebuild to change |
 | `NOTEARRAY_RATE_LIMIT_*` | 120 login / 30 signup per IP/hour | Requires `trust-proxy=true` behind nginx |
+| `NOTEARRAY_BILLING_ENABLED` | true | Hides the plans UI + 503s `/plan/checkout` when false; restart after changing |
 
 Measured on a 32-core host (JVM mode, local PostgreSQL): 800 concurrent requests completed in ~230 ms with
 all `200`s; the practical ceiling is the DB pool, not the thread pools. Native images (`-Dnative`) are

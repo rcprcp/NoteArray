@@ -56,6 +56,7 @@ export default function PersonalSettings({
   onThemeChange,
   onPlanChange,
   onPlanSync,
+  billingEnabled = false,
   onLogout,
 }) {
   const { colorScheme, setColorScheme } = useMantineColorScheme()
@@ -335,8 +336,9 @@ export default function PersonalSettings({
         })()}
       </Card>
 
+      {(billingEnabled || user.planStatus === 'pending_checkout' || user.planStatus === 'past_due') && (
       <Card withBorder shadow="sm" p="lg" radius="md">
-        <Title order={3} size="h5" mb="sm">Available Plans</Title>
+        <Title order={3} size="h5" mb="sm">{billingEnabled ? 'Available Plans' : 'Subscription'}</Title>
 
         {user.planStatus === 'pending_checkout' && user.pendingPlan && (
           <Alert color="yellow" mb="md" title={`Pending Stripe Checkout for ${user.pendingPlan.toUpperCase()}`}>
@@ -366,6 +368,7 @@ export default function PersonalSettings({
           </Alert>
         )}
 
+        {billingEnabled && (
         <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">
           {(() => {
             const currentPlanKey = (user.plan || 'free').toLowerCase()
@@ -428,7 +431,9 @@ export default function PersonalSettings({
             })
           })()}
         </SimpleGrid>
+        )}
       </Card>
+      )}
 
       <Card withBorder shadow="sm" p="lg" radius="md">
         <Title order={3} size="h5" mb="sm">Theme</Title>
