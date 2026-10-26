@@ -798,7 +798,7 @@ requirements (host validation + CSRF rely on `Host`/`Origin` being forwarded cor
 ### Mobile Deployment
 - The app is fully responsive and works on mobile devices
 - Serve on your network to access from phones/tablets: `http://<your-ip>:3000` (dev) or `http://<your-ip>:8080` (production)
-- The production build marks the session cookie `Secure` (HTTPS only); for plain-HTTP LAN access, run with `-Dnotearray.session.cookie-secure=false`
+- The production build marks the session cookie `Secure` (HTTPS only); for plain-HTTP LAN access, run with `-Dnotearray.session.cookie-secure=false` (see [DEVOPS.md §5.1](DEVOPS.md))
 - Test on multiple devices to ensure optimal experience
 
 ## Development Workflow

@@ -135,7 +135,7 @@ When you move to the Day-1 setup, **remove the ngrok hostname** from
 - [ ] **Java 25** installed and `java -version` reports 25 (§2)
 - [ ] **PostgreSQL** installed, role + database created, `max_connections` ≥ 100 (§3)
 - [ ] Application artifact built and deployed to `/opt/notearray/current` (§4)
-- [ ] `/etc/notearray/notearray.env` written with DB credentials + host validation, mode `0600` (§5)
+- [ ] `/etc/notearray/notearray.env` written with DB credentials + host validation, mode `0640` (§5); session-cookie mode matches the browser origin — default `Secure` for HTTPS, `NOTEARRAY_SESSION_COOKIE_SECURE=false` only for plain HTTP (§5.1)
 - [ ] `notearray.service` installed, `systemctl enable --now notearray`, service active (§6 + §8)
 - [ ] nginx site installed, `nginx -t` clean (§7)
 - [ ] **Let's Encrypt** certificate issued, HTTP→HTTPS redirect working, renewal timer enabled (§7)
@@ -387,6 +387,11 @@ NOTEARRAY_RATE_LIMIT_TRUST_PROXY=true
 # NOTEARRAY_ATTACHMENTS_ORPHAN_GRACE=PT24H     # unused-attachment grace before purge
 # NOTEARRAY_ATTACHMENTS_PURGE_INTERVAL=1h
 
+# ---- plain-HTTP sessions (ONLY when the browser uses http://; see §5.1) ----
+# Browsers drop the prod profile's Secure session cookie on an http:// origin,
+# which turns a successful login into a 401 on the next request.
+# NOTEARRAY_SESSION_COOKIE_SECURE=false
+
 # ---- Stripe billing (optional — leave out to disable paid plans; see STRIPE.md) ----
 # If an account is on a paid plan, the api-key is also required to cancel that
 # subscription before a downgrade to Free or an account deletion; otherwise the
@@ -409,6 +414,49 @@ Naming rule: Quarkus maps properties to environment variables mechanically —
 
 > **Do not** turn off host validation (`QUARKUS_HTTP_HOST_VALIDATION_REQUIRE_LOCALHOST=false`) as a shortcut —
 > allow-list the real hostname instead. Host validation is what blocks Host-header attacks.
+
+### 5.1 Session cookie: HTTPS by default, plain HTTP needs an override
+
+The `prod` profile marks the session cookie `Secure` (`%prod.notearray.session.cookie-secure=true`).
+Browsers only store a `Secure` cookie from an **HTTPS** origin (`http://localhost` is the one exception).
+So when the browser loads the app over **plain HTTP** — `http://<lan-ip>:8080`, a bare-IP trial, or an
+HTTP-only reverse proxy — the login request still returns 200, but the browser silently discards the cookie.
+The next call, `GET /api/users/me`, returns **401**, and the UI shows:
+
+> *“Logged in, but loading your account failed. Please try again.”*
+
+Add this line to `/etc/notearray/notearray.env` **only when the browser-facing URL is `http://`**:
+
+```bash
+# Plain-HTTP access only (trusted LAN or temporary trial)
+NOTEARRAY_SESSION_COOKIE_SECURE=false
+```
+
+Then restart and confirm the attribute is gone:
+
+```bash
+sudo systemctl restart notearray
+
+curl -si -X POST http://<host>:8080/api/users/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"you@example.com","password":"<PASSWORD>"}' | grep -i set-cookie
+# NOTEARRAY_SESSION=…; Path=/; Max-Age=604800; HttpOnly; SameSite=Strict
+#   ^ must NOT end with "; Secure" in this mode
+```
+
+Requirements and rules:
+
+- **Only for `http://` origins.** If TLS is terminated by nginx (§7), the Day-0 ngrok tunnel, or a load
+  balancer, the browser origin is `https://` and the cookie already works — leave the default `true`.
+- **Never use it to “fix” an HTTPS deployment.** If login fails on an `https://` origin, the cause is
+  elsewhere (Host/Origin forwarding, clock skew); disabling `Secure` only weakens the cookie.
+- **The cookie then travels unencrypted** with every request. Keep this configuration on a trusted
+  network/firewall; do not expose the app to the internet in plain-HTTP mode.
+- **All instances must agree.** Behind a shared hostname, set the same value in the env file used by
+  every service unit.
+- **Startup-only setting.** Restart the service after changing the env file.
+- Name mapping: `notearray.session.cookie-secure` → `NOTEARRAY_SESSION_COOKIE_SECURE`; the equivalent
+  command-line form is `-Dnotearray.session.cookie-secure=false` (before `-jar`).
 
 ---
 
@@ -930,7 +978,7 @@ README/native notes before choosing that path.
 | Every proxied request → **bare 400**, no `X-Request-Id` in the log | public hostname missing from host validation (default requires localhost when bound to 127.0.0.1) | `QUARKUS_HTTP_HOST_VALIDATION_ALLOWED_HOSTS=<DNS_NAME>,localhost,127.0.0.1` (§5) |
 | App exits immediately at startup | `NOTEARRAY_DB_URL/USERNAME/PASSWORD` unset (prod has no defaults) | fill `/etc/notearray/notearray.env`, `systemctl restart notearray` |
 | `Flyway validate failed … checksum mismatch` | an already-applied migration file was edited | revert the file; ship schema changes as a new `V…__*.sql` |
-| Login "succeeds" then immediately logged out | Secure cookie not stored (plain HTTP) or clock skew | use HTTPS (prod sets `cookie-secure=true`); check `timedatectl` |
+| Login "succeeds", then the UI says **"Logged in, but loading your account failed"** (or you are immediately logged out) | Secure session cookie not accepted because the browser is on plain HTTP (or clock skew) | on an `http://` origin add `NOTEARRAY_SESSION_COOKIE_SECURE=false` (§5.1); on `https://` use the default and check `timedatectl` |
 | **413** on import/upload | nginx `client_max_body_size` too small | set `client_max_body_size 64m;` and reload nginx |
 | **503 "A note import is already running"** | more than 2 concurrent imports (by design) | retry later (`Retry-After: 60`) |
 | **502 on downgrade/deletion: "Could not confirm subscription cancellation with Stripe"** | Stripe cancellation failed, or `NOTEARRAY_STRIPE_API_KEY` is missing while a subscription id is stored | configure the API key / retry when Stripe is reachable; the paid plan is intentionally left unchanged |
@@ -947,6 +995,7 @@ README/native notes before choosing that path.
 - [ ] App bound to `127.0.0.1`; only nginx exposed (ufw: 22/80/443)
 - [ ] PostgreSQL listening on localhost only, `scram-sha-256`, no `PUBLIC` privileges on the app database
 - [ ] Secrets in `/etc/notearray/notearray.env` (`0640 root:notearray`), **never** in the jar or git
+- [ ] Session cookie keeps `Secure` on HTTPS; `NOTEARRAY_SESSION_COOKIE_SECURE=false` only for a plain-HTTP LAN trial (§5.1)
 - [ ] TLS with auto-renewal verified (`certbot renew --dry-run`) and expiry alerting
 - [ ] `QUARKUS_HTTP_HOST_VALIDATION_ALLOWED_HOSTS` set to the real hostname (do not disable host validation)
 - [ ] `NOTEARRAY_RATE_LIMIT_TRUST_PROXY=true` **only** behind the reverse proxy that overwrites `X-Forwarded-For`
