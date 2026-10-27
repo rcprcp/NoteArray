@@ -116,6 +116,10 @@ Drag the small grip in the editor's bottom-right corner to make the writing area
 keyboard-accessible: focus it and use **↑ / ↓** (hold **Shift** for larger steps). The height is saved **per note**
 and restored when you open that note on any device; it never changes the note's content, version or “Updated” date.
 
+On a smaller screen, a height chosen on a desktop is capped at about 85% of the visible area; the note keeps its
+saved height, and a drag starts from the size you can actually see (so it responds immediately). Only resize if you
+want to replace the stored height for that note.
+
 ### Auto-save (no save button!)
 
 There is **no manual save button** — NoteArray saves for you:

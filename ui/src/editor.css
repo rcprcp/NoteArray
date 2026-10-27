@@ -2,6 +2,8 @@
 .notearray-editor-shell {
   position: relative;
   width: 100%;
+  max-height: 85vh;   /* fallback for browsers without dvh */
+  max-height: 85dvh;  /* excludes mobile browser chrome where supported */
 }
 
 .notearray-editor-shell .mantine-RichTextEditor-content {

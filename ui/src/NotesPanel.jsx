@@ -156,6 +156,12 @@ function MarkdownEditor({ value, onChange, onDropFiles, onPreviewAttachment, hei
   const resizeStateRef = useRef(null)
   const [resizing, setResizing] = useState(false)
 
+  // Upper bound for this device: never taller than 85% of the visible viewport.
+  const visibleMaxHeight = () => {
+    const viewport = (window.visualViewport && window.visualViewport.height) || window.innerHeight
+    return Math.max(MIN_EDITOR_HEIGHT, Math.min(MAX_EDITOR_HEIGHT, Math.round(viewport * 0.85)))
+  }
+
   useEffect(() => {
     if (resizeStateRef.current) return
     const next = clampEditorHeight(height)
@@ -165,7 +171,16 @@ function MarkdownEditor({ value, onChange, onDropFiles, onPreviewAttachment, hei
 
   const beginResize = (event) => {
     event.preventDefault()
-    resizeStateRef.current = { startY: event.clientY, startHeight: liveHeightRef.current }
+    // Start from the *visible* height, not the stored one: a note sized on a
+    // desktop may be taller than this screen (CSS clamps it), and dragging
+    // must respond immediately instead of consuming the clamped difference.
+    const shell = event.currentTarget.parentElement
+    const visible = shell ? Math.round(shell.getBoundingClientRect().height) : liveHeightRef.current
+    resizeStateRef.current = {
+      startY: event.clientY,
+      startHeight: visible,
+      maxHeight: visibleMaxHeight(),
+    }
     setResizing(true)
     event.currentTarget.focus?.()
     try {
@@ -178,13 +193,14 @@ function MarkdownEditor({ value, onChange, onDropFiles, onPreviewAttachment, hei
   const moveResize = (event) => {
     const state = resizeStateRef.current
     if (!state) return
-    const next = clampEditorHeight(state.startHeight + (event.clientY - state.startY))
+    const next = Math.min(state.maxHeight, clampEditorHeight(state.startHeight + (event.clientY - state.startY)))
     liveHeightRef.current = next
     setLiveHeight(next)
   }
 
   const endResize = (event) => {
-    if (!resizeStateRef.current) return
+    const state = resizeStateRef.current
+    if (!state) return
     resizeStateRef.current = null
     setResizing(false)
     try {
@@ -192,22 +208,28 @@ function MarkdownEditor({ value, onChange, onDropFiles, onPreviewAttachment, hei
     } catch (e) {
       // capture is best-effort
     }
-    onHeightCommit?.(liveHeightRef.current)
+    // A click/no-op drag on a note stored taller than this screen must not
+    // silently shrink the stored height.
+    if (liveHeightRef.current !== state.startHeight) {
+      onHeightCommit?.(liveHeightRef.current)
+    }
   }
 
   const onResizeKeyDown = (event) => {
     const step = event.shiftKey ? 50 : 20
+    const maxHeight = visibleMaxHeight()
+    const base = Math.min(liveHeightRef.current, maxHeight)
     let next
-    if (event.key === 'ArrowUp') next = liveHeightRef.current - step
-    else if (event.key === 'ArrowDown') next = liveHeightRef.current + step
+    if (event.key === 'ArrowUp') next = base - step
+    else if (event.key === 'ArrowDown') next = base + step
     else if (event.key === 'Home') next = MIN_EDITOR_HEIGHT
-    else if (event.key === 'End') next = MAX_EDITOR_HEIGHT
+    else if (event.key === 'End') next = maxHeight
     else return
     event.preventDefault()
-    next = clampEditorHeight(next)
+    next = Math.min(maxHeight, clampEditorHeight(next))
     liveHeightRef.current = next
     setLiveHeight(next)
-    onHeightCommit?.(next)
+    if (next !== base) onHeightCommit?.(next)
   }
 
   const editor = useEditor({
@@ -330,7 +352,7 @@ function MarkdownEditor({ value, onChange, onDropFiles, onPreviewAttachment, hei
           </RichTextEditor.ControlsGroup>
         </RichTextEditor.Toolbar>
 
-        <div className="notearray-editor-shell" style={{ height: liveHeight, maxHeight: '85vh' }}>
+        <div className="notearray-editor-shell" style={{ height: liveHeight }}>
           <RichTextEditor.Content
             style={{
               height: '100%',

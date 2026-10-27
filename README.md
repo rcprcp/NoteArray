@@ -620,7 +620,7 @@ The interactive Swagger UI allows you to test all endpoints directly from your b
   - Only changed fields are sent to the server on update
   - Pin/unpin toggle from the note list
 - **Delete note** – Confirmation shows the note's title
-- **Resize the editor** – Drag the corner grip (or focus it and use ↑ / ↓) to change the editor height; the size is saved per note and restored when you reopen it on any device
+- **Resize the editor** – Drag the corner grip (or focus it and use ↑ / ↓) to change the editor height; the size is saved per note and restored when you reopen it on any device. On smaller screens the frame is capped at ~85% of the visible height (`dvh`), without overwriting a taller desktop setting unless you actually resize
 
 ### Attachments
 - **Drag-and-drop or paste** images (PNG/JPEG/GIF/WebP) and PDFs directly into the editor; each file is max **10 MB**
