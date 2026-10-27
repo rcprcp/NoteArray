@@ -74,6 +74,7 @@ export const notesApi = {
   storage: () => request('/api/notes/storage'),
   create: (note) => request('/api/notes', { method: 'POST', body: JSON.stringify(note) }),
   update: (id, note) => request(`/api/notes/${id}`, { method: 'PUT', body: JSON.stringify(note) }),
+  setEditorHeight: (id, height) => request(`/api/notes/${id}/editor-height`, { method: 'PUT', body: JSON.stringify({ height }) }),
   remove: (id) => request(`/api/notes/${id}`, { method: 'DELETE' }),
   importJoplin: (file) => {
     return request('/api/notes/import/joplin', {

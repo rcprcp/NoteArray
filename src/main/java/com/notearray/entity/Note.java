@@ -30,6 +30,17 @@ public class Note extends BaseEntity {
     public boolean pinned = false;
 
     /**
+     * Preferred editor height for this note, in CSS pixels (160..1200), or
+     * {@code null} for the default. Purely presentational: the dedicated
+     * {@code PUT /api/notes/{id}/editor-height} endpoint writes this column with
+     * a native query so resizing does NOT bump {@link #version} or
+     * {@code updated_at} (which would disturb auto-save and sort order).
+     * Marked not-updatable to keep entity flushes from ever writing it.
+     */
+    @Column(name = "editor_height", updatable = false)
+    public Integer editorHeight;
+
+    /**
      * Number of attachments on this note. Not persisted — filled in per list
      * response by {@code NoteResource.list()} so the UI can show an attachment
      * indicator without fetching every blob.

@@ -15,6 +15,7 @@ import { Markdown } from 'tiptap-markdown'
 import { Link } from '@mantine/tiptap'
 import { notesApi } from './api'
 import { DEFAULT_FILTERS, buildApiFilters, describeFilters, sanitizeFilters } from './filters'
+import './editor.css'
 
 const EMPTY_FORM = { title: '', content: '', tags: '' }
 const DEFAULT_SEARCH = { q: '', searchTitles: true, searchContent: true, searchTags: true }
@@ -43,6 +44,19 @@ function writeStorage(key, value) {
 
 // Milliseconds of typing inactivity before an existing note is auto-saved.
 const AUTOSAVE_DELAY_MS = 2000
+
+// Per-note editor height (CSS px), matching NoteResource/DB bounds.
+const DEFAULT_EDITOR_HEIGHT = 400
+const MIN_EDITOR_HEIGHT = 160
+const MAX_EDITOR_HEIGHT = 1200
+// Coalesce resize commits (pointer-up / arrow keys) before the API write.
+const EDITOR_HEIGHT_SAVE_DELAY_MS = 400
+
+function clampEditorHeight(height) {
+  const value = Number(height)
+  if (!Number.isFinite(value)) return DEFAULT_EDITOR_HEIGHT
+  return Math.max(MIN_EDITOR_HEIGHT, Math.min(MAX_EDITOR_HEIGHT, Math.round(value)))
+}
 
 const ALLOWED_LINK_PROTOCOLS = new Set(['http:', 'https:', 'mailto:'])
 
@@ -133,10 +147,68 @@ export function stripAttachmentLinks(content, attachmentId) {
     .trim()
 }
 
-function MarkdownEditor({ value, onChange, onDropFiles, onPreviewAttachment }) {
+function MarkdownEditor({ value, onChange, onDropFiles, onPreviewAttachment, height = DEFAULT_EDITOR_HEIGHT, onHeightCommit }) {
   const [dragOver, setDragOver] = useState(false)
   const dropHandlerRef = useRef(onDropFiles)
   dropHandlerRef.current = onDropFiles
+  const [liveHeight, setLiveHeight] = useState(() => clampEditorHeight(height))
+  const liveHeightRef = useRef(liveHeight)
+  const resizeStateRef = useRef(null)
+  const [resizing, setResizing] = useState(false)
+
+  useEffect(() => {
+    if (resizeStateRef.current) return
+    const next = clampEditorHeight(height)
+    liveHeightRef.current = next
+    setLiveHeight(next)
+  }, [height])
+
+  const beginResize = (event) => {
+    event.preventDefault()
+    resizeStateRef.current = { startY: event.clientY, startHeight: liveHeightRef.current }
+    setResizing(true)
+    event.currentTarget.focus?.()
+    try {
+      event.currentTarget.setPointerCapture?.(event.pointerId)
+    } catch (e) {
+      // capture is best-effort
+    }
+  }
+
+  const moveResize = (event) => {
+    const state = resizeStateRef.current
+    if (!state) return
+    const next = clampEditorHeight(state.startHeight + (event.clientY - state.startY))
+    liveHeightRef.current = next
+    setLiveHeight(next)
+  }
+
+  const endResize = (event) => {
+    if (!resizeStateRef.current) return
+    resizeStateRef.current = null
+    setResizing(false)
+    try {
+      event.currentTarget.releasePointerCapture?.(event.pointerId)
+    } catch (e) {
+      // capture is best-effort
+    }
+    onHeightCommit?.(liveHeightRef.current)
+  }
+
+  const onResizeKeyDown = (event) => {
+    const step = event.shiftKey ? 50 : 20
+    let next
+    if (event.key === 'ArrowUp') next = liveHeightRef.current - step
+    else if (event.key === 'ArrowDown') next = liveHeightRef.current + step
+    else if (event.key === 'Home') next = MIN_EDITOR_HEIGHT
+    else if (event.key === 'End') next = MAX_EDITOR_HEIGHT
+    else return
+    event.preventDefault()
+    next = clampEditorHeight(next)
+    liveHeightRef.current = next
+    setLiveHeight(next)
+    onHeightCommit?.(next)
+  }
 
   const editor = useEditor({
     // Tiptap 3 no longer re-renders the editor on every transaction by default;
@@ -258,17 +330,35 @@ function MarkdownEditor({ value, onChange, onDropFiles, onPreviewAttachment }) {
           </RichTextEditor.ControlsGroup>
         </RichTextEditor.Toolbar>
 
-        <RichTextEditor.Content
-          style={{
-            minHeight: 400,
-            maxHeight: '70vh',
-            overflowY: 'auto',
-            border: dragOver
-              ? '2px dashed var(--mantine-primary-color-filled)'
-              : '1px solid var(--mantine-color-gray-3)',
-            width: '100%',
-          }}
-        />
+        <div className="notearray-editor-shell" style={{ height: liveHeight, maxHeight: '85vh' }}>
+          <RichTextEditor.Content
+            style={{
+              height: '100%',
+              minHeight: 0,
+              overflowY: 'auto',
+              border: dragOver
+                ? '2px dashed var(--mantine-primary-color-filled)'
+                : '1px solid var(--mantine-color-gray-3)',
+              width: '100%',
+            }}
+          />
+          <div
+            className={resizing ? 'notearray-editor-grip is-resizing' : 'notearray-editor-grip'}
+            role="separator"
+            aria-orientation="horizontal"
+            aria-label="Resize note editor"
+            aria-valuemin={MIN_EDITOR_HEIGHT}
+            aria-valuemax={MAX_EDITOR_HEIGHT}
+            aria-valuenow={liveHeight}
+            tabIndex={0}
+            title="Drag to resize (or use ↑ / ↓)"
+            onPointerDown={beginResize}
+            onPointerMove={moveResize}
+            onPointerUp={endResize}
+            onPointerCancel={endResize}
+            onKeyDown={onResizeKeyDown}
+          />
+        </div>
       </RichTextEditor>
     </div>
   )
@@ -410,6 +500,11 @@ export default function NotesPanel({ registerActions } = {}) {
   const [autoSaveStatus, setAutoSaveStatus] = useState('idle') // idle | pending | saving | saved | error
   const [autoSaveError, setAutoSaveError] = useState(null)
   const [lastSaved, setLastSaved] = useState(null)
+  // Per-note editor height (persisted through the dedicated endpoint).
+  const [editorHeight, setEditorHeight] = useState(DEFAULT_EDITOR_HEIGHT)
+  const editorHeightRef = useRef(DEFAULT_EDITOR_HEIGHT)
+  editorHeightRef.current = editorHeight
+  const heightSaveTimerRef = useRef(null)
   const autoSaveTimerRef = useRef(null)
   // Last values known to be persisted on the server for the note being edited.
   const baselineRef = useRef(null)
@@ -549,6 +644,7 @@ export default function NotesPanel({ registerActions } = {}) {
     setForm(EMPTY_FORM)
     setFormError(null)
     setNoteAttachments([])
+    setEditorHeight(DEFAULT_EDITOR_HEIGHT)
     setEditMode(false)
     setCreateMode(true)
     if (needsReload) await reload()
@@ -684,6 +780,23 @@ export default function NotesPanel({ registerActions } = {}) {
     }
   }
 
+  /** Update the editor height locally and persist it once the user stops dragging. */
+  const handleEditorHeightCommit = (height) => {
+    const next = clampEditorHeight(height)
+    setEditorHeight(next)
+    const noteId = editingNote?.id
+    if (!noteId) return // a brand-new note is persisted after its create succeeds
+    setEditingNote((prev) => (prev ? { ...prev, editorHeight: next } : prev))
+    setNotes((prev) => prev.map((n) => (n.id === noteId ? { ...n, editorHeight: next } : n)))
+    if (heightSaveTimerRef.current) clearTimeout(heightSaveTimerRef.current)
+    heightSaveTimerRef.current = setTimeout(() => {
+      heightSaveTimerRef.current = null
+      notesApi.setEditorHeight(noteId, next).catch(() => {
+        // Cosmetic preference: keep the drag even if the write fails.
+      })
+    }, EDITOR_HEIGHT_SAVE_DELAY_MS)
+  }
+
   // Returns only the fields in `values` that differ from what is persisted on the server.
   const diffFromBaseline = (values) => {
     const base = baselineRef.current || { title: '', content: '', tags: '' }
@@ -702,6 +815,7 @@ export default function NotesPanel({ registerActions } = {}) {
   // Selecting a note shows its title, tags and content for editing.
   const openEdit = (note) => {
     clearAutoSaveTimer()
+    setEditorHeight(clampEditorHeight(note.editorHeight ?? DEFAULT_EDITOR_HEIGHT))
     baselineRef.current = {
       title: note.title || '',
       content: note.content || '',
@@ -869,6 +983,10 @@ export default function NotesPanel({ registerActions } = {}) {
           version: created.version ?? 0,
         }
         setEditingNote(created)
+        // A height chosen before the note existed is saved now that it has an id.
+        if (editorHeightRef.current !== DEFAULT_EDITOR_HEIGHT) {
+          notesApi.setEditorHeight(created.id, editorHeightRef.current).catch(() => {})
+        }
         // Keep the form as-is: the user may have kept typing while the request was
         // in flight. The effect re-runs once editingNote is set and saves any
         // difference between the current form and the created note as an update.
@@ -945,6 +1063,10 @@ export default function NotesPanel({ registerActions } = {}) {
         }
         setEditingNote(created)
         note = created
+        // Persist a height chosen before the note existed.
+        if (editorHeightRef.current !== DEFAULT_EDITOR_HEIGHT) {
+          notesApi.setEditorHeight(created.id, editorHeightRef.current).catch(() => {})
+        }
         autoSavedRef.current = true
         lastSaveErrorRef.current = null
         setAutoSaveError(null)
@@ -1369,6 +1491,8 @@ export default function NotesPanel({ registerActions } = {}) {
                 onChange={(c) => setForm((prev) => ({ ...prev, content: c }))}
                 onDropFiles={handleDropFiles}
                 onPreviewAttachment={(url, label) => setPreviewAttachment({ url, label })}
+                height={editorHeight}
+                onHeightCommit={handleEditorHeightCommit}
               />
             </div>
           </div>

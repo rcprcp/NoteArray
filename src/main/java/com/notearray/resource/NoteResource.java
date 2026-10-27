@@ -166,6 +166,12 @@ public class NoteResource {
         }
     }
 
+    /** Body for the dedicated editor-height endpoint. */
+    public record EditorHeightRequest(Integer height) {}
+
+    static final int MIN_EDITOR_HEIGHT = 160;
+    static final int MAX_EDITOR_HEIGHT = 1200;
+
     public record ImportResult(int imported, int errors, int attachments, List<String> messages) {}
 
     public record StorageUsage(long usedBytes, long limitBytes, long noteCount,
@@ -662,6 +668,49 @@ public class NoteResource {
         // any more (and clear the mark on any whose reference came back).
         attachmentCleanup.sweepNote(note);
         return Response.ok(note).build();
+    }
+
+    /**
+     * Persist the per-note editor height (a cosmetic view preference).
+     *
+     * <p>Deliberately a dedicated endpoint using a native UPDATE: it must NOT
+     * bump {@code notes.version} or {@code updated_at}. Those drive optimistic
+     * locking, auto-save conflict detection and the "Updated" sort, so a resize
+     * would otherwise create bogus 409s and reorder the list.
+     */
+    @PUT
+    @Path("/{id}/editor-height")
+    @Transactional
+    public Response setEditorHeight(@PathParam("id") UUID id, EditorHeightRequest req) {
+        User user = getAuthenticatedUser();
+        if (user == null) {
+            return Response.status(Response.Status.UNAUTHORIZED).build();
+        }
+        Note note = Note.findById(id);
+        if (note == null || !canAccessNote(user, note)) {
+            return Response.status(Response.Status.NOT_FOUND).build();
+        }
+        Integer height = normalizeEditorHeight(req == null ? null : req.height());
+        if (height == null) {
+            return Response.status(Response.Status.BAD_REQUEST).entity("height is required").build();
+        }
+        int updated = Note.getEntityManager()
+                .createNativeQuery("UPDATE notes SET editor_height = :height WHERE id = :id")
+                .setParameter("height", height)
+                .setParameter("id", note.id)
+                .executeUpdate();
+        if (updated == 0) {
+            return Response.status(Response.Status.NOT_FOUND).build();
+        }
+        return Response.noContent().build();
+    }
+
+    /** Clamp a requested height into {@value #MIN_EDITOR_HEIGHT}..{@value #MAX_EDITOR_HEIGHT}. */
+    static Integer normalizeEditorHeight(Integer height) {
+        if (height == null) {
+            return null;
+        }
+        return Math.max(MIN_EDITOR_HEIGHT, Math.min(MAX_EDITOR_HEIGHT, height));
     }
 
     /**

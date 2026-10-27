@@ -110,6 +110,12 @@ Markdown shortcuts work while typing — for example `**bold**`, `*italic*`, sta
 - Links you paste that are not `http:`, `https:`, or `mailto:` (including anchors and relative paths in your notes) are blocked from the link fields — this is a deliberate safety feature.
 - All note content is sanitized before storage, so scripts embedded in pasted HTML are stripped automatically. Nothing extra for you to do.
 
+### Resizing the editor
+
+Drag the small grip in the editor's bottom-right corner to make the writing area taller or shorter. The grip is
+keyboard-accessible: focus it and use **↑ / ↓** (hold **Shift** for larger steps). The height is saved **per note**
+and restored when you open that note on any device; it never changes the note's content, version or “Updated” date.
+
 ### Auto-save (no save button!)
 
 There is **no manual save button** — NoteArray saves for you:

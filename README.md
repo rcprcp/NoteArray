@@ -52,11 +52,11 @@ NoteArray/
 │   │   │       └── StripeBillingService.java  # Stripe Checkout verification and subscription cancellation (see STRIPE.md)
 │   │   └── resources/
 │   │       ├── application.properties         # Quarkus config (DB, Flyway, OpenAPI, sessions, limits, headers, Stripe)
-│   │       └── db/migration/                  # Flyway migrations V1.0.0 … V1.1.9 (20 files)
-│   └── test/java/com/notearray/               # 148 JUnit 5 unit tests across 20 classes
+│   │       └── db/migration/                  # Flyway migrations V1.0.0 … V1.2.0 (21 files)
+│   └── test/java/com/notearray/               # 150 JUnit 5 unit tests across 21 classes
 │       ├── NoteArrayApplicationTest.java      # JAX-RS registration and SPA route redirects
 │       ├── resource/                          # AttachmentQuota, BillingConfig, ImportLimits, JoplinAttachmentImport,
-│       │                                      # JoplinFolderTags, NoteVersionConflict, StripeWebhook,
+│       │                                      # JoplinFolderTags, NoteEditorHeight, NoteVersionConflict, StripeWebhook,
 │       │                                      # TagPrefixFilter, UserDeleteVerification,
 │       │                                      # UserPasswordChange, UserPlanSync
 │       ├── security/                          # CsrfFilterTest, SecurityHeadersFilterTest
@@ -167,6 +167,7 @@ UPDATE users SET superuser = TRUE WHERE email = 'you@example.com';
 - `content` (TEXT, stores markdown-formatted content, max ~10MB)
 - `tags` (VARCHAR 10000, space-delimited tags, default empty)
 - `pinned` (BOOLEAN, default: FALSE, for favorite/pinned notes)
+- `editor_height` (SMALLINT, nullable, 160–1200, per-note editor height in CSS px; written only by the dedicated endpoint so it never bumps `version`/`updated_at`)
 - `version` (BIGINT, default: 0, `@Version` optimistic locking counter incremented on each update)
 - `title_tsv` (tsvector, auto-generated full-text search index on title)
 - `content_tsv` (tsvector, auto-generated full-text search index on content, truncated to 500KB)
@@ -429,6 +430,12 @@ past-due alerts stay visible so a stuck checkout can still be cancelled.
     note), a file only this note used is removed immediately, and a file this note referenced but that lives on
     another note starts its orphan grace clock
 
+- `PUT /api/notes/{id}/editor-height` – Persist the editor's resized height
+  - **Request body:** `{ "height": 620 }` (CSS px; clamped to **160–1200**)
+  - **Response:** 204 No Content; 400 when `height` is missing; 401/404 as other note endpoints
+  - Intentionally **does not** bump `version` or `updated_at`: resizing is cosmetic and must not affect auto-save
+    conflict detection or the Updated sort
+
 ### Notes – Attachments
 
 - `POST /api/notes/{id}/attachments?filename=...` – Upload one image (PNG/JPEG/GIF/WebP) or PDF (body is the raw file, max 10 MB)
@@ -613,6 +620,7 @@ The interactive Swagger UI allows you to test all endpoints directly from your b
   - Only changed fields are sent to the server on update
   - Pin/unpin toggle from the note list
 - **Delete note** – Confirmation shows the note's title
+- **Resize the editor** – Drag the corner grip (or focus it and use ↑ / ↓) to change the editor height; the size is saved per note and restored when you reopen it on any device
 
 ### Attachments
 - **Drag-and-drop or paste** images (PNG/JPEG/GIF/WebP) and PDFs directly into the editor; each file is max **10 MB**
@@ -846,7 +854,7 @@ Backend unit tests run with JUnit 5 (no database or server required):
 mvn test
 ```
 
-Covered so far (**148 unit tests across 20 test classes**): login-throttle backoff/lockout rules (`LoginThrottlePolicyTest`), client-IP / `X-Forwarded-For` parsing (`ClientIpTest`), password and email policies (`PasswordPolicyTest`, `EmailPolicyTest`), JAX-RS registration and SPA redirects (`NoteArrayApplicationTest`), password change and account-deletion confirmation (`UserPasswordChangeTest`, `UserDeleteVerificationTest`), CSRF filtering (`CsrfFilterTest`), security headers / request-id / ingest XSS sanitization (`SecurityHeadersFilterTest`), note version conflicts (`NoteVersionConflictTest`), tag prefix filtering (`TagPrefixFilterTest`), imports and Joplin folder/attachment mapping (`ImportLimitsTest`, `JoplinFolderTagsTest`, `JoplinAttachmentImportTest`), attachment quotas and cleanup (`AttachmentQuotaTest`, `AttachmentCleanupServiceTest`), plan/Stripe handling and the billing feature switch (`UserPlanSyncTest`, `StripeWebhookResourceTest`, `BillingConfigResourceTest`), and the Stripe subscription cancellation that precedes a downgrade or account deletion (`StripeBillingServiceTest`, wire-level `DELETE /v1/subscriptions/{id}` against a local HTTP server). `mvn clean package` runs the tests as part of the build.
+Covered so far (**150 unit tests across 21 test classes**): login-throttle backoff/lockout rules (`LoginThrottlePolicyTest`), client-IP / `X-Forwarded-For` parsing (`ClientIpTest`), password and email policies (`PasswordPolicyTest`, `EmailPolicyTest`), JAX-RS registration and SPA redirects (`NoteArrayApplicationTest`), password change and account-deletion confirmation (`UserPasswordChangeTest`, `UserDeleteVerificationTest`), CSRF filtering (`CsrfFilterTest`), security headers / request-id / ingest XSS sanitization (`SecurityHeadersFilterTest`), note version conflicts (`NoteVersionConflictTest`), per-note editor-height clamping and read-only column mapping (`NoteEditorHeightTest`), tag prefix filtering (`TagPrefixFilterTest`), imports and Joplin folder/attachment mapping (`ImportLimitsTest`, `JoplinFolderTagsTest`, `JoplinAttachmentImportTest`), attachment quotas and cleanup (`AttachmentQuotaTest`, `AttachmentCleanupServiceTest`), plan/Stripe handling and the billing feature switch (`UserPlanSyncTest`, `StripeWebhookResourceTest`, `BillingConfigResourceTest`), and the Stripe subscription cancellation that precedes a downgrade or account deletion (`StripeBillingServiceTest`, wire-level `DELETE /v1/subscriptions/{id}` against a local HTTP server). `mvn clean package` runs the tests as part of the build.
 
 ### Testing on Mobile Devices
 
