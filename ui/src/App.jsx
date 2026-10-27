@@ -72,19 +72,40 @@ export default function App({ themeColor, onThemeChange, onPlanChange, onPlanSyn
     )
   }
 
-  const goToList = () => {
+  const flushEditor = async () => {
+    const saved = await actions?.flush?.()
+    return saved !== false
+  }
+
+  const goToList = async () => {
+    if (!(await flushEditor())) return
     navigate('/notes')
     actions?.onReset?.()
   }
 
-  const openSettings = () => {
+  const openSettings = async () => {
+    if (!(await flushEditor())) return
     navigate('/settings')
+  }
+
+  const goToHelp = async (path) => {
+    if (!(await flushEditor())) return
+    navigate(path)
+  }
+
+  const goToCreate = async () => {
+    if (location.pathname !== '/notes') {
+      navigate('/notes', { state: { createNote: true } })
+      return
+    }
+    if (!(await flushEditor())) return
+    actions?.onCreate?.()
   }
 
   const listOnlyDisabled = location.pathname !== '/notes' || !!actions?.inEditor
 
   const headerItems = [
-    { key: 'create', label: 'Create Note', active: actions?.createOpen, disabled: !!actions?.overQuota, onClick: () => { navigate('/notes'); actions?.onCreate?.() } },
+    { key: 'create', label: 'Create Note', active: actions?.createOpen, disabled: !!actions?.overQuota, onClick: goToCreate },
     { key: 'list', label: 'List Notes', onClick: goToList },
     { key: 'search', label: 'Search Notes', active: actions?.searchOpen, toggle: true, disabled: listOnlyDisabled, onClick: () => actions?.onToggleSearch?.() },
     { key: 'pinned', label: 'Pinned', active: actions?.pinnedActive, toggle: true, disabled: listOnlyDisabled, onClick: () => actions?.onSetPinned?.() },
@@ -95,9 +116,9 @@ export default function App({ themeColor, onThemeChange, onPlanChange, onPlanSyn
       label: 'Help/About',
       active: location.pathname.startsWith('/help/'),
       menu: [
-        { key: 'faq', label: 'FAQ', active: location.pathname === '/help/faq', onClick: () => navigate('/help/faq') },
-        { key: 'privacy', label: 'Privacy Policy', active: location.pathname === '/help/privacy', onClick: () => navigate('/help/privacy') },
-        { key: 'security', label: 'Security Notes', active: location.pathname === '/help/security', onClick: () => navigate('/help/security') },
+        { key: 'faq', label: 'FAQ', active: location.pathname === '/help/faq', onClick: () => goToHelp('/help/faq') },
+        { key: 'privacy', label: 'Privacy Policy', active: location.pathname === '/help/privacy', onClick: () => goToHelp('/help/privacy') },
+        { key: 'security', label: 'Security Notes', active: location.pathname === '/help/security', onClick: () => goToHelp('/help/security') },
       ],
     },
   ]

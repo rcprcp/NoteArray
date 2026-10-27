@@ -115,7 +115,7 @@ Markdown shortcuts work while typing — for example `**bold**`, `*italic*`, sta
 There is **no manual save button** — NoteArray saves for you:
 
 - **After 2 seconds of typing inactivity**, changes are saved.
-- A brand-new note is **created automatically** on the first auto-save — you never need to press save first. The note only becomes real once the title (or a dropped file) gives it a non-blank name, so typing without a title yet won't create junk notes.
+- A brand-new note is **created automatically** on the first auto-save — you never need to press save first. The note only becomes real once the title (or a dropped file) gives it a non-blank name, so typing without a title yet won't create junk notes. Closing or navigating away also creates it if it has a title.
 - The status line tells you exactly where you stand:
   - **"Changes are saved automatically."** — nothing pending
   - **"Unsaved changes..."** — the 2-second timer is running
@@ -125,7 +125,9 @@ There is **no manual save button** — NoteArray saves for you:
 
 ### Closing safely
 
-**Close/Cancel** is always safe: NoteArray waits for any save currently in flight and flushes remaining changes before the editor closes. Only changed fields are sent to the server, keeping saves quick.
+**Close/Cancel** is always safe: NoteArray waits for any save currently in flight and flushes remaining changes before the editor closes. The same flush runs when you navigate away — **Create Note**, **List Notes**, Personal Settings, Help/About, or the browser Back button — so the title, tags and content you just typed are saved first. If a save fails, the editor stays open instead of dropping your text.
+
+A brand-new note that has a title is created when you leave (or close), not discarded. Only changed fields are sent to the server, keeping saves quick.
 
 ### Editing on two devices? Read this
 

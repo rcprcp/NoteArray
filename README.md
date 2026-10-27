@@ -656,8 +656,10 @@ The interactive Swagger UI allows you to test all endpoints directly from your b
     - **"Unsaved changes..."** – Changes pending the 2-second debounce timer
     - **Error message** – Auto-save failed; continuing to edit retries the save
   - Closing the editor flushes any pending changes to prevent data loss
+  - **Navigating away flushes first:** **Create Note**, **List Notes**, Personal Settings, Help/About and browser Back all save the current fields (title, tags, content) before leaving. If that save fails, the editor stays open so nothing silently disappears
+  - A brand-new note with a title is created on the way out (and when closing) instead of being discarded
   - Only changed fields are sent to the server (optimized)
-- **No data loss guarantee** – In-flight requests complete before the editor closes; debounced changes flush before the editor closes
+- **No data loss guarantee** – In-flight requests complete before the editor closes or the page changes; debounced changes flush before leaving. A full browser refresh/close cannot await a request, so the app warns while fields are pending
 
 ### Rich Text Editing with Markdown
 - **Formatting toolbar** – Bold, Italic, Underline, Strikethrough, Clear formatting

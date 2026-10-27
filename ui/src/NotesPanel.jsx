@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { ActionIcon, Alert, Box, Button, Checkbox, Group, List, Modal, Stack, Table, Text, TextInput, Title, UnstyledButton, Badge, FileInput, Loader, Card, SimpleGrid, Tooltip } from '@mantine/core'
 import { IconCheck, IconChevronDown, IconChevronUp, IconDownload, IconLayoutGrid, IconList, IconPaperclip, IconPin, IconSearch, IconSelector, IconUpload, IconMenu2, IconX } from '@tabler/icons-react'
 import { useMediaQuery } from '@mantine/hooks'
@@ -393,6 +393,8 @@ const TEXT_FIELDS = ['title']
 // Notes of the authenticated user. No owner selection needed.
 export default function NotesPanel({ registerActions } = {}) {
   const navigate = useNavigate()
+  const location = useLocation()
+  const openCreateRef = useRef(null)
   const isMobile = useMediaQuery('(max-width: 768px)')
   const controlSize = isMobile ? 'xs' : 'sm'
   const inputSize = isMobile ? 'sm' : 'md'
@@ -413,6 +415,15 @@ export default function NotesPanel({ registerActions } = {}) {
   const baselineRef = useRef(null)
   // Promise of an in-flight auto-save request, so manual save/close can wait for it.
   const inFlightRef = useRef(null)
+  // Promise of an in-flight "create note" request (debounced first save).
+  const createInFlightRef = useRef(null)
+  // Note created during this editor session, even if React state has not
+  // re-rendered yet (used by the flush path when the user navigates quickly).
+  const createdNoteRef = useRef(null)
+  // Latest save error message, so the flush path can surface it too.
+  const lastSaveErrorRef = useRef(null)
+  // Stable handle for App's navigation guards (the function is recreated per render).
+  const flushPendingChangesRef = useRef(async () => true)
   // True while a "create note" request is in flight; see the debounce effect below.
   const creatingRef = useRef(false)
   // True if at least one auto-save succeeded in the current edit session (list needs refresh).
@@ -500,7 +511,11 @@ export default function NotesPanel({ registerActions } = {}) {
    * touched: they are modifiers the user switches on and off themselves.
    */
   const resetAll = async () => {
+    const saved = await flushPendingChangesRef.current()
+    if (!saved) return // stay in the editor rather than dropping unsaved fields
     clearAutoSaveTimer()
+    createdNoteRef.current = null
+    autoSavedRef.current = false
     setSearchVisible(false)
     setTagsVisible(false)
     setImportModalOpened(false)
@@ -514,16 +529,20 @@ export default function NotesPanel({ registerActions } = {}) {
     await load(null, filters)
   }
 
-  const openCreate = () => {
+  const openCreate = async () => {
     if (storageInfo.overQuota) {
       setError(
         'You have reached your plan storage limit. Please delete unneeded notes to free up space or upgrade your plan in Personal Settings.',
       )
       return
     }
+    const saved = await flushPendingChangesRef.current()
+    if (!saved) return // keep the current draft/editor intact
+    const needsReload = autoSavedRef.current
     clearAutoSaveTimer()
     baselineRef.current = null
     autoSavedRef.current = false
+    createdNoteRef.current = null
     setAutoSaveStatus('idle')
     setLastSaved(null)
     setEditingNote(null)
@@ -532,7 +551,18 @@ export default function NotesPanel({ registerActions } = {}) {
     setNoteAttachments([])
     setEditMode(false)
     setCreateMode(true)
+    if (needsReload) await reload()
   }
+  openCreateRef.current = openCreate
+
+  // "Create Note" pressed while another page (Settings/Help) was showing:
+  // App navigates to /notes with this state flag, and the newly mounted panel
+  // opens a blank editor once.
+  useEffect(() => {
+    if (!location.state?.createNote) return
+    navigate(location.pathname, { replace: true, state: null })
+    openCreateRef.current?.()
+  }, [location.state, location.pathname, navigate])
 
   useEffect(() => writeStorage(FILTERS_KEY, filters), [filters])
   // Re-register whenever the values the header reads change. registerActions is a
@@ -543,6 +573,8 @@ export default function NotesPanel({ registerActions } = {}) {
       registerActions({
         onCreate: openCreate,
         onRefresh: reload,
+        // Called by App before any route change / settings / help navigation.
+        flush: () => flushPendingChangesRef.current(),
         onImport: () => {
           if (storageInfo.overQuota) {
             setError(
@@ -738,7 +770,7 @@ export default function NotesPanel({ registerActions } = {}) {
     const body = diffFromBaseline(values)
     if (Object.keys(body).length === 0) {
       setAutoSaveStatus('saved')
-      return
+      return true
     }
     const expectedVersion = baselineRef.current?.version
     const payload = expectedVersion != null ? { ...body, version: expectedVersion } : body
@@ -789,9 +821,14 @@ export default function NotesPanel({ registerActions } = {}) {
       setLastSaved(new Date())
       setAutoSaveError(null)
       setAutoSaveStatus('saved')
+      lastSaveErrorRef.current = null
+      return true
     } catch (e) {
-      setAutoSaveError(e.status === 401 ? 'Session expired. Please login again.' : (e.message || 'Auto-save failed'))
+      const message = e.status === 401 ? 'Session expired. Please login again.' : (e.message || 'Auto-save failed')
+      lastSaveErrorRef.current = message
+      setAutoSaveError(message)
       setAutoSaveStatus('error')
+      return false
     } finally {
       if (inFlightRef.current === request) inFlightRef.current = null
     }
@@ -820,8 +857,11 @@ export default function NotesPanel({ registerActions } = {}) {
       // picked up once setEditingNote below re-runs this effect.
       if (creatingRef.current) return
       creatingRef.current = true
+      const createRequest = notesApi.create({ title: form.title.trim(), content: form.content, tags: form.tags.trim().toLowerCase() })
+      createInFlightRef.current = createRequest
       try {
-        const created = await notesApi.create({ title: form.title.trim(), content: form.content, tags: form.tags.trim().toLowerCase() })
+        const created = await createRequest
+        createdNoteRef.current = created
         baselineRef.current = {
           title: created.title || form.title.trim() || '',
           content: created.content || form.content || '',
@@ -833,16 +873,20 @@ export default function NotesPanel({ registerActions } = {}) {
         // in flight. The effect re-runs once editingNote is set and saves any
         // difference between the current form and the created note as an update.
         autoSavedRef.current = true
+        lastSaveErrorRef.current = null
         setAutoSaveStatus('saved')
         setLastSaved(new Date())
         await reload()
         setCreateMode(false)
         setEditMode(true)
       } catch (e) {
-        setAutoSaveError(e.message || 'Failed to save note')
+        const message = e.status === 401 ? 'Session expired. Please login again.' : (e.message || 'Failed to save note')
+        lastSaveErrorRef.current = message
+        setAutoSaveError(message)
         setAutoSaveStatus('error')
-        setFormError(e.message || 'Failed to save note')
+        setFormError(message)
       } finally {
+        if (createInFlightRef.current === createRequest) createInFlightRef.current = null
         creatingRef.current = false
       }
     }, AUTOSAVE_DELAY_MS)
@@ -851,47 +895,117 @@ export default function NotesPanel({ registerActions } = {}) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form, createMode, editMode, editingNote, performAutoSave])
 
-  // Wait for any in-flight auto-save so manual save/close don't race with it.
+  // Wait for any in-flight auto-save or create so manual save/close don't race with it.
   const waitForInFlight = async () => {
-    while (inFlightRef.current) {
-      const current = inFlightRef.current
+    for (;;) {
+      const current = inFlightRef.current || createInFlightRef.current
+      if (!current) break
       try {
         await current
       } catch (e) {
         // error already surfaced via autoSaveStatus
       }
-      if (inFlightRef.current === current) break
+      if ((inFlightRef.current || createInFlightRef.current) === current) break
     }
   }
 
-  const closeModal = async () => {
-    if ((createMode || editMode) && !editingNote) {
-      clearAutoSaveTimer()
-      setCreateMode(false)
-      setEditMode(false)
-      setAutoSaveStatus('idle')
-      setFormError(null)
-      return
-    }
+  /**
+   * Persist everything the editor currently holds, regardless of the debounce
+   * timer or of whether the first (create) save has run yet. Used by Close,
+   * "List Notes", "Create Note", navigating to Settings/Help, and unmounting.
+   *
+   * Returns true when the note is fully persisted (or there was nothing the
+   * server would accept), false when saving failed — callers must then keep the
+   * editor open instead of navigating and losing data.
+   */
+  const flushPendingChanges = async () => {
+    if (!(createMode || editMode)) return true
     clearAutoSaveTimer()
     await waitForInFlight()
-    // Flush any edits still waiting on the debounce timer so nothing typed is lost.
-    if (editingNote && form.title.trim()) {
-      const body = diffFromBaseline(form)
-      if (Object.keys(body).length > 0) {
-        try {
-          const expectedVersion = baselineRef.current?.version
-          const payload = expectedVersion != null ? { ...body, version: expectedVersion } : body
-          await notesApi.update(editingNote.id, payload)
-          autoSavedRef.current = true
-        } catch (e) {
-          setError(`Failed to save note: ${e.message}`)
+
+    // A brand-new note whose debounced first save has not run yet: create it now
+    // with every field instead of throwing the draft away.
+    let note = editingNote || createdNoteRef.current
+    if (!note) {
+      const title = form.title.trim()
+      if (!title) return true // the server requires a title; nothing saveable
+      setAutoSaveStatus('saving')
+      try {
+        const created = await notesApi.create({
+          title,
+          content: form.content,
+          tags: form.tags.trim().toLowerCase(),
+        })
+        createdNoteRef.current = created
+        baselineRef.current = {
+          title: created.title || title,
+          content: created.content || form.content || '',
+          tags: created.tags || form.tags.trim().toLowerCase() || '',
+          version: created.version ?? 0,
         }
+        setEditingNote(created)
+        note = created
+        autoSavedRef.current = true
+        lastSaveErrorRef.current = null
+        setAutoSaveError(null)
+        setLastSaved(new Date())
+        setAutoSaveStatus('saved')
+      } catch (e) {
+        const message = e.status === 401 ? 'Session expired. Please login again.' : (e.message || 'Failed to save note')
+        lastSaveErrorRef.current = message
+        setAutoSaveError(message)
+        setFormError(message)
+        setAutoSaveStatus('error')
+        return false
       }
     }
+
+    if (!note) return true
+    if (!form.title.trim()) return true // an update with a blank title would be rejected
+
+    // Reuse the auto-save pipeline (serialized, optimistic-lock aware) so every
+    // field — title, tags, content — goes out together.
+    const saved = await performAutoSave(note.id, form)
+    if (!saved) {
+      const message = lastSaveErrorRef.current || 'Auto-save failed'
+      setError(`Failed to save note: ${message}`)
+    }
+    return saved
+  }
+  flushPendingChangesRef.current = flushPendingChanges
+
+  // Best-effort save if the editor is unmounted without an explicit navigation
+  // (e.g. browser back/forward within the SPA). The page stays alive, so the
+  // in-flight request still completes even though the component is gone.
+  useEffect(() => () => {
+    flushPendingChangesRef.current().catch(() => {})
+  }, [])
+
+  // A full page unload/refresh cannot await a request, so at least warn while
+  // fields are pending instead of losing them silently.
+  useEffect(() => {
+    if (!(createMode || editMode)) return undefined
+    const onBeforeUnload = (event) => {
+      const hasNote = !!(editingNote || createdNoteRef.current)
+      const dirty = hasNote
+        ? Object.keys(diffFromBaseline(form)).length > 0
+        : !!(form.title.trim() || form.content || form.tags.trim())
+      if (!dirty) return
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => window.removeEventListener('beforeunload', onBeforeUnload)
+  }, [createMode, editMode, editingNote, form])
+
+  const closeModal = async () => {
+    if (!(createMode || editMode)) return
+    const saved = await flushPendingChanges()
+    if (!saved) return // keep the editor open so the user can retry/copy
     setEditMode(false)
     setCreateMode(false)
     setAutoSaveStatus('idle')
+    createdNoteRef.current = null
     if (autoSavedRef.current) {
       autoSavedRef.current = false
       await reload()
