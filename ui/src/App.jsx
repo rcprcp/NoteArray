@@ -117,6 +117,7 @@ export default function App({ themeColor, onThemeChange, onPlanChange, onPlanSyn
       active: location.pathname.startsWith('/help/'),
       menu: [
         { key: 'faq', label: 'FAQ', active: location.pathname === '/help/faq', onClick: () => goToHelp('/help/faq') },
+        { key: 'guide', label: 'User Guide', active: location.pathname === '/help/user-guide', onClick: () => goToHelp('/help/user-guide') },
         { key: 'privacy', label: 'Privacy Policy', active: location.pathname === '/help/privacy', onClick: () => goToHelp('/help/privacy') },
         { key: 'security', label: 'Security Notes', active: location.pathname === '/help/security', onClick: () => goToHelp('/help/security') },
       ],
@@ -214,6 +215,7 @@ export default function App({ themeColor, onThemeChange, onPlanChange, onPlanSyn
             }
           />
           <Route path="/help/faq" element={<HelpPage pageKey="faq" wideMode={wideMode} />} />
+          <Route path="/help/user-guide" element={<HelpPage pageKey="guide" wideMode={wideMode} />} />
           <Route path="/help/privacy" element={<HelpPage pageKey="privacy" wideMode={wideMode} />} />
           <Route path="/help/security" element={<HelpPage pageKey="security" wideMode={wideMode} />} />
           <Route path="*" element={<Navigate to="/notes" replace />} />

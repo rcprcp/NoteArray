@@ -66,7 +66,7 @@ NoteArray/
 │   ├── src/
 │   │   ├── App.jsx                            # App shell, responsive header, routes (/login, /notes, /settings, /help/*)
 │   │   ├── HeaderActions.jsx                  # Dynamic right-to-left header action overflow menu
-│   │   ├── HelpPage.jsx                       # In-app FAQ, Privacy Policy and Security Notes pages
+│   │   ├── HelpPage.jsx                       # In-app FAQ, User Guide, Privacy Policy and Security Notes pages
 │   │   ├── PersonalSettings.jsx               # Profile, appearance, password, storage meter, plans, delete account
 │   │   ├── main.jsx                           # React entry point with session check, theme and plan syncing
 │   │   ├── api.js                             # Fetch wrapper for REST API (includes credentials)
@@ -643,8 +643,8 @@ The interactive Swagger UI allows you to test all endpoints directly from your b
 - See [USER_GUIDE.md](USER_GUIDE.md) §9 and [STRIPE.md](STRIPE.md) for the operator setup
 
 ### Help & About
-- The header **Help/About** menu opens the in-app **FAQ**, **Privacy Policy** and **Security Notes** pages (`/help/faq`,
-  `/help/privacy`, `/help/security`)
+- The header **Help/About** menu opens the in-app **FAQ**, **User Guide**, **Privacy Policy** and **Security Notes** pages
+  (`/help/faq`, `/help/user-guide`, `/help/privacy`, `/help/security`); the guide is rendered from `USER_GUIDE.md`
 
 ### Tags
 - **Tags field** – Space-delimited text input in note editor
@@ -922,6 +922,7 @@ Covered so far (**150 unit tests across 21 test classes**): login-throttle backo
 - **Mantine** 9 – UI component library with Light/Dark/Auto color scheme and responsive hooks
 - **TipTap** 3 – headless rich text editor with markdown support
 - **DOMPurify** – HTML/markdown sanitization against XSS
+- **markdown-it** – renders `USER_GUIDE.md` on the in-app Help → User Guide page
 - **Tabler Icons** – icon library
 
 ## License

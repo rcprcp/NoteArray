@@ -63,6 +63,7 @@ public class SpaResource {
         if ("notes".equals(path)
                 || "settings".equals(path)
                 || "help/faq".equals(path)
+                || "help/user-guide".equals(path)
                 || "help/privacy".equals(path)
                 || "help/security".equals(path)) {
             return serveIndexHtml();

@@ -1,0 +1,109 @@
+/* In-app rendering of USER_GUIDE.md (Help → User Guide). */
+.help-markdown {
+  font-size: 14px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+.help-markdown > :first-child {
+  margin-top: 0;
+}
+
+.help-markdown h1,
+.help-markdown h2,
+.help-markdown h3,
+.help-markdown h4 {
+  scroll-margin-top: 80px;
+  line-height: 1.3;
+}
+
+.help-markdown h2 {
+  margin: 1.75rem 0 0.5rem;
+  padding-bottom: 0.25rem;
+  font-size: 1.15rem;
+  border-bottom: 1px solid var(--mantine-color-default-border);
+}
+
+.help-markdown h3 {
+  margin: 1.25rem 0 0.35rem;
+  font-size: 1rem;
+}
+
+.help-markdown h4 {
+  margin: 1rem 0 0.25rem;
+  font-size: 0.95rem;
+}
+
+.help-markdown p,
+.help-markdown ul,
+.help-markdown ol,
+.help-markdown blockquote,
+.help-markdown pre,
+.help-markdown table {
+  margin: 0.5rem 0;
+}
+
+.help-markdown ul,
+.help-markdown ol {
+  padding-left: 1.4rem;
+}
+
+.help-markdown li + li {
+  margin-top: 0.2rem;
+}
+
+.help-markdown a {
+  color: var(--mantine-primary-color-filled);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.help-markdown code {
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: var(--mantine-color-default-hover);
+  font-size: 0.9em;
+}
+
+.help-markdown pre {
+  padding: 0.75rem;
+  border-radius: 4px;
+  overflow-x: auto;
+  background: var(--mantine-color-default-hover);
+}
+
+.help-markdown pre code {
+  padding: 0;
+  background: transparent;
+}
+
+.help-markdown blockquote {
+  padding-left: 0.85rem;
+  border-left: 3px solid var(--mantine-color-default-border);
+  color: var(--mantine-color-dimmed);
+}
+
+.help-markdown hr {
+  margin: 1.5rem 0;
+  border: 0;
+  border-top: 1px solid var(--mantine-color-default-border);
+}
+
+.help-markdown table {
+  display: block;
+  width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+}
+
+.help-markdown th,
+.help-markdown td {
+  padding: 6px 10px;
+  border: 1px solid var(--mantine-color-default-border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.help-markdown th {
+  background: var(--mantine-color-default-hover);
+}

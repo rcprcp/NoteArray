@@ -63,7 +63,7 @@ Once signed in, the header at the top of every page is your control center:
 | **Pinned** | Filters the list to your pinned notes (List Notes view only) |
 | **Untagged** | Filters the list to notes with no tags (List Notes view only) |
 | **Import** (upload icon) | Opens the Import notes modal (List Notes view only) |
-| **Help/About** | Dropdown with **FAQ**, **Privacy Policy**, and **Security Notes** pages |
+| **Help/About** | Dropdown with **FAQ**, **User Guide**, **Privacy Policy**, and **Security Notes** pages |
 | **Your avatar** | Shows your initials; click it to open **Personal Settings** |
 
 Notes:
@@ -119,6 +119,9 @@ and restored when you open that note on any device; it never changes the note's 
 On a smaller screen, a height chosen on a desktop is capped at about 85% of the visible area; the note keeps its
 saved height, and a drag starts from the size you can actually see (so it responds immediately). Only resize if you
 want to replace the stored height for that note.
+
+Only the **height** is adjustable — the editor always spans the available width, so it never makes the page wider
+than a phone screen.
 
 ### Auto-save (no save button!)
 
@@ -497,5 +500,5 @@ Where messages come from and what to do:
 
 ### Where to find more help
 
-- The in-app **Help/About** menu: **FAQ**, **Privacy Policy**, and **Security Notes**.
+- The in-app **Help/About** menu: **FAQ**, **User Guide**, **Privacy Policy**, and **Security Notes**.
 - Operators and developers: see the project's `README.md` for setup, configuration, and the full REST API.

@@ -1,4 +1,57 @@
 import { Box, Card, Divider, Stack, Text, Title } from '@mantine/core'
+import MarkdownIt from 'markdown-it'
+import dompurify from 'dompurify'
+import userGuideSource from '../../USER_GUIDE.md?raw'
+import './help.css'
+
+/**
+ * Render the shipped USER_GUIDE.md inside the app. Raw HTML is disabled in
+ * markdown-it and the result is sanitized again with DOMPurify; heading ids
+ * are generated so the guide's own "Contents" anchors keep working.
+ */
+function slugifyHeading(text) {
+  return String(text || '')
+    .toLowerCase()
+    .trim()
+    .replace(/[^\p{L}\p{N}\s_-]/gu, '')
+    .replace(/\s/g, '-')
+}
+
+function guideBody(markdown) {
+  return markdown
+    .replace(/^# .*(?:\r?\n)+/, '') // page title is rendered by the card
+    .replace(/^\*\*Last updated:[^\n]*(?:\r?\n)+/, '')
+    .replace(/^---(?:\r?\n)+/, '')
+}
+
+const markdown = new MarkdownIt({ html: false, linkify: true })
+
+markdown.core.ruler.push('notearray_heading_ids', (state) => {
+  const seen = new Map()
+  for (let i = 0; i < state.tokens.length; i += 1) {
+    const token = state.tokens[i]
+    if (token.type !== 'heading_open') continue
+    const inline = state.tokens[i + 1]
+    const base = slugifyHeading(inline?.content)
+    const count = seen.get(base) || 0
+    seen.set(base, count + 1)
+    token.attrSet('id', count === 0 ? base : `${base}-${count}`)
+  }
+})
+
+markdown.renderer.rules.link_open = (tokens, idx, options, env, self) => {
+  const href = tokens[idx].attrGet('href') || ''
+  if (/^https?:/i.test(href)) {
+    tokens[idx].attrSet('target', '_blank')
+    tokens[idx].attrSet('rel', 'noopener noreferrer')
+  }
+  return self.renderToken(tokens, idx, options)
+}
+
+const USER_GUIDE_HTML = dompurify.sanitize(
+  markdown.render(guideBody(userGuideSource)),
+  { ADD_ATTR: ['target'] },
+)
 
 const PAGES = {
   faq: {
@@ -7,7 +60,11 @@ const PAGES = {
     sections: [
       {
         heading: 'How are my notes saved?',
-        body: 'NoteArray automatically saves your changes after two seconds of typing inactivity. When you close a note, any pending edits are immediately flushed to the server so your work is never lost.',
+        body: 'NoteArray automatically saves your changes after two seconds of typing inactivity. When you close a note or navigate away (Create Note, List Notes, Settings, Help, browser Back), pending edits are flushed first so your work is not lost. A brand-new note with a title is created on the way out too.',
+      },
+      {
+        heading: 'Can I make the note editor bigger or smaller?',
+        body: 'Yes. Drag the small grip in the bottom-right corner of the editor, or focus it and use the up/down arrow keys (hold Shift for larger steps). The height is saved per note and restored when you reopen it on any device. On a phone, a height chosen on a desktop is capped at about 85% of the visible screen — the note keeps its saved height, and a drag starts from the size you can actually see. Only the height is adjustable; the editor always fits the available width.',
       },
       {
         heading: 'How do tags and search work?',
@@ -22,6 +79,11 @@ const PAGES = {
         body: 'Click your user avatar in the upper-right corner of the header to open Personal Settings. From there you can switch between Light, Dark, and Auto appearance modes, pick from 14 color palettes, or update your password.',
       },
     ],
+  },
+  guide: {
+    title: "NoteArray User's Guide",
+    updated: 'October 2026',
+    html: USER_GUIDE_HTML,
   },
   privacy: {
     title: 'Privacy Policy',
@@ -80,18 +142,25 @@ export default function HelpPage({ pageKey, wideMode = true }) {
 
           <Divider />
 
-          <Stack gap="lg">
-            {page.sections.map((section, idx) => (
-              <div key={idx}>
-                <Title order={3} size="h5" mb={4}>
-                  {section.heading}
-                </Title>
-                <Text size="sm" style={{ lineHeight: 1.6 }}>
-                  {section.body}
-                </Text>
-              </div>
-            ))}
-          </Stack>
+          {page.html ? (
+            <Box
+              className="help-markdown"
+              dangerouslySetInnerHTML={{ __html: page.html }}
+            />
+          ) : (
+            <Stack gap="lg">
+              {page.sections.map((section, idx) => (
+                <div key={idx}>
+                  <Title order={3} size="h5" mb={4}>
+                    {section.heading}
+                  </Title>
+                  <Text size="sm" style={{ lineHeight: 1.6 }}>
+                    {section.body}
+                  </Text>
+                </div>
+              ))}
+            </Stack>
+          )}
         </Stack>
       </Card>
     </Box>
