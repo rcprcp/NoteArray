@@ -27,6 +27,9 @@ NoteArray/
 │   │   │   │   ├── User.java                  # User entity: unique name/email, theme_color, last_login, superuser, plan + Stripe state
 │   │   │   │   ├── Note.java                  # Note entity with title, markdown content, tags, pinned flag, version
 │   │   │   │   ├── NoteAttachment.java        # Attachment blob (BYTEA) + filename/content type, orphan tracking
+│   │   │   │   ├── UserTotp.java              # Optional TOTP enrollment (encrypted secret, replay step)
+│   │   │   │   ├── RecoveryCode.java          # Single-use, hashed TOTP recovery codes
+│   │   │   │   ├── LoginChallenge.java        # Short-lived password-verified 2FA challenge
 │   │   │   │   ├── Session.java               # Session entity backing persistent logins (token hash, user, expiry)
 │   │   │   │   └── LoginThrottle.java         # Throttle state (per-email backoff, per-IP hourly windows)
 │   │   │   ├── resource/
@@ -49,29 +52,36 @@ NoteArray/
 │   │   │       ├── EmailPolicy.java           # Email/name normalization and format validation
 │   │   │       ├── StorageQuota.java          # Plan storage limits and per-attachment size cap
 │   │   │       ├── AttachmentCleanupService.java # Orphan marking, note-deletion settlement, scheduled purge
+│   │   │       ├── TotpService.java           # RFC 6238 core (Base32, HMAC-SHA1, ±1 step)
+│   │   │       ├── TotpCrypto.java            # AES-256-GCM secret encryption at rest
+│   │   │       ├── TotpAccountService.java    # Enrollment, replay-safe verification, disable
+│   │   │       ├── RecoveryCodeService.java   # Generate/hash/consume recovery codes
+│   │   │       ├── LoginChallengeService.java # Single-use 2FA login challenges + purge
 │   │   │       └── StripeBillingService.java  # Stripe Checkout verification and subscription cancellation (see STRIPE.md)
 │   │   └── resources/
 │   │       ├── application.properties         # Quarkus config (DB, Flyway, OpenAPI, sessions, limits, headers, Stripe)
-│   │       └── db/migration/                  # Flyway migrations V1.0.0 … V1.2.0 (21 files)
-│   └── test/java/com/notearray/               # 150 JUnit 5 unit tests across 21 classes
+│   │       └── db/migration/                  # Flyway migrations V1.0.0 … V1.3.0 (22 files)
+│   └── test/java/com/notearray/               # 162 JUnit 5 unit tests across 24 classes
 │       ├── NoteArrayApplicationTest.java      # JAX-RS registration and SPA route redirects
 │       ├── resource/                          # AttachmentQuota, BillingConfig, ImportLimits, JoplinAttachmentImport,
 │       │                                      # JoplinFolderTags, NoteEditorHeight, NoteVersionConflict, StripeWebhook,
 │       │                                      # TagPrefixFilter, UserDeleteVerification,
 │       │                                      # UserPasswordChange, UserPlanSync
 │       ├── security/                          # CsrfFilterTest, SecurityHeadersFilterTest
-│       └── service/                           # AttachmentCleanupService, ClientIp, EmailPolicy,
-│                                              # LoginThrottlePolicy, PasswordPolicy, StripeBillingService
+│       └── service/                           # AttachmentCleanupService, ClientIp, EmailPolicy, LoginThrottlePolicy,
+│                                              # PasswordPolicy, RecoveryCodeService, StripeBillingService,
+│                                              # TotpCrypto, TotpService
 ├── ui/                                        # React + Vite frontend (mobile-responsive)
 │   ├── src/
 │   │   ├── App.jsx                            # App shell, responsive header, routes (/login, /notes, /settings, /help/*)
 │   │   ├── HeaderActions.jsx                  # Dynamic right-to-left header action overflow menu
 │   │   ├── HelpPage.jsx                       # In-app FAQ, User Guide, Privacy Policy and Security Notes pages
-│   │   ├── PersonalSettings.jsx               # Profile, appearance, password, storage meter, plans, delete account
+│   │   ├── PersonalSettings.jsx               # Profile, appearance, password, storage meter, plans, 2FA, delete account
 │   │   ├── main.jsx                           # React entry point with session check, theme and plan syncing
 │   │   ├── api.js                             # Fetch wrapper for REST API (includes credentials)
 │   │   ├── filters.js                         # Persisted list filters, API serialization, active-filter chips
-│   │   ├── LoginPage.jsx                      # Login and signup page
+│   │   ├── TwoFactorCard.jsx                  # TOTP enrollment (QR), recovery codes, disable/regenerate
+│   │   ├── LoginPage.jsx                      # Login (password + TOTP step) and signup page
 │   │   ├── NotesPanel.jsx                     # Notes UI: editor, tags, search panel, attachments, import, auto-save
 │   │   ├── ThemeButton.jsx                    # Theme color palette constants and picker
 │   │   ├── UserMenu.jsx                       # Legacy user menu components (unused)
@@ -209,6 +219,20 @@ Rate-limiting state for the login and signup endpoints (added in `V1.1.4`). Rows
 
 Rows are read under a pessimistic lock so concurrent login attempts cannot lose increments.
 
+### `user_totp`, `user_recovery_codes`, `login_challenges`
+
+TOTP two-factor state (all optional per user):
+
+- **`user_totp`** – one row per enrolled user: `user_id` (PK/FK), `secret_ciphertext` (AES-256-GCM),
+  `key_version`, `enabled` (false while an enrollment is pending), `last_used_step` (replay guard),
+  `created_at`, `enabled_at`
+- **`user_recovery_codes`** – `id`, `user_id`, `code_hash` (SHA-256), `created_at`, `used_at`; ten single-use codes,
+  shown once at enrollment
+- **`login_challenges`** – `id`, `user_id`, `token_hash` (SHA-256 of the opaque token), `attempts`, `expires_at`,
+  `created_at`; five-minute, single-use challenges issued after a correct password
+
+All three cascade on user deletion. Expired challenges and abandoned enrollments are purged by scheduled jobs.
+
 ## Authentication & Session Management
 
 ### How It Works
@@ -261,6 +285,22 @@ Passwords are validated wherever they can be set (signup and password-changing u
 
 Violations return **400** listing each unmet rule (e.g. `password must be at least 8 characters`). The signup form checks the same rules client-side and shows a hint under the password field; the server remains authoritative.
 
+### Two-Factor Authentication (TOTP)
+
+Optional per-user TOTP (Google Authenticator and compatible apps), enabled from **Personal Settings → Security**:
+
+- **Enrollment:** current password → QR code / manual Base32 secret → 6-digit confirmation → ten single-use recovery
+  codes shown once.
+- **Login:** a correct password returns **202** with a five-minute challenge (no cookie, no `last_login` update).
+  `POST /api/users/login/totp` with the challenge plus a 6-digit code or recovery code issues the session.
+- **Replay protection:** each TOTP time step can be used once per user (`last_used_step` under a row lock).
+- **Storage:** secrets are encrypted with AES-256-GCM using `NOTEARRAY_TOTP_ENCRYPTION_KEY`; recovery codes are
+  SHA-256 hashes only.
+- **Throttling:** five attempts per challenge, per-user second-factor backoff, and a per-IP hourly budget.
+- **Sensitive actions:** when enabled, password changes and account deletion also require a TOTP or recovery code.
+- **Break-glass:** recovery codes work even if the encryption key is missing; an operator can reset TOTP via SQL
+  after identity verification (see DEVOPS).
+
 ## Authorization & Access Control
 
 ### User Access Rules
@@ -301,6 +341,15 @@ UPDATE users SET superuser = FALSE WHERE email = 'user@example.com';
   - Returns 401 if credentials are invalid
   - Returns 429 with a `Retry-After` header if the account is in backoff/lockout or the IP's hourly login budget is exhausted
   - Sets session cookie on success; updates `last_login` timestamp
+  - If TOTP is enabled, returns **202** `{ "totpRequired": true, "challenge": "...", "expiresInSeconds": 300 }`
+    instead — no cookie, no `last_login` update; continue with `/api/users/login/totp`
+
+- `POST /api/users/login/totp` – Complete a TOTP login
+  - **Request body:** `{ "challenge": "...", "code": "123456" }` or `{ "challenge": "...", "recoveryCode": "XXXX-XXXX-XXXX" }`
+  - **Response:** User object on success + session cookie; `last_login` is updated only here
+  - Returns 400 when the challenge/code is missing, 401 for an invalid/expired/replayed code, 503 when the server
+    cannot decrypt secrets (recovery codes still work), 429 with `Retry-After` when throttled
+  - A challenge is single-use, expires after five minutes, and is invalidated after five wrong attempts
 
 - `POST /api/users/logout` – Invalidate session and log out
   - **Request body:** (empty)
@@ -353,6 +402,20 @@ UPDATE users SET superuser = FALSE WHERE email = 'user@example.com';
     so no recurring charge is left behind
   - Cascades to all notes and attachments owned by that user
   - Superusers can delete any user; regular users can only delete themselves
+
+### Two-Factor Authentication (TOTP)
+
+All endpoints require an authenticated session; setup/disable/regenerate also require the current password and,
+where enabled, a valid factor.
+
+- `GET /api/users/me/totp` – `{ "enabled", "enabledAt", "recoveryCodesRemaining" }`
+- `POST /api/users/me/totp/setup` – `{ "currentPassword": "..." }` → `{ "secret", "otpauthUrl", "issuer", "account", "digits", "periodSeconds" }`
+  - 400 for a wrong password, 409 when already enabled, 503 when `NOTEARRAY_TOTP_ENCRYPTION_KEY` is not configured
+- `POST /api/users/me/totp/enable` – `{ "code": "123456" }` → `{ "enabled": true, "recoveryCodes": [ ... ] }`
+  - Recovery codes are returned **once**; other sessions are invalidated
+- `POST /api/users/me/totp/disable` – `{ "currentPassword": "...", "code": "123456" }` or `recoveryCode` → 204
+  - Other sessions are invalidated; recovery codes and the secret are deleted
+- `POST /api/users/me/totp/recovery-codes` – `{ "code": "123456" }` (or `recoveryCode`) → new codes; old ones stop working
 
 ### Plans & Billing
 
@@ -588,6 +651,7 @@ The interactive Swagger UI allows you to test all endpoints directly from your b
   - Invalid credentials show an error message
   - Session cookie is set on success and the user is navigated to `/notes` (the Notes List page)
   - Repeated failures are throttled with exponential backoff (1s doubling to 64s; 15-minute lockout after 8 consecutive failures, cleared by a successful login) — a throttled attempt shows a "try again in N seconds" message
+  - If the account has TOTP enabled, a correct password shows a **Two-factor verification** step (6-digit code or recovery code); the session is issued only after it succeeds
 - **Signup** – Create a new account from the login page
   - Name, email, and password fields
   - Password must be confirmed and meet the password policy (8+ characters, uppercase, lowercase, number; special characters optional) — shown as a hint under the field and checked client-side
@@ -599,6 +663,7 @@ The interactive Swagger UI allows you to test all endpoints directly from your b
   - **Available Plans** cards (Free / Pro / Premium) with upgrade/downgrade, Stripe checkout return handling and a past-due alert
   - **Theme** card with **Appearance** (**Light / Dark / Auto**) above the 14 Mantine **Color** palettes
   - **Security / Change Password** form requiring Current Password (verified first), New Password, and Verify New Password; upon success, all sessions are invalidated and the user is logged out to `/login`
+  - **Two-factor authentication** card: enable with password → QR/manual key → 6-digit code → one-time recovery codes; regenerate or disable with password + code
   - **Delete Account** card requiring the current password (and Stripe cancellation confirmation on paid plans)
 
 ### Note Management
@@ -788,6 +853,14 @@ Rate-limit settings (defaults suit local development):
 | `NOTEARRAY_RATE_LIMIT_LOGIN_PER_HOUR_PER_IP` | `120` | Hourly login request budget per client IP |
 | `NOTEARRAY_RATE_LIMIT_SIGNUP_PER_HOUR_PER_IP` | `30` | Hourly signup request budget per client IP |
 | `NOTEARRAY_RATE_LIMIT_TRUST_PROXY` | `false` | Honor `X-Forwarded-For` when resolving client IPs (only enable behind a trusted reverse proxy) |
+| `NOTEARRAY_RATE_LIMIT_TOTP_PER_HOUR_PER_IP` | `120` | Hourly TOTP verification budget per client IP |
+
+TOTP two-factor authentication (optional per user):
+
+| Variable | Default | Description |
+|---|---|---|
+| `NOTEARRAY_TOTP_ENCRYPTION_KEY` | — | Base64 32-byte AES-256-GCM key for secrets at rest; setup returns **503** when unset |
+| `NOTEARRAY_TOTP_ISSUER` | `NoteArray` | Issuer name shown in Google Authenticator |
 
 Import and attachment bounds:
 
@@ -854,7 +927,7 @@ Backend unit tests run with JUnit 5 (no database or server required):
 mvn test
 ```
 
-Covered so far (**150 unit tests across 21 test classes**): login-throttle backoff/lockout rules (`LoginThrottlePolicyTest`), client-IP / `X-Forwarded-For` parsing (`ClientIpTest`), password and email policies (`PasswordPolicyTest`, `EmailPolicyTest`), JAX-RS registration and SPA redirects (`NoteArrayApplicationTest`), password change and account-deletion confirmation (`UserPasswordChangeTest`, `UserDeleteVerificationTest`), CSRF filtering (`CsrfFilterTest`), security headers / request-id / ingest XSS sanitization (`SecurityHeadersFilterTest`), note version conflicts (`NoteVersionConflictTest`), per-note editor-height clamping and read-only column mapping (`NoteEditorHeightTest`), tag prefix filtering (`TagPrefixFilterTest`), imports and Joplin folder/attachment mapping (`ImportLimitsTest`, `JoplinFolderTagsTest`, `JoplinAttachmentImportTest`), attachment quotas and cleanup (`AttachmentQuotaTest`, `AttachmentCleanupServiceTest`), plan/Stripe handling and the billing feature switch (`UserPlanSyncTest`, `StripeWebhookResourceTest`, `BillingConfigResourceTest`), and the Stripe subscription cancellation that precedes a downgrade or account deletion (`StripeBillingServiceTest`, wire-level `DELETE /v1/subscriptions/{id}` against a local HTTP server). `mvn clean package` runs the tests as part of the build.
+Covered so far (**162 unit tests across 24 test classes**): login-throttle backoff/lockout rules (`LoginThrottlePolicyTest`), client-IP / `X-Forwarded-For` parsing (`ClientIpTest`), password and email policies (`PasswordPolicyTest`, `EmailPolicyTest`), JAX-RS registration and SPA redirects (`NoteArrayApplicationTest`), password change and account-deletion confirmation (`UserPasswordChangeTest`, `UserDeleteVerificationTest`), CSRF filtering (`CsrfFilterTest`), security headers / request-id / ingest XSS sanitization (`SecurityHeadersFilterTest`), note version conflicts (`NoteVersionConflictTest`), per-note editor-height clamping and read-only column mapping (`NoteEditorHeightTest`), RFC 6238 vectors/base32/skew (`TotpServiceTest`), AES-GCM secret encryption (`TotpCryptoTest`), recovery-code hashing (`RecoveryCodeServiceTest`), tag prefix filtering (`TagPrefixFilterTest`), imports and Joplin folder/attachment mapping (`ImportLimitsTest`, `JoplinFolderTagsTest`, `JoplinAttachmentImportTest`), attachment quotas and cleanup (`AttachmentQuotaTest`, `AttachmentCleanupServiceTest`), plan/Stripe handling and the billing feature switch (`UserPlanSyncTest`, `StripeWebhookResourceTest`, `BillingConfigResourceTest`), and the Stripe subscription cancellation that precedes a downgrade or account deletion (`StripeBillingServiceTest`, wire-level `DELETE /v1/subscriptions/{id}` against a local HTTP server). `mvn clean package` runs the tests as part of the build.
 
 ### Testing on Mobile Devices
 
@@ -923,6 +996,7 @@ Covered so far (**150 unit tests across 21 test classes**): login-throttle backo
 - **TipTap** 3 – headless rich text editor with markdown support
 - **DOMPurify** – HTML/markdown sanitization against XSS
 - **markdown-it** – renders `USER_GUIDE.md` on the in-app Help → User Guide page
+- **qrcode.react** – renders the TOTP enrollment QR code locally (secret never leaves the browser)
 - **Tabler Icons** – icon library
 
 ## License

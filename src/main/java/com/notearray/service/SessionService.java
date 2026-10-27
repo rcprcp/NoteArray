@@ -106,6 +106,22 @@ public class SessionService {
         Session.deleteByUserId(userId);
     }
 
+    /** Drop every other session for a user, keeping the caller's current device. */
+    @Transactional
+    public void invalidateOthers(UUID userId, Cookie currentCookie) {
+        String token = token(currentCookie);
+        if (token == null) {
+            Session.deleteByUserId(userId);
+            return;
+        }
+        Session current = Session.findByTokenHash(hash(token));
+        if (current == null) {
+            Session.deleteByUserId(userId);
+            return;
+        }
+        Session.delete("userId = ?1 AND tokenHash <> ?2", userId, current.tokenHash);
+    }
+
     /** Periodically remove expired sessions so the table does not accumulate dead rows. */
     @Transactional
     @Scheduled(every = "1h")

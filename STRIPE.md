@@ -113,7 +113,7 @@ Implementation (`StripeWebhookResource`, branch `agent/stripe-webhook`):
    boundaries (300 s passes, 301 fails, future-dated fails), wrong secret,
    tampered body, multi-`v1` acceptance; lifecycle handlers keep/clear exactly
    the right fields; sync endpoint asserts legacy client actions now 400
-   while `cancel`/`confirm` round-trip. Suite 150 tests / 21 classes.
+   while `cancel`/`confirm` round-trip. Suite 162 tests / 24 classes.
 
 ### Stripe-side prerequisite (user action, one-time)
 

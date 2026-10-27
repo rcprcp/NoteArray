@@ -77,6 +77,10 @@ export default function LoginPage({ onLogin }) {
   const [name, setName] = useState('')
   const [passwordConfirm, setPasswordConfirm] = useState('')
   const [fieldErrors, setFieldErrors] = useState({})
+  const [totpChallenge, setTotpChallenge] = useState(null)
+  const [totpCode, setTotpCode] = useState('')
+  const [recoveryCode, setRecoveryCode] = useState('')
+  const [useRecoveryCode, setUseRecoveryCode] = useState(false)
 
   const handleLogin = async () => {
     const normalizedEmail = normalizeEmail(email)
@@ -92,14 +96,55 @@ export default function LoginPage({ onLogin }) {
     setFieldErrors({})
     setLoading(true)
     try {
-      await usersApi.login(normalizedEmail, password)
+      const result = await usersApi.login(normalizedEmail, password)
       setError(null)
+      if (result?.totpRequired) {
+        setTotpChallenge(result.challenge)
+        setPassword('')
+        setTotpCode('')
+        setRecoveryCode('')
+        setUseRecoveryCode(false)
+        return
+      }
       await onLogin()
     } catch (e) {
       setError(e.message || 'Login failed')
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleTotp = async () => {
+    const code = useRecoveryCode ? '' : totpCode.trim()
+    const recovery = useRecoveryCode ? recoveryCode.trim() : ''
+    if (!useRecoveryCode && !/^\d{6}$/.test(code)) {
+      setError('Enter the 6-digit code from your authenticator app.')
+      return
+    }
+    if (useRecoveryCode && !recovery) {
+      setError('Enter one of your recovery codes.')
+      return
+    }
+    setLoading(true)
+    setError(null)
+    try {
+      await usersApi.loginTotp(totpChallenge, code, recovery)
+      setTotpChallenge(null)
+      await onLogin()
+    } catch (e) {
+      setError(e.message || 'Verification failed')
+      setTotpCode('')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const backToPassword = () => {
+    setTotpChallenge(null)
+    setTotpCode('')
+    setRecoveryCode('')
+    setUseRecoveryCode(false)
+    setError(null)
   }
 
   const handleSignup = async () => {
@@ -159,7 +204,9 @@ export default function LoginPage({ onLogin }) {
   return (
     <Container size="xs" my={40}>
       <Card withBorder shadow="sm" p="lg" radius="md">
-        <Title order={2} mb="md" c="red">{mode === 'login' ? 'Login' : 'Create Account'}</Title>
+        <Title order={2} mb="md" c="red">
+          {totpChallenge ? 'Two-factor verification' : mode === 'login' ? 'Login' : 'Create Account'}
+        </Title>
 
         {error && (
           <Alert color="red" mb="md" withCloseButton onClose={() => setError(null)}>
@@ -171,7 +218,9 @@ export default function LoginPage({ onLogin }) {
           noValidate
           onSubmit={(e) => {
             e.preventDefault()
-            if (mode === 'login') {
+            if (totpChallenge) {
+              handleTotp()
+            } else if (mode === 'login') {
               handleLogin()
             } else {
               handleSignup()
@@ -179,62 +228,112 @@ export default function LoginPage({ onLogin }) {
           }}
         >
           <Stack>
-            {mode === 'signup' && (
-              <TextInput
-                label="Name"
-                required
-                value={name}
-                error={fieldErrors.name}
-                onChange={(e) => setName(e.currentTarget.value)}
-              />
-            )}
-
-            <TextInput
-              label="Email"
-              type="email"
-              required
-              value={email}
-              error={fieldErrors.email}
-              onChange={(e) => setEmail(e.currentTarget.value)}
-              onBlur={() => setEmail((v) => normalizeEmail(v))}
-            />
-
-            <PasswordInput
-              label="Password"
-              required
-              value={password}
-              error={fieldErrors.password}
-              onChange={(e) => setPassword(e.currentTarget.value)}
-            />
-
-            {mode === 'signup' && (
+            {totpChallenge ? (
               <>
-                <PasswordInput
-                  label="Confirm Password"
+                <Text size="sm" c="dimmed">
+                  Signed in as <b>{email}</b>. Enter the 6-digit code from your authenticator app.
+                </Text>
+                {useRecoveryCode ? (
+                  <TextInput
+                    label="Recovery code"
+                    placeholder="XXXX-XXXX-XXXX"
+                    required
+                    value={recoveryCode}
+                    onChange={(e) => setRecoveryCode(e.currentTarget.value)}
+                    autoComplete="one-time-code"
+                  />
+                ) : (
+                  <TextInput
+                    label="Authentication code"
+                    placeholder="123456"
+                    required
+                    value={totpCode}
+                    onChange={(e) => setTotpCode(e.currentTarget.value.replace(/\D/g, '').slice(0, 6))}
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    maxLength={6}
+                  />
+                )}
+                <Button type="submit" loading={loading} fullWidth color="red">
+                  Verify
+                </Button>
+                <Group justify="space-between">
+                  <Button
+                    type="button"
+                    variant="subtle"
+                    size="xs"
+                    onClick={() => {
+                      setUseRecoveryCode((v) => !v)
+                      setError(null)
+                    }}
+                  >
+                    {useRecoveryCode ? 'Use authenticator code' : 'Use a recovery code'}
+                  </Button>
+                  <Button type="button" variant="subtle" size="xs" onClick={backToPassword}>
+                    Back
+                  </Button>
+                </Group>
+              </>
+            ) : (
+              <>
+                {mode === 'signup' && (
+                  <TextInput
+                    label="Name"
+                    required
+                    value={name}
+                    error={fieldErrors.name}
+                    onChange={(e) => setName(e.currentTarget.value)}
+                  />
+                )}
+
+                <TextInput
+                  label="Email"
+                  type="email"
                   required
-                  value={passwordConfirm}
-                  error={fieldErrors.passwordConfirm}
-                  onChange={(e) => setPasswordConfirm(e.currentTarget.value)}
+                  value={email}
+                  error={fieldErrors.email}
+                  onChange={(e) => setEmail(e.currentTarget.value)}
+                  onBlur={() => setEmail((v) => normalizeEmail(v))}
                 />
 
-                <Text size="xs" c="dimmed" mt={-4}>
-                  Password must be at least 8 characters and include at least one uppercase letter, one lowercase letter, and one number. Special characters (!@#$%^&*) are optional.
-                </Text>
+                <PasswordInput
+                  label="Password"
+                  required
+                  value={password}
+                  error={fieldErrors.password}
+                  onChange={(e) => setPassword(e.currentTarget.value)}
+                />
+
+                {mode === 'signup' && (
+                  <>
+                    <PasswordInput
+                      label="Confirm Password"
+                      required
+                      value={passwordConfirm}
+                      error={fieldErrors.passwordConfirm}
+                      onChange={(e) => setPasswordConfirm(e.currentTarget.value)}
+                    />
+
+                    <Text size="xs" c="dimmed" mt={-4}>
+                      Password must be at least 8 characters and include at least one uppercase letter, one lowercase letter, and one number. Special characters (!@#$%^&*) are optional.
+                    </Text>
+                  </>
+                )}
+
+                <Button type="submit" loading={loading} fullWidth color="red">
+                  {mode === 'login' ? 'Login' : 'Create Account'}
+                </Button>
+
+                <Group justify="center">
+                  <Text size="sm">
+                    {mode === 'login' ? "Don't have an account? " : 'Already have an account? '}
+                    <Button type="button" variant="subtle" size="xs" onClick={toggleMode}>
+                      {mode === 'login' ? 'Sign up' : 'Login'}
+                    </Button>
+                  </Text>
+                </Group>
               </>
             )}
-
-            <Button type="submit" loading={loading} fullWidth color="red">
-              {mode === 'login' ? 'Login' : 'Create Account'}
-            </Button>
-
-            <Group justify="center">
-              <Text size="sm">
-                {mode === 'login' ? "Don't have an account? " : 'Already have an account? '}
-                <Button type="button" variant="subtle" size="xs" onClick={toggleMode}>
-                  {mode === 'login' ? 'Sign up' : 'Login'}
-                </Button>
-              </Text>
-            </Group>
           </Stack>
         </form>
       </Card>

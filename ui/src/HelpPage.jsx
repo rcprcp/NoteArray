@@ -67,6 +67,14 @@ const PAGES = {
         body: 'Yes. Drag the small grip in the bottom-right corner of the editor, or focus it and use the up/down arrow keys (hold Shift for larger steps). The height is saved per note and restored when you reopen it on any device. On a phone, a height chosen on a desktop is capped at about 85% of the visible screen — the note keeps its saved height, and a drag starts from the size you can actually see. Only the height is adjustable; the editor always fits the available width.',
       },
       {
+        heading: 'How do I enable two-factor authentication?',
+        body: 'Open Personal Settings → Security and click Enable on the Two-factor authentication card. Confirm your password, scan the QR code with Google Authenticator (or copy the manual key), enter the 6-digit code, and save the recovery codes shown once. On the next login a correct password asks for the code or a recovery code. Password changes and account deletion also require it.',
+      },
+      {
+        heading: 'I lost my phone or my recovery codes — can I still sign in?',
+        body: 'Use one of the recovery codes you saved when enabling two-factor authentication. If you have neither the authenticator nor the codes, ask the server operator to reset two-factor authentication after verifying your identity; there is no self-service bypass.',
+      },
+      {
         heading: 'How do tags and search work?',
         body: 'Tags are space-delimited words attached to each note (for example: "work project-alpha urgent"). Use the Search Notes panel to search note titles, content and tags (tick Search Tags to match tags by part of a word, or "Find notes with attachments" to keep only notes with files). The header Pinned and Untagged buttons are click-on, click-off filters that combine with your search.',
       },

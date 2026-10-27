@@ -1,13 +1,18 @@
 package com.notearray.resource;
 
+import com.notearray.entity.LoginChallenge;
 import com.notearray.entity.User;
 import com.notearray.service.AuthenticationService;
 import com.notearray.service.ClientIp;
 import com.notearray.service.EmailPolicy;
+import com.notearray.service.LoginChallengeService;
 import com.notearray.service.LoginThrottleService;
 import com.notearray.service.PasswordPolicy;
+import com.notearray.service.RecoveryCodeService;
 import com.notearray.service.SessionService;
 import com.notearray.service.StripeBillingService;
+import com.notearray.service.TotpAccountService;
+import com.notearray.service.TotpService;
 import io.quarkus.elytron.security.common.BcryptUtil;
 import io.vertx.core.http.HttpServerRequest;
 import jakarta.inject.Inject;
@@ -27,6 +32,7 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import java.net.URI;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -66,6 +72,18 @@ public class UserResource {
     @Inject
     StripeBillingService stripeBilling;
 
+    @Inject
+    LoginChallengeService loginChallenges;
+
+    @Inject
+    TotpAccountService totpAccounts;
+
+    @Inject
+    RecoveryCodeService recoveryCodes;
+
+    @ConfigProperty(name = "notearray.totp.issuer", defaultValue = "NoteArray")
+    String totpIssuer;
+
     /**
      * Trust the X-Forwarded-For header when resolving the client IP. Enable only
      * behind a reverse proxy that overwrites the header (see {@link ClientIp}).
@@ -96,13 +114,15 @@ public class UserResource {
             String currentPassword,
             String confirmPassword,
             String themeColor,
-            String plan) {
+            String plan,
+            String totpCode,
+            String recoveryCode) {
         public UserRequest(String name, String email, String password, String themeColor) {
-            this(name, email, password, null, null, themeColor, null);
+            this(name, email, password, null, null, themeColor, null, null, null);
         }
 
         public UserRequest(String name, String email, String password, String currentPassword, String themeColor) {
-            this(name, email, password, currentPassword, null, themeColor, null);
+            this(name, email, password, currentPassword, null, themeColor, null, null, null);
         }
 
         public UserRequest(
@@ -112,12 +132,33 @@ public class UserResource {
                 String currentPassword,
                 String confirmPassword,
                 String themeColor) {
-            this(name, email, password, currentPassword, confirmPassword, themeColor, null);
+            this(name, email, password, currentPassword, confirmPassword, themeColor, null, null, null);
         }
     }
 
     /** Request body for login. */
     public record LoginRequest(String email, String password) {}
+
+    /** Second-factor step after a correct password. */
+    public record LoginTotpRequest(String challenge, String code, String recoveryCode) {}
+
+    /** 202 body when the password was accepted but a TOTP code is required. */
+    public record LoginTotpRequired(boolean totpRequired, String challenge, long expiresInSeconds) {}
+
+    public record TotpStatusResponse(boolean enabled, Instant enabledAt, long recoveryCodesRemaining) {}
+
+    public record TotpSetupRequest(String currentPassword) {}
+
+    public record TotpSetupResponse(
+            String secret, String otpauthUrl, String issuer, String account, int digits, int periodSeconds) {}
+
+    public record TotpCodeRequest(String code, String recoveryCode) {}
+
+    public record TotpEnableResponse(boolean enabled, List<String> recoveryCodes) {}
+
+    public record TotpRecoveryCodesResponse(List<String> recoveryCodes) {}
+
+    public record TotpDisableRequest(String currentPassword, String code, String recoveryCode) {}
 
     /** Request body for initiating a plan change / Stripe Checkout session. */
     public record PlanCheckoutRequest(String plan) {}
@@ -134,7 +175,11 @@ public class UserResource {
     public record PlanSyncRequest(String action, String checkoutSessionId) {}
 
     /** Request body for account deletion. The current password must be re-verified. */
-    public record DeleteRequest(String currentPassword) {}
+    public record DeleteRequest(String currentPassword, String totpCode, String recoveryCode) {
+        public DeleteRequest(String currentPassword) {
+            this(currentPassword, null, null);
+        }
+    }
 
     /** 400 for attempts to write the plan through user CRUD (REVIEW finding #26). */
     static Response planWriteRejected() {
@@ -161,6 +206,157 @@ public class UserResource {
     public Response getCurrentUser() {
         User user = getAuthenticatedUser();
         return user == null ? Response.status(Response.Status.UNAUTHORIZED).build() : Response.ok(user).build();
+    }
+
+    /** Two-factor status for the signed-in account. */
+    @GET
+    @Path("/me/totp")
+    public Response totpStatus() {
+        User user = getAuthenticatedUser();
+        if (user == null) {
+            return Response.status(Response.Status.UNAUTHORIZED).build();
+        }
+        return Response.ok(new TotpStatusResponse(
+                totpAccounts.isEnabled(user.id),
+                totpAccounts.enabledAt(user.id),
+                totpAccounts.remainingRecoveryCodes(user.id))).build();
+    }
+
+    /**
+     * Start (or restart) TOTP enrollment. Requires the current password so a
+     * stolen session cannot attach an attacker-controlled authenticator.
+     */
+    @POST
+    @Path("/me/totp/setup")
+    public Response totpSetup(TotpSetupRequest req) {
+        User user = getAuthenticatedUser();
+        if (user == null) {
+            return Response.status(Response.Status.UNAUTHORIZED).build();
+        }
+        if (req == null || isBlank(req.currentPassword())) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity("Current password is required").build();
+        }
+        if (!BcryptUtil.matches(req.currentPassword(), user.passwordHash)) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity("Current password is incorrect").build();
+        }
+        if (totpAccounts.isEnabled(user.id)) {
+            return Response.status(Response.Status.CONFLICT)
+                    .entity("Two-factor authentication is already enabled").build();
+        }
+        String secret;
+        try {
+            secret = totpAccounts.startEnrollment(user.id);
+        } catch (IllegalStateException e) {
+            return totpUnavailable();
+        }
+        return Response.ok(new TotpSetupResponse(
+                secret,
+                TotpService.otpauthUrl(user.email, totpIssuer, secret),
+                totpIssuer,
+                user.email,
+                TotpService.DIGITS,
+                TotpService.PERIOD_SECONDS)).build();
+    }
+
+    /** Confirm a pending enrollment; recovery codes are returned exactly once. */
+    @POST
+    @Path("/me/totp/enable")
+    public Response totpEnable(TotpCodeRequest req) {
+        User user = getAuthenticatedUser();
+        if (user == null) {
+            return Response.status(Response.Status.UNAUTHORIZED).build();
+        }
+        if (totpAccounts.isEnabled(user.id)) {
+            return Response.status(Response.Status.CONFLICT)
+                    .entity("Two-factor authentication is already enabled").build();
+        }
+        if (req == null || isBlank(req.code())) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity("verification code is required").build();
+        }
+        List<String> codes;
+        try {
+            codes = totpAccounts.enable(user.id, req.code());
+        } catch (IllegalStateException e) {
+            return totpUnavailable();
+        }
+        if (codes == null) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity("invalid verification code or setup was not started").build();
+        }
+        loginChallenges.deleteForUser(user.id);
+        sessions.invalidateOthers(user.id, headers.getCookies().get(SessionService.COOKIE_NAME));
+        return Response.ok(new TotpEnableResponse(true, codes)).build();
+    }
+
+    /** Disable TOTP: current password plus a TOTP or recovery code. */
+    @POST
+    @Path("/me/totp/disable")
+    public Response totpDisable(TotpDisableRequest req) {
+        User user = getAuthenticatedUser();
+        if (user == null) {
+            return Response.status(Response.Status.UNAUTHORIZED).build();
+        }
+        if (!totpAccounts.isEnabled(user.id)) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity("Two-factor authentication is not enabled").build();
+        }
+        if (req == null || isBlank(req.currentPassword())) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity("Current password is required").build();
+        }
+        if (!BcryptUtil.matches(req.currentPassword(), user.passwordHash)) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity("Current password is incorrect").build();
+        }
+        TotpAccountService.Verification verification =
+                totpAccounts.verify(user.id, req.code(), req.recoveryCode());
+        if (verification == TotpAccountService.Verification.UNAVAILABLE) {
+            return totpUnavailable();
+        }
+        if (verification != TotpAccountService.Verification.VALID) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity("invalid verification code").build();
+        }
+        totpAccounts.disable(user.id);
+        loginChallenges.deleteForUser(user.id);
+        sessions.invalidateOthers(user.id, headers.getCookies().get(SessionService.COOKIE_NAME));
+        return Response.noContent().build();
+    }
+
+    /** Replace all recovery codes (old ones stop working immediately). */
+    @POST
+    @Path("/me/totp/recovery-codes")
+    public Response regenerateRecoveryCodes(TotpCodeRequest req) {
+        User user = getAuthenticatedUser();
+        if (user == null) {
+            return Response.status(Response.Status.UNAUTHORIZED).build();
+        }
+        if (!totpAccounts.isEnabled(user.id)) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity("Two-factor authentication is not enabled").build();
+        }
+        if (req == null || (isBlank(req.code()) && isBlank(req.recoveryCode()))) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity("verification code is required").build();
+        }
+        TotpAccountService.Verification verification =
+                totpAccounts.verify(user.id, req.code(), req.recoveryCode());
+        if (verification == TotpAccountService.Verification.UNAVAILABLE) {
+            return totpUnavailable();
+        }
+        if (verification != TotpAccountService.Verification.VALID) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity("invalid verification code").build();
+        }
+        return Response.ok(new TotpRecoveryCodesResponse(recoveryCodes.replaceCodes(user.id))).build();
+    }
+
+    private static Response totpUnavailable() {
+        return Response.status(Response.Status.SERVICE_UNAVAILABLE)
+                .entity("Two-factor authentication is not configured on this server").build();
     }
 
     /**
@@ -191,13 +387,77 @@ public class UserResource {
         if (decision.waitSeconds() > 0) {
             sleep(decision.waitSeconds() * 1000L);
         }
-        User user = authentication.authenticate(normalizedEmail, req.password());
+        User user = authentication.verifyCredentials(normalizedEmail, req.password());
         if (user == null) {
             throttle.recordLoginFailure(normalizedEmail);
             return Response.status(Response.Status.UNAUTHORIZED)
                     .entity("invalid email or password").build();
         }
         throttle.recordLoginSuccess(normalizedEmail);
+        if (totpAccounts.isEnabled(user.id)) {
+            LoginChallengeService.IssuedChallenge challenge = loginChallenges.create(user.id);
+            return Response.accepted(new LoginTotpRequired(
+                    true, challenge.token(), challenge.expiresInSeconds())).build();
+        }
+        return completeLogin(user);
+    }
+
+    /**
+     * Second login step: exchange a password-verified challenge plus a TOTP (or
+     * recovery) code for a session. No cookie exists until this succeeds, and a
+     * challenge is single-use, expires after five minutes and dies after five
+     * wrong attempts.
+     */
+    @POST
+    @Path("/login/totp")
+    public Response loginTotp(LoginTotpRequest req) {
+        if (req == null || isBlank(req.challenge())
+                || (isBlank(req.code()) && isBlank(req.recoveryCode()))) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity("challenge and verification code are required").build();
+        }
+        LoginChallenge challenge = loginChallenges.findLive(req.challenge());
+        if (challenge == null) {
+            return Response.status(Response.Status.UNAUTHORIZED)
+                    .entity("invalid or expired verification code").build();
+        }
+        LoginThrottleService.Decision decision = throttle.startTotpLogin(challenge.userId, clientIp());
+        if (!decision.allowed()) {
+            return tooManyAttempts(decision.retryAfterSeconds());
+        }
+        if (decision.waitSeconds() > 0) {
+            sleep(decision.waitSeconds() * 1000L);
+        }
+
+        User user = User.findById(challenge.userId);
+        if (user == null) {
+            loginChallenges.consume(challenge.id);
+            return Response.status(Response.Status.UNAUTHORIZED)
+                    .entity("invalid or expired verification code").build();
+        }
+
+        TotpAccountService.Verification verification =
+                totpAccounts.verify(user.id, req.code(), req.recoveryCode());
+        if (verification == TotpAccountService.Verification.UNAVAILABLE) {
+            return Response.status(Response.Status.SERVICE_UNAVAILABLE)
+                    .entity("Two-factor verification is temporarily unavailable. "
+                            + "Use a recovery code or contact the operator.").build();
+        }
+        if (verification != TotpAccountService.Verification.VALID) {
+            loginChallenges.recordFailure(challenge.id);
+            throttle.recordTotpFailure(user.id);
+            return Response.status(Response.Status.UNAUTHORIZED)
+                    .entity("invalid or expired verification code").build();
+        }
+        loginChallenges.consume(challenge.id);
+        throttle.recordTotpSuccess(user.id);
+        return completeLogin(user);
+    }
+
+    /** Common tail of both login paths: mark the login and issue the session cookie. */
+    private Response completeLogin(User user) {
+        user.lastLogin = Instant.now(); // detached copy for the response
+        authentication.markLoginSuccess(user.id);
         String token = sessions.create(user);
         return Response.ok(user)
                 .header("Set-Cookie", sessions.cookieHeader(token))
@@ -354,6 +614,17 @@ public class UserResource {
             if (passwordError != null) {
                 return passwordError;
             }
+            if (totpAccounts.isEnabled(user.id)) {
+                TotpAccountService.Verification verification =
+                        totpAccounts.verify(user.id, req.totpCode(), req.recoveryCode());
+                if (verification == TotpAccountService.Verification.UNAVAILABLE) {
+                    return totpUnavailable();
+                }
+                if (verification != TotpAccountService.Verification.VALID) {
+                    return Response.status(Response.Status.BAD_REQUEST)
+                            .entity("Two-factor verification code is required or invalid").build();
+                }
+            }
             user.passwordHash = BcryptUtil.bcryptHash(req.password());
         }
         if (!isBlank(req.themeColor())) {
@@ -373,6 +644,7 @@ public class UserResource {
             // A password change invalidates every existing session for the user
             // and signs out the caller so they must log in again with the new password.
             sessions.invalidateAllForUser(user.id);
+            loginChallenges.deleteForUser(user.id);
             if (caller.id.equals(user.id)) {
                 response.header("Set-Cookie", sessions.expiredCookieHeader());
             }
@@ -564,6 +836,17 @@ public class UserResource {
         Response passwordError = validateDeleteConfirmation(target, req);
         if (passwordError != null) {
             return passwordError;
+        }
+        if (totpAccounts.isEnabled(target.id)) {
+            TotpAccountService.Verification verification =
+                    totpAccounts.verify(target.id, req.totpCode(), req.recoveryCode());
+            if (verification == TotpAccountService.Verification.UNAVAILABLE) {
+                return totpUnavailable();
+            }
+            if (verification != TotpAccountService.Verification.VALID) {
+                return Response.status(Response.Status.BAD_REQUEST)
+                        .entity("Two-factor verification code is required or invalid").build();
+            }
         }
         Response deleteError = cancelSubscriptionAndValidateDeletion(target, stripeBilling);
         if (deleteError != null) {

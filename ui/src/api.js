@@ -36,12 +36,36 @@ export const billingApi = {
 export const usersApi = {
   getCurrentUser: () => request('/api/users/me'),
   login: (email, password) => request('/api/users/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
+  loginTotp: (challenge, code, recoveryCode) => request('/api/users/login/totp', {
+    method: 'POST',
+    body: JSON.stringify({ challenge, code: code || null, recoveryCode: recoveryCode || null }),
+  }),
+  totpStatus: () => request('/api/users/me/totp'),
+  totpSetup: (currentPassword) => request('/api/users/me/totp/setup', {
+    method: 'POST',
+    body: JSON.stringify({ currentPassword }),
+  }),
+  totpEnable: (code) => request('/api/users/me/totp/enable', {
+    method: 'POST',
+    body: JSON.stringify({ code }),
+  }),
+  totpDisable: (currentPassword, code, recoveryCode) => request('/api/users/me/totp/disable', {
+    method: 'POST',
+    body: JSON.stringify({ currentPassword, code: code || null, recoveryCode: recoveryCode || null }),
+  }),
+  regenerateRecoveryCodes: (code, recoveryCode) => request('/api/users/me/totp/recovery-codes', {
+    method: 'POST',
+    body: JSON.stringify({ code: code || null, recoveryCode: recoveryCode || null }),
+  }),
   logout: () => request('/api/users/logout', { method: 'POST' }),
   create: (user) => request('/api/users', { method: 'POST', body: JSON.stringify(user) }),
   update: (id, user) => request(`/api/users/${id}`, { method: 'PUT', body: JSON.stringify(user) }),
   checkoutPlan: (id, plan) => request(`/api/users/${id}/plan/checkout`, { method: 'POST', body: JSON.stringify({ plan }) }),
   syncPlan: (id, payload) => request(`/api/users/${id}/plan/sync`, { method: 'POST', body: JSON.stringify(payload) }),
-  remove: (id, currentPassword) => request(`/api/users/${id}`, { method: 'DELETE', body: JSON.stringify({ currentPassword }) }),
+  remove: (id, currentPassword, totpCode, recoveryCode) => request(`/api/users/${id}`, {
+    method: 'DELETE',
+    body: JSON.stringify({ currentPassword, totpCode: totpCode || null, recoveryCode: recoveryCode || null }),
+  }),
   list: () => request('/api/users'),
 }
 

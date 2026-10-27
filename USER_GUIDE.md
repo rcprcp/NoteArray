@@ -43,6 +43,8 @@ You'll see a hint under the password field, and the form checks the rules before
 
 Enter your **Email** and **Password** and submit the form (pressing **Enter** works). If the credentials are wrong you'll see a generic error — NoteArray never reveals whether the email or the password was incorrect.
 
+If your account has **two-factor authentication** enabled, a correct password is followed by a **Two-factor verification** step. Enter the 6-digit code from Google Authenticator (or another TOTP app), or choose **Use a recovery code** and enter one of the single-use codes you saved when enabling it.
+
 > **Too many attempts?** After several consecutive failed logins, NoteArray slows things down deliberately: the wait between attempts doubles each time (1s, 2s, 4s … up to 64s), and after **8 consecutive failures** the account is locked out for **15 minutes**. A successful login clears the count. You may also see **"too many attempts; try again in N seconds"** if the server is busy. Just wait and try again.
 
 ### Staying signed in
@@ -379,6 +381,23 @@ Open the **Security** card and click **Change Password**:
 
 **Important:** On success, NoteArray **signs you out everywhere** (all sessions on all devices are invalidated) and returns you to the login page. Sign in again with your new password. This is deliberate — it protects you if your old password was exposed.
 
+### Two-factor authentication (TOTP)
+
+Add a second step to login using Google Authenticator or any compatible TOTP app:
+
+1. In **Personal Settings → Security**, click **Enable** on the Two-factor authentication card.
+2. Confirm your current password.
+3. Scan the QR code with your app (or copy the manual key) and enter the 6-digit code.
+4. Save the **recovery codes** shown once. Each code can be used a single time if you lose your phone.
+
+The QR code is generated in your browser; the secret is sent only to your NoteArray server. A code can only be used once (the server
+rejects replays), and login sessions are issued only after both factors succeed. Once enabled, changing your
+password or deleting your account also asks for a code. Use **New recovery codes** to replace the old set, or
+**Disable** with your password plus a code/recovery code.
+
+If you lose your phone and your recovery codes, ask the operator to reset two-factor authentication after
+verifying your identity.
+
 ### Logging out
 
 A **Logout** button sits in the upper area of Personal Settings. It clears your session on the current device. (Other devices remain signed in — a password change, however, signs out *all* sessions.)
@@ -461,6 +480,7 @@ NoteArray is designed to collect as little as possible and protect what it keeps
 
 - **Sanitization** — anything that looks like a script (`<script>`, `<iframe>`, `on*=` handlers, `javascript:` links) is stripped from note content before it's stored or displayed, and the link types are restricted to `http`, `https`, and `mailto`.
 - **Login throttling** — brute-force attempts are slowed (exponential backoff up to 64 s) and accounts lock out for 15 minutes after 8 consecutive failures. Per-IP hourly budgets (120 logins, 30 signups) also apply. Throttling never reveals whether an email is registered.
+- **Two-factor authentication** — optional TOTP (Google Authenticator) with one-time recovery codes, encrypted secrets at rest and replay protection. TOTP resists password theft but is not phishing-proof; passkeys are a future upgrade.
 - **Self-hosting option** — since you can run NoteArray yourself, your data never has to leave infrastructure you control.
 
 ### Your account deletions are real deletions
@@ -490,6 +510,9 @@ Where messages come from and what to do:
 | *"Passwords do not match"* | The New Password and Verify fields differ. | Re-type both carefully. |
 | *"Auto-save failed…"* | A transient network/server error during auto-save. | Keep editing — it will retry. If it persists, copy your text somewhere safe and reload. |
 | *"Failed to load notes: …"* | Note list couldn't be fetched. | Usually transient. Reload the page; sign in again if it also says *"Session expired"*. |
+| *"invalid or expired verification code"* | A TOTP code was wrong, already used, or the 5-minute challenge expired. | Enter the current 6-digit code, or use a recovery code; start again from the password step if the challenge expired. |
+| *"Two-factor verification is temporarily unavailable"* | The server cannot decrypt TOTP secrets (key misconfigured). | Use a recovery code, or contact the operator. |
+| *"Two-factor verification code is required or invalid"* | Changing password/deleting an account with 2FA enabled needs a valid code. | Enter the current authenticator or recovery code. |
 | *"Plan change failed"* / *"Stripe sync failed"* | The Stripe step couldn't complete. | Retry from Personal Settings; check your Stripe checkout session. |
 | *"Payment not verified"* | The Stripe return URL had no checkout session id, so the plan could not be confirmed. | Click the plan again so the session can be verified, or contact support if you were charged. |
 | *"Could not confirm subscription cancellation with Stripe. Your plan was not changed to Free."* | A downgrade needs Stripe to confirm the subscription is cancelled, and that call failed. | Retry the downgrade later; if it keeps failing, contact the operator. |

@@ -7,6 +7,7 @@ import jakarta.transaction.Transactional;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Locale;
+import java.util.UUID;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 /**
@@ -35,6 +36,8 @@ public class LoginThrottleService {
     private static final String EMAIL_PREFIX = "email:";
     private static final String LOGIN_IP_PREFIX = "login-ip:";
     private static final String SIGNUP_IP_PREFIX = "signup-ip:";
+    private static final String TOTP_IP_PREFIX = "totp-ip:";
+    private static final String TOTP_USER_PREFIX = "totp-user:";
     private static final Duration WINDOW = Duration.ofHours(1);
     private static final Duration STALE_AFTER = Duration.ofHours(2);
 
@@ -45,6 +48,10 @@ public class LoginThrottleService {
     /** Hourly request budget per client IP for the signup endpoint. */
     @ConfigProperty(name = "notearray.rate-limit.signup-per-hour-per-ip", defaultValue = "30")
     int signupPerHourPerIp;
+
+    /** Hourly request budget per client IP for the TOTP verification endpoint. */
+    @ConfigProperty(name = "notearray.rate-limit.totp-per-hour-per-ip", defaultValue = "120")
+    int totpPerHourPerIp;
 
     /**
      * Outcome of reserving a request slot. Either the request may proceed
@@ -113,6 +120,41 @@ public class LoginThrottleService {
         LoginThrottle.deleteById(emailKey(email));
     }
 
+    /**
+     * Budget a TOTP verification attempt: per-IP hourly window + the user's
+     * second-factor backoff. Kept separate from the password backoff so guessing
+     * codes cannot lock the password itself, and vice versa.
+     */
+    @Transactional
+    public Decision startTotpLogin(UUID userId, String ip) {
+        long windowRetry = chargeWindow(TOTP_IP_PREFIX + ip, totpPerHourPerIp);
+        if (windowRetry > 0) {
+            return Decision.reject(windowRetry);
+        }
+        long wait = remainingBackoffSeconds(totpUserKey(userId));
+        if (wait <= 0) {
+            return Decision.allow();
+        }
+        return wait <= MAX_SERVER_SIDE_WAIT.toSeconds() ? Decision.allowAfter(wait) : Decision.reject(wait);
+    }
+
+    /** Extend the second-factor backoff after a wrong TOTP/recovery code. */
+    @Transactional
+    public void recordTotpFailure(UUID userId) {
+        LoginThrottle row = lockOrCreate(totpUserKey(userId));
+        int failures = row.consecutiveFailures + 1;
+        Instant now = Instant.now();
+        row.nextAllowedAt = now.plus(LoginThrottlePolicy.delayAfterFailure(failures));
+        row.consecutiveFailures = LoginThrottlePolicy.isLockout(failures) ? 0 : failures;
+        row.updatedAt = now;
+    }
+
+    /** Clear the second-factor backoff after a successful verification. */
+    @Transactional
+    public void recordTotpSuccess(UUID userId) {
+        LoginThrottle.deleteById(totpUserKey(userId));
+    }
+
     /** Drop rows that can no longer affect a decision (windows are 1h, lockouts 15min). */
     @Transactional
     @Scheduled(every = "1h")
@@ -146,6 +188,10 @@ public class LoginThrottleService {
 
     private static String emailKey(String email) {
         return EMAIL_PREFIX + email.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private static String totpUserKey(UUID userId) {
+        return TOTP_USER_PREFIX + userId;
     }
 
     /** Whole seconds from {@code now} to {@code instant}, never less than one. */

@@ -13,18 +13,27 @@ import {
   Stack,
   Table,
   Text,
+  TextInput,
   Title,
   useMantineColorScheme,
 } from '@mantine/core'
 import { notifications } from '@mantine/notifications'
 import { IconArrowDown, IconArrowUp, IconCheck, IconKey, IconLogout, IconMoon, IconSun, IconSunMoon, IconTrash } from '@tabler/icons-react'
 import { THEME_COLORS } from './ThemeButton'
+import TwoFactorCard from './TwoFactorCard'
 import { notesApi, usersApi } from './api'
 
 function formatDate(value) {
   if (!value) return '—'
   const d = new Date(value)
   return Number.isNaN(d.getTime()) ? String(value) : d.toLocaleString()
+}
+
+/** Six digits → TOTP code; anything else is treated as a recovery code. */
+function splitSecurityCode(value) {
+  const trimmed = (value || '').trim()
+  if (/^\d{6}$/.test(trimmed)) return { totpCode: trimmed, recoveryCode: null }
+  return { totpCode: null, recoveryCode: trimmed || null }
 }
 
 function formatBytes(bytes) {
@@ -73,8 +82,11 @@ export default function PersonalSettings({
   const [savingPassword, setSavingPassword] = useState(false)
   const [deleteError, setDeleteError] = useState(null)
   const [deletePassword, setDeletePassword] = useState('')
+  const [deleteTotpCode, setDeleteTotpCode] = useState('')
   const [deleteFieldError, setDeleteFieldError] = useState(null)
   const [deletingAccount, setDeletingAccount] = useState(false)
+  const [totpEnabled, setTotpEnabled] = useState(false)
+  const [securityCode, setSecurityCode] = useState('')
   const [storageUsage, setStorageUsage] = useState({
     usedBytes: 0,
     noteCount: 0,
@@ -102,6 +114,14 @@ export default function PersonalSettings({
     }
   }, [user.id])
 
+  useEffect(() => {
+    let active = true
+    usersApi.totpStatus()
+      .then((status) => { if (active) setTotpEnabled(!!status?.enabled) })
+      .catch(() => {})
+    return () => { active = false }
+  }, [])
+
   const isFreePlan = (user.plan || 'free').toLowerCase() === 'free'
   const hasPendingUpgrade = user.planStatus === 'pending_checkout' || !!user.pendingPlan
   const canDeleteAccount = !hasPendingUpgrade
@@ -111,6 +131,10 @@ export default function PersonalSettings({
     setDeleteFieldError(null)
     if (!deletePassword) {
       setDeleteFieldError('Password is required to delete your account')
+      return
+    }
+    if (totpEnabled && !deleteTotpCode) {
+      setDeleteFieldError('Authentication code is required to delete your account')
       return
     }
     const confirmMsg = isFreePlan
@@ -124,7 +148,8 @@ export default function PersonalSettings({
     try {
       // The server re-verifies the current password before deleting; the
       // session cookie alone can no longer trigger destructive deletion.
-      await usersApi.remove(user.id, deletePassword)
+      const { totpCode, recoveryCode } = splitSecurityCode(deleteTotpCode)
+      await usersApi.remove(user.id, deletePassword, totpCode, recoveryCode)
       await onLogout()
     } catch (e) {
       const msg = e.message || 'Failed to delete account'
@@ -190,6 +215,7 @@ export default function PersonalSettings({
     setCurrentPassword('')
     setNewPassword('')
     setConfirmPassword('')
+    setSecurityCode('')
     setFieldErrors({})
     setPasswordError(null)
   }
@@ -202,6 +228,7 @@ export default function PersonalSettings({
     if (!currentPassword) errs.currentPassword = 'Current password is required'
     if (!newPassword) errs.newPassword = 'New password is required'
     if (!confirmPassword) errs.confirmPassword = 'Password verification is required'
+    if (totpEnabled && !securityCode) errs.securityCode = 'Authentication code is required'
     if (Object.keys(errs).length > 0) {
       setFieldErrors(errs)
       return
@@ -211,12 +238,16 @@ export default function PersonalSettings({
     setSavingPassword(true)
     try {
       // Server validates currentPassword first, then validates newPassword policy and confirmPassword match.
+      const { totpCode, recoveryCode } = splitSecurityCode(securityCode)
       await usersApi.update(user.id, {
         currentPassword,
         password: newPassword,
         confirmPassword,
+        totpCode,
+        recoveryCode,
       })
       resetPasswordForm()
+      setSecurityCode('')
       setPasswordOpen(false)
       await onLogout()
     } catch (e) {
@@ -228,6 +259,8 @@ export default function PersonalSettings({
         setFieldErrors({ confirmPassword: msg })
       } else if (lower.includes('password must')) {
         setFieldErrors({ newPassword: msg })
+      } else if (lower.includes('two-factor')) {
+        setFieldErrors({ securityCode: msg })
       } else {
         setPasswordError(msg)
       }
@@ -534,6 +567,17 @@ export default function PersonalSettings({
               error={fieldErrors.confirmPassword}
               onChange={(e) => setConfirmPassword(e.currentTarget.value)}
             />
+            {totpEnabled && (
+              <TextInput
+                label="Authentication code or recovery code"
+                placeholder="123456 or XXXX-XXXX-XXXX"
+                required
+                value={securityCode}
+                error={fieldErrors.securityCode}
+                onChange={(e) => setSecurityCode(e.currentTarget.value)}
+                autoComplete="one-time-code"
+              />
+            )}
             <Text size="xs" c="dimmed">
               Password must be at least 8 characters and include at least one uppercase letter, one lowercase letter, and one number. Special characters (!@#$%^&*) are optional.
             </Text>
@@ -554,6 +598,8 @@ export default function PersonalSettings({
           </Stack>
         </Collapse>
       </Card>
+
+      <TwoFactorCard onStatusChange={setTotpEnabled} />
 
       <Card withBorder shadow="sm" p="lg" radius="md">
         <Stack gap="sm">
@@ -590,12 +636,24 @@ export default function PersonalSettings({
             onChange={(e) => setDeletePassword(e.currentTarget.value)}
             style={{ maxWidth: 320 }}
           />
+          {totpEnabled && (
+            <TextInput
+              label="Authentication code or recovery code"
+              placeholder="123456 or XXXX-XXXX-XXXX"
+              required
+              value={deleteTotpCode}
+              disabled={!canDeleteAccount || deletingAccount}
+              onChange={(e) => setDeleteTotpCode(e.currentTarget.value)}
+              autoComplete="one-time-code"
+              style={{ maxWidth: 320 }}
+            />
+          )}
           <Group justify="flex-start">
             <Button
               color="red"
               variant="filled"
               leftSection={<IconTrash size={16} />}
-              disabled={!canDeleteAccount || !deletePassword}
+              disabled={!canDeleteAccount || !deletePassword || (totpEnabled && !deleteTotpCode)}
               loading={deletingAccount}
               onClick={handleDeleteAccount}
             >

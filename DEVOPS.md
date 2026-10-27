@@ -136,6 +136,7 @@ When you move to the Day-1 setup, **remove the ngrok hostname** from
 - [ ] **PostgreSQL** installed, role + database created, `max_connections` ≥ 100 (§3)
 - [ ] Application artifact built and deployed to `/opt/notearray/current` (§4)
 - [ ] `/etc/notearray/notearray.env` written with DB credentials + host validation, mode `0640` (§5); session-cookie mode matches the browser origin — default `Secure` for HTTPS, `NOTEARRAY_SESSION_COOKIE_SECURE=false` only for plain HTTP (§5.1)
+- [ ] `NOTEARRAY_TOTP_ENCRYPTION_KEY` set (and backed up) if two-factor authentication is offered; `openssl rand -base64 32`
 - [ ] Billing switch matches readiness: `NOTEARRAY_BILLING_ENABLED=true` only with the Stripe variables configured, otherwise `false` to hide plans (§5)
 - [ ] `notearray.service` installed, `systemctl enable --now notearray`, service active (§6 + §8)
 - [ ] nginx site installed, `nginx -t` clean (§7)
@@ -400,6 +401,15 @@ NOTEARRAY_RATE_LIMIT_TRUST_PROXY=true
 # toggling needs an env change + restart (no rebuild); browsers see it on reload.
 # Keep this true only once the Stripe variables below are configured and tested.
 # NOTEARRAY_BILLING_ENABLED=true
+# ---- TOTP two-factor authentication (optional, opt-in per user) ----
+# 32-byte base64 key used to encrypt TOTP secrets at rest. Generate once with:
+#   openssl rand -base64 32
+# Back this value up separately: without it existing TOTP secrets cannot be
+# decrypted (recovery codes still work). Setup returns 503 when it is unset.
+# NOTEARRAY_TOTP_ENCRYPTION_KEY=<BASE64_32_BYTES>
+# NOTEARRAY_TOTP_ISSUER=NoteArray
+# NOTEARRAY_RATE_LIMIT_TOTP_PER_HOUR_PER_IP=120
+
 # If an account is on a paid plan, the api-key is also required to cancel that
 # subscription before a downgrade to Free or an account deletion; otherwise the
 # request is refused with 502 rather than leaving a recurring charge running.
@@ -518,7 +528,7 @@ journalctl -u notearray -f          # watch startup; look for "Profile prod acti
 Startup is fast (~1–2 s) ✅ and **Flyway migrations run automatically at boot** ✅ (validated, then applied if new):
 
 ```
-Successfully validated 21 migrations … Current version of schema "public": 1.2.0 … up to date. No migration necessary
+Successfully validated 22 migrations … Current version of schema "public": 1.3.0 … up to date. No migration necessary
 ```
 
 > **Never edit a migration file that has already run.** Flyway validates checksums and will refuse to start.
@@ -957,7 +967,22 @@ PGPASSWORD="$DB_PASSWORD" psql -h 127.0.0.1 -U notearray -d notearray \
   -c "UPDATE users SET superuser = false WHERE email = 'you@example.com';"
 ```
 
-### 9.7 Capacity & tuning knobs
+### 9.7 Reset a user's TOTP (lost device + recovery codes)
+
+Verify the user's identity out-of-band first. Then remove the factor (they can re-enroll after signing in):
+
+```bash
+PGPASSWORD="$DB_PASSWORD" psql -h 127.0.0.1 -U notearray -d notearray <<'SQL'
+DELETE FROM user_totp WHERE user_id = '<USER_UUID>';
+DELETE FROM user_recovery_codes WHERE user_id = '<USER_UUID>';
+DELETE FROM login_challenges WHERE user_id = '<USER_UUID>';
+SQL
+```
+
+Their sessions remain valid; ask them to change their password as well if the device was lost. Never reset without
+verification — this removes a security control.
+
+### 9.8 Capacity & tuning knobs
 
 | Knob | Default | Notes |
 |---|---|---|
@@ -970,6 +995,8 @@ PGPASSWORD="$DB_PASSWORD" psql -h 127.0.0.1 -U notearray -d notearray \
 | Attachments | 10 MB per file | Code constant (`StorageQuota.MAX_ATTACHMENT_BYTES`) — needs a rebuild to change |
 | `NOTEARRAY_RATE_LIMIT_*` | 120 login / 30 signup per IP/hour | Requires `trust-proxy=true` behind nginx |
 | `NOTEARRAY_BILLING_ENABLED` | true | Hides the plans UI + 503s `/plan/checkout` when false; restart after changing |
+| `NOTEARRAY_TOTP_ENCRYPTION_KEY` | unset | Base64 32-byte key for TOTP secrets; required to enable 2FA. Back up separately; losing it blocks TOTP codes (recovery codes still work) |
+| `NOTEARRAY_RATE_LIMIT_TOTP_PER_HOUR_PER_IP` | 120 | Hourly TOTP verification budget per client IP |
 
 Measured on a 32-core host (JVM mode, local PostgreSQL): 800 concurrent requests completed in ~230 ms with
 all `200`s; the practical ceiling is the DB pool, not the thread pools. Native images (`-Dnative`) are
@@ -989,6 +1016,8 @@ README/native notes before choosing that path.
 | Login "succeeds", then the UI says **"Logged in, but loading your account failed"** (or you are immediately logged out) | Secure session cookie not accepted because the browser is on plain HTTP (or clock skew) | on an `http://` origin add `NOTEARRAY_SESSION_COOKIE_SECURE=false` (§5.1); on `https://` use the default and check `timedatectl` |
 | **413** on import/upload | nginx `client_max_body_size` too small | set `client_max_body_size 64m;` and reload nginx |
 | **503 "A note import is already running"** | more than 2 concurrent imports (by design) | retry later (`Retry-After: 60`) |
+| **503 "Two-factor authentication is not configured"** / login says 2FA temporarily unavailable | `NOTEARRAY_TOTP_ENCRYPTION_KEY` missing or not base64/32 bytes | set the key (from secrets backup), restart; users can still sign in with recovery codes |
+| User lost authenticator **and** recovery codes | expected | verify identity, then reset: `DELETE FROM user_totp WHERE user_id = '<uuid>'; DELETE FROM user_recovery_codes WHERE user_id = '<uuid>';` |
 | **502 on downgrade/deletion: "Could not confirm subscription cancellation with Stripe"** | Stripe cancellation failed, or `NOTEARRAY_STRIPE_API_KEY` is missing while a subscription id is stored | configure the API key / retry when Stripe is reachable; the paid plan is intentionally left unchanged |
 | **504** during a big import | nginx `proxy_read_timeout` too low | raise to `600s` (§7.2) |
 | 5xx under load, log shows JDBC connection acquisition timeout | DB pool exhausted (default 20) | raise `QUARKUS_DATASOURCE_JDBC_MAX_SIZE` (and PostgreSQL `max_connections`), or add capacity |
@@ -1003,6 +1032,7 @@ README/native notes before choosing that path.
 - [ ] App bound to `127.0.0.1`; only nginx exposed (ufw: 22/80/443)
 - [ ] PostgreSQL listening on localhost only, `scram-sha-256`, no `PUBLIC` privileges on the app database
 - [ ] Secrets in `/etc/notearray/notearray.env` (`0640 root:notearray`), **never** in the jar or git
+- [ ] TOTP secrets encrypted with `NOTEARRAY_TOTP_ENCRYPTION_KEY`; recovery codes documented and operator reset procedure known
 - [ ] Session cookie keeps `Secure` on HTTPS; `NOTEARRAY_SESSION_COOKIE_SECURE=false` only for a plain-HTTP LAN trial (§5.1)
 - [ ] TLS with auto-renewal verified (`certbot renew --dry-run`) and expiry alerting
 - [ ] `QUARKUS_HTTP_HOST_VALIDATION_ALLOWED_HOSTS` set to the real hostname (do not disable host validation)

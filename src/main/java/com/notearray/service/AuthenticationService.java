@@ -26,10 +26,12 @@ public class AuthenticationService {
     /**
      * Return the user when the credentials match, else {@code null}. Exactly one
      * bcrypt comparison runs either way, so an unknown email costs the same as a
-     * known one.
+     * known one. Deliberately does <b>not</b> update {@code last_login} — when the
+     * account has TOTP enabled the login is not complete until the second factor
+     * is verified (see {@link #markLoginSuccess(UUID)}).
      */
     @Transactional
-    public User authenticate(String email, String password) {
+    public User verifyCredentials(String email, String password) {
         String normalizedEmail = EmailPolicy.normalizeEmail(email);
         User user = User.findByEmail(normalizedEmail);
         String storedHash = user != null ? user.passwordHash : timingDecoyHash();
@@ -37,8 +39,19 @@ public class AuthenticationService {
         if (user == null || !matches) {
             return null;
         }
-        user.lastLogin = Instant.now();
         return user;
+    }
+
+    /** Record a fully completed login (password + second factor). */
+    @Transactional
+    public void markLoginSuccess(UUID userId) {
+        if (userId == null) {
+            return;
+        }
+        User user = User.findById(userId);
+        if (user != null) {
+            user.lastLogin = Instant.now();
+        }
     }
 
     private static String timingDecoyHash() {
