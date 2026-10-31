@@ -37,8 +37,6 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.time.Instant;
-import java.time.ZoneOffset;
-import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -487,11 +485,7 @@ public class NoteResource {
                     .entity("Failed to build export").build();
         }
 
-        String filename = "notearray-export-"
-                + DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")
-                        .withZone(ZoneOffset.UTC)
-                        .format(Instant.now())
-                + ".zip";
+        String filename = NoteExportService.exportFilename(user.name, Instant.now());
         StreamingOutput body = out -> {
             try (InputStream in = Files.newInputStream(archive)) {
                 in.transferTo(out);

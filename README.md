@@ -580,6 +580,7 @@ on another note start their grace clock right away. Deleting an **account** remo
       and `content` (string)
     - `attachments/<attachment-id>-<filename>` — every attachment the user owns
   - The export is independent of the current search/filter state and is available even over the plan storage limit
+  - Downloaded as `{user}-{UTC date/time}-export.zip` (for example `Jane-Doe-20261031-153045-export.zip`)
   - Built in a temporary file server-side and streamed to the client; the temp file is deleted after the response
   - At most **2 exports** run at a time; further requests get **503** with `Retry-After` (protects temp disk/heap from parallel export floods)
 

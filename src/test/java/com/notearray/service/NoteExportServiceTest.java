@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -75,6 +76,24 @@ class NoteExportServiceTest {
     void longNamesAreTruncated() {
         String name = NoteExportService.sanitizeName("a".repeat(200), "fallback");
         assertEquals(NoteExportService.MAX_NAME_SEGMENT_LENGTH, name.length());
+    }
+
+    // --- download filename ---------------------------------------------------
+
+    @Test
+    void exportFilenameUsesUserAndUtcTimestamp() {
+        Instant now = Instant.parse("2026-10-31T15:30:45Z");
+        assertEquals("Jane-Doe-20261031-153045-export.zip",
+                NoteExportService.exportFilename("Jane Doe", now));
+    }
+
+    @Test
+    void exportFilenameSanitizesUserAndFallsBackWhenBlank() {
+        Instant now = Instant.parse("2026-10-31T15:30:45Z");
+        assertEquals("etc-passwd-20261031-153045-export.zip",
+                NoteExportService.exportFilename("../../etc/passwd", now));
+        assertEquals("user-20261031-153045-export.zip",
+                NoteExportService.exportFilename("   ", now));
     }
 
     // --- JSON shape ---------------------------------------------------------

@@ -12,6 +12,9 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -167,8 +170,7 @@ public class NoteExportService {
     }
 
     /** Archive entry for a note: {@code notes/<uuid>-<title>.json}. */
-    static String noteEntryName(UUID noteId, String title) {
-        String name = sanitizeName(title, "untitled");
+    static String noteEntryName(UUID noteId, String title) {        String name = sanitizeName(title, "untitled");
         if (name.toLowerCase(java.util.Locale.ROOT).endsWith(".json")) {
             name = name.substring(0, name.length() - 5);
         }
@@ -178,6 +180,18 @@ public class NoteExportService {
     /** Archive entry for an attachment: {@code attachments/<uuid>-<filename>}. */
     static String attachmentEntryName(UUID attachmentId, String filename) {
         return "attachments/" + attachmentId + "-" + sanitizeName(filename, "attachment");
+    }
+
+    /**
+     * Download name for the archive: {@code {user}-{UTC date/time}-export.zip}.
+     * The user name is sanitized so it is safe inside Content-Disposition.
+     */
+    public static String exportFilename(String userName, Instant now) {
+        String safeUser = sanitizeName(userName, "user");
+        String timestamp = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")
+                .withZone(ZoneOffset.UTC)
+                .format(now);
+        return safeUser + "-" + timestamp + "-export.zip";
     }
 
     /**
