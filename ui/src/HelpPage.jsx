@@ -79,8 +79,8 @@ const PAGES = {
         body: 'Tags are space-delimited words attached to each note (for example: "work project-alpha urgent"). Use the Search Notes panel to search note titles, content and tags (tick Search Tags to match tags by part of a word, or "Find notes with attachments" to keep only notes with files). The header Pinned and Untagged buttons are click-on, click-off filters that combine with your search.',
       },
       {
-        heading: 'Can I import existing notes from Joplin or Markdown files?',
-        body: 'Yes. Click Import in the top navigation bar while on the List Notes view. You can upload a Joplin .jex export archive (ZIP or TAR up to 50 MB) or individual .md Markdown files (up to 10 MB). Joplin folder names and metadata tags are preserved as NoteArray tags.',
+        heading: 'Can I import or export my notes?',
+        body: 'Yes. Click Import/Export in the top navigation bar while on the List Notes view. The top half of the modal imports notes: a Joplin .jex archive (ZIP or TAR up to 50 MB) or individual .md Markdown files (up to 10 MB), with Joplin folder names and metadata tags preserved as NoteArray tags. The bottom half exports all of your notes as one JSON file per note plus every attachment, packed into a single ZIP archive.',
       },
       {
         heading: 'How do I customize my theme or change my password?',

@@ -128,6 +128,44 @@ export const notesApi = {
   // Attachments this note links to (metadata only; bytes come from /api/attachments/{id}).
   listAttachments: (noteId) => request(`/api/notes/${noteId}/attachments`),
   /**
+   * Download a ZIP of every note (one JSON file each) plus every attachment
+   * owned by the signed-in user. The archive is built server-side and saved via
+   * a Blob, like attachment downloads.
+   */
+  exportAll: async () => {
+    const res = await fetch('/api/notes/export', { credentials: 'include' })
+    if (!res.ok) {
+      let message = `${res.status} ${res.statusText}`
+      try {
+        const text = await res.text()
+        if (text) message = text
+      } catch (e) {
+        // ignore body read errors
+      }
+      const err = new Error(message)
+      err.status = res.status
+      throw err
+    }
+    const blob = await res.blob()
+    let filename = 'notearray-export.zip'
+    try {
+      const cd = res.headers.get('Content-Disposition') || ''
+      const m = cd.match(/filename="?([^";]+)"?/i)
+      if (m && m[1].trim()) filename = m[1].trim()
+    } catch (e) {
+      // header not accessible — keep the fallback name
+    }
+    filename = filename.replace(/[^A-Za-z0-9._ -]/g, '_').trim() || 'notearray-export.zip'
+    const objectUrl = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = objectUrl
+    anchor.download = filename
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+    URL.revokeObjectURL(objectUrl)
+  },
+  /**
    * Delete an attachment. `fromNote` names the note the caller is removing the
    * link from, so its own reference does not block the delete; a 409 means
    * another note still links the file.

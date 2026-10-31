@@ -14,7 +14,7 @@ A practical guide to using NoteArray, a modern note-taking application that work
 4. [Organizing: Tags & Pinning](#4-organizing-tags--pinning)
 5. [Searching Your Notes](#5-searching-your-notes)
 6. [Viewing, Sorting & Deleting](#6-viewing-sorting--deleting)
-7. [Importing Notes](#7-importing-notes)
+7. [Importing & Exporting Notes](#7-importing--exporting-notes)
 8. [Personal Settings & Appearance](#8-personal-settings--appearance)
 9. [Plans, Storage & Billing](#9-plans-storage--billing)
 10. [Privacy & Security](#10-privacy--security)
@@ -64,13 +64,13 @@ Once signed in, the header at the top of every page is your control center:
 | **Search Notes** | Toggles the search panel — text search with its scope checkboxes and the attachment / untagged filters (List Notes view only) |
 | **Pinned** | Filters the list to your pinned notes (List Notes view only) |
 | **Untagged** | Filters the list to notes with no tags (List Notes view only) |
-| **Import** (upload icon) | Opens the Import notes modal (List Notes view only) |
+| **Import/Export** | Opens the Import / Export notes modal: import Joplin or Markdown files, or download all your notes and attachments as a ZIP (List Notes view only) |
 | **Help/About** | Dropdown with **FAQ**, **User Guide**, **Privacy Policy**, and **Security Notes** pages |
 | **Your avatar** | Shows your initials; click it to open **Personal Settings** |
 
 Notes:
 
-- **Search Notes**, **Pinned**, **Untagged**, and **Import** are only enabled while you're on the **List Notes** view. Switch to that view first, then toggle them.
+- **Search Notes**, **Pinned**, **Untagged**, and **Import/Export** are only enabled while you're on the **List Notes** view. Switch to that view first, then toggle them.
 - On narrow screens, header items that don't fit collapse into a **More actions (…)** menu on the right.
 
 ### Screen layouts
@@ -218,7 +218,7 @@ joplin important work
 - While you type, tags preview as colored badges.
 - Tags show in the notes list as badges under each note's title.
 
-> **Why tags instead of folders?** Tags let a note belong to many categories at once. When you import from Joplin, your folder hierarchy is converted into tags automatically (see [Importing Notes](#7-importing-notes)).
+> **Why tags instead of folders?** Tags let a note belong to many categories at once. When you import from Joplin, your folder hierarchy is converted into tags automatically (see [Importing & Exporting Notes](#7-importing--exporting-notes)).
 
 ### Pinning notes
 
@@ -312,9 +312,27 @@ Clicking **Delete** asks for confirmation with the note's name: *"Delete note "T
 
 ---
 
-## 7. Importing Notes
+## 7. Importing & Exporting Notes
 
-Click **Import** in the header (List Notes view) to open the **Import notes** modal. Two formats are supported:
+Click **Import/Export** in the header (List Notes view) to open the **Import / Export notes** modal. The top half imports notes; the bottom half exports everything.
+
+### Exporting your notes
+
+Click **Export .zip** to download a single compressed archive containing:
+
+- one JSON file per note under `notes/`, named `<note-id>-<title>.json`, with these fields:
+  - `title` — the note title;
+  - `tags` — an array of tags (empty when the note has none);
+  - `pinned` — `true` when the note is pinned, otherwise `false`;
+  - `attachments` — an array of relative paths to files in the same ZIP (empty when the note has none);
+  - `content` — the markdown body (empty when the note has none).
+- every attachment you own under `attachments/`, named `<attachment-id>-<original-filename>`.
+
+The export always contains all of your notes and attachments, regardless of the current search or list filters, and it works even when you are over your plan's storage limit. The archive is saved as `<your-user-name>-<date-time>-export.zip` (for example `Jane-Doe-20261031-153045-export.zip`) and is built on the server before your browser downloads it; large accounts may take a moment. At most two exports run at a time — if the server is busy, wait a minute and try again.
+
+### Importing notes
+
+Two formats are supported:
 
 ### Joplin (.jex) — bring your whole notebook
 
@@ -448,7 +466,7 @@ Changing plans keeps all your notes; only your limit changes.
 If your notes reach your plan's limit:
 
 - A yellow **"Storage Limit Reached"** banner appears above the list showing your exact usage, with an **Upgrade Plan** button.
-- **Create Note** and **Import** are **disabled** in the header.
+- **Create Note** is **disabled** in the header. **Import/Export** stays available so you can export your data; importing is disabled inside the modal until you free space.
 - You can still: **delete notes or attachments** (freeing space immediately), **shrink existing notes** (making a note smaller is always allowed), and **upgrade your plan**.
 - The server enforces this limit too, so it's never just a UI suggestion.
 

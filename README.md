@@ -569,6 +569,21 @@ on another note start their grace clock right away. Deleting an **account** remo
   - Superusers search all notes; regular users search only their own
   - Can be combined with filter parameters: `?q=bug&searchTitles=true&tags=urgent`
 
+### Notes – Export
+
+- `GET /api/notes/export` – Download every note and attachment owned by the signed-in user
+  - **Response:** `application/zip` archive
+  - Returns 401 if not authenticated
+  - Archive layout:
+    - `notes/<note-id>-<title>.json` — one file per note, containing `title` (string), `tags` (array),
+      `pinned` (boolean), `attachments` (array of relative archive paths for the files this note links to),
+      and `content` (string)
+    - `attachments/<attachment-id>-<filename>` — every attachment the user owns
+  - The export is independent of the current search/filter state and is available even over the plan storage limit
+  - Downloaded as `{user}-{UTC date/time}-export.zip` (for example `Jane-Doe-20261031-153045-export.zip`)
+  - Built in a temporary file server-side and streamed to the client; the temp file is deleted after the response
+  - At most **2 exports** run at a time; further requests get **503** with `Retry-After` (protects temp disk/heap from parallel export floods). A caller with no export of their own is told the *system wide concurrent export limit* was reached; a caller already exporting gets an "export in progress" message
+
 ### Notes – Import
 
 - `POST /api/notes/import/joplin` – Import from Joplin JEX archive
@@ -702,7 +717,7 @@ The interactive Swagger UI allows you to test all endpoints directly from your b
 - Downgrading to Free cancels the paid Stripe subscription first (server-side) and only then applies the Free
   limits; if Stripe cannot be reached or does not confirm, the downgrade is refused and the paid plan stays
   active, so a recurring charge is never silently left running
-- At the storage limit a banner disables **Create Note** and **Import**; deleting or shrinking notes is always allowed
+- At the storage limit a banner disables **Create Note**; **Import/Export** stays available so data can be exported, and imports are disabled inside the modal
 - The **Available Plans** card is shown only when the operator enables billing (`NOTEARRAY_BILLING_ENABLED=true`,
   the default); when disabled, the card is hidden and checkout is refused server-side
 - See [USER_GUIDE.md](USER_GUIDE.md) §9 and [STRIPE.md](STRIPE.md) for the operator setup
@@ -745,7 +760,7 @@ The interactive Swagger UI allows you to test all endpoints directly from your b
 - **Live preview** – Editor supports TipTap's rich text rendering with markdown shortcuts
 
 ### Advanced Search & Filtering
-- **Responsive header actions** – Header includes **Create Note**, **List Notes**, **Search Notes**, **Pinned**, **Untagged**, **Import**, **Help/About** and the user avatar. When viewport width is constrained, items collapse right-to-left into an overflow (`...`) menu, and Search/Pinned/Untagged/Import controls are disabled when outside the List Notes view.
+- **Responsive header actions** – Header includes **Create Note**, **List Notes**, **Search Notes**, **Pinned**, **Untagged**, **Import/Export**, **Help/About** and the user avatar. When viewport width is constrained, items collapse right-to-left into an overflow (`...`) menu, and Search/Pinned/Untagged/Import-Export controls are disabled when outside the List Notes view.
 - **Search Notes panel** – One header button opens the combined search panel: the text search box with its **Search Titles / Search Note Content / Search Tags** scope checkboxes plus the **Find notes with attachments** filter. Toggled with the **Search Notes** header button
   - There is no separate tag picker: tags are found through the **Search Tags** scope, which matches any part of a tag
     (so `sup` finds `super-duper`, and `grq` finds notes in `grq` and `grq/cobol`)
@@ -774,8 +789,13 @@ The interactive Swagger UI allows you to test all endpoints directly from your b
 - **Help modal** – Click search with no checkboxes to see instructions
 - **Combined with filters** – Use search and filters together for powerful discovery
 
-### Import Notes
-- **Import button** – Upload notes from external sources
+### Import / Export Notes
+- **Import/Export button** – Opens a modal with import options above and a full data export below
+- **Export all data** – Download one ZIP containing:
+  - `notes/<note-id>-<title>.json` for every note, with `title`, `tags` (array), `pinned` (boolean), `attachments` (array) and `content`
+  - `attachments/<attachment-id>-<filename>` for every attachment you own
+  - Works regardless of search/filter state and even when you are over your plan's storage limit
+  - At most two exports run at once; busy servers return a retryable error instead of exhausting disk
 - **Joplin JEX import** – Import entire note collections from Joplin
   - Upload .jex files (Joplin's native export format)
   - Folder structure becomes hierarchical tags (`Work/Projects/Acme`), filterable from the Search Notes panel
@@ -927,7 +947,7 @@ Backend unit tests run with JUnit 5 (no database or server required):
 mvn test
 ```
 
-Covered so far (**162 unit tests across 24 test classes**): login-throttle backoff/lockout rules (`LoginThrottlePolicyTest`), client-IP / `X-Forwarded-For` parsing (`ClientIpTest`), password and email policies (`PasswordPolicyTest`, `EmailPolicyTest`), JAX-RS registration and SPA redirects (`NoteArrayApplicationTest`), password change and account-deletion confirmation (`UserPasswordChangeTest`, `UserDeleteVerificationTest`), CSRF filtering (`CsrfFilterTest`), security headers / request-id / ingest XSS sanitization (`SecurityHeadersFilterTest`), note version conflicts (`NoteVersionConflictTest`), per-note editor-height clamping and read-only column mapping (`NoteEditorHeightTest`), RFC 6238 vectors/base32/skew (`TotpServiceTest`), AES-GCM secret encryption (`TotpCryptoTest`), recovery-code hashing (`RecoveryCodeServiceTest`), tag prefix filtering (`TagPrefixFilterTest`), imports and Joplin folder/attachment mapping (`ImportLimitsTest`, `JoplinFolderTagsTest`, `JoplinAttachmentImportTest`), attachment quotas and cleanup (`AttachmentQuotaTest`, `AttachmentCleanupServiceTest`), plan/Stripe handling and the billing feature switch (`UserPlanSyncTest`, `StripeWebhookResourceTest`, `BillingConfigResourceTest`), and the Stripe subscription cancellation that precedes a downgrade or account deletion (`StripeBillingServiceTest`, wire-level `DELETE /v1/subscriptions/{id}` against a local HTTP server). `mvn clean package` runs the tests as part of the build.
+Covered so far (**173 unit tests across 25 test classes**): login-throttle backoff/lockout rules (`LoginThrottlePolicyTest`), client-IP / `X-Forwarded-For` parsing (`ClientIpTest`), password and email policies (`PasswordPolicyTest`, `EmailPolicyTest`), JAX-RS registration and SPA redirects (`NoteArrayApplicationTest`), password change and account-deletion confirmation (`UserPasswordChangeTest`, `UserDeleteVerificationTest`), CSRF filtering (`CsrfFilterTest`), security headers / request-id / ingest XSS sanitization (`SecurityHeadersFilterTest`), note version conflicts (`NoteVersionConflictTest`), per-note editor-height clamping and read-only column mapping (`NoteEditorHeightTest`), RFC 6238 vectors/base32/skew (`TotpServiceTest`), AES-GCM secret encryption (`TotpCryptoTest`), recovery-code hashing (`RecoveryCodeServiceTest`), tag prefix filtering (`TagPrefixFilterTest`), imports and Joplin folder/attachment mapping (`ImportLimitsTest`, `JoplinFolderTagsTest`, `JoplinAttachmentImportTest`), export naming/tag/JSON shape (`NoteExportServiceTest`), attachment quotas and cleanup (`AttachmentQuotaTest`, `AttachmentCleanupServiceTest`), plan/Stripe handling and the billing feature switch (`UserPlanSyncTest`, `StripeWebhookResourceTest`, `BillingConfigResourceTest`), and the Stripe subscription cancellation that precedes a downgrade or account deletion (`StripeBillingServiceTest`, wire-level `DELETE /v1/subscriptions/{id}` against a local HTTP server). `mvn clean package` runs the tests as part of the build.
 
 ### Testing on Mobile Devices
 
@@ -961,7 +981,7 @@ Covered so far (**162 unit tests across 24 test classes**): login-throttle backo
 - **Password policy:** New or changed passwords need 8+ characters with an uppercase letter, a lowercase letter, and a number (special characters from `!@#$%^&*` are optional). Enforced server-side on create/update and mirrored by the signup form.
 - **Markdown in notes:** Content is stored as markdown, so you can export, version control, and sync notes easily.
 - **Tags and search:** Tags are space-delimited and searchable with the **Search Tags** scope (partial tag matches) in the Search Notes panel.
-- **Importing notes:** Use the Import feature to migrate notes from Joplin or upload individual markdown files. Imports automatically preserve metadata and convert folder structures to tags.
+- **Importing and exporting notes:** Use Import/Export to migrate notes from Joplin or upload individual markdown files, or to download every note (one JSON file each) plus all attachments as a ZIP. Imports automatically preserve metadata and convert folder structures to tags.
 - **Auto-save behavior:** Both new and existing notes are saved automatically after 2 seconds of inactivity — the first save creates the note (once it has a title or an attachment), later ones update it in place. Pending changes are flushed when the editor closes. The debounce delay prevents excessive server requests while providing responsive save behavior.
 - **Responsive design:** Mobile-first CSS approach with breakpoints at 768px and 1024px. Use browser DevTools to test different screen sizes. Touch targets are 44px minimum on mobile for accessibility.
 - **Mobile optimization:** Modals go full-screen on mobile, search filters collapse, notes display as cards instead of tables. Font sizes scale with viewport using `clamp()`.

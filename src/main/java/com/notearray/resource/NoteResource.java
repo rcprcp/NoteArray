@@ -4,6 +4,7 @@ import com.notearray.entity.Note;
 import com.notearray.entity.NoteAttachment;
 import com.notearray.entity.User;
 import com.notearray.service.AttachmentCleanupService;
+import com.notearray.service.NoteExportService;
 import com.notearray.service.SessionService;
 import com.notearray.service.StorageQuota;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -26,6 +27,7 @@ import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.StreamingOutput;
 import jakarta.ws.rs.WebApplicationException;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -33,6 +35,7 @@ import java.io.InputStream;
 import java.io.IOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
@@ -45,6 +48,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Semaphore;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -69,6 +73,11 @@ public class NoteResource {
     /** Bounded parallel imports so each buffered archive fits comfortably in heap. */
     private static final int IMPORT_PERMITS = 2;
     private static final Semaphore IMPORT_SEMAPHORE = new Semaphore(IMPORT_PERMITS);
+    /** Bounded parallel exports so temp archives cannot exhaust disk/heap under load. */
+    private static final int EXPORT_PERMITS = 2;
+    private static final Semaphore EXPORT_SEMAPHORE = new Semaphore(EXPORT_PERMITS);
+    /** Users whose export currently holds a permit (used to tailor the 503 message). */
+    private static final Set<UUID> EXPORTS_IN_PROGRESS = ConcurrentHashMap.newKeySet();
     /** Maximum size of a single imported note body, matching the notes.content column limit. */
     static final int MAX_CONTENT_LENGTH = 10 * 1024 * 1024; // 10 MB
     /** Maximum lengths matching the notes table column definitions. */
@@ -85,6 +94,9 @@ public class NoteResource {
 
     @Inject
     AttachmentCleanupService attachmentCleanup;
+
+    @Inject
+    NoteExportService noteExport;
 
     @Inject
     ObjectMapper objectMapper;
@@ -423,6 +435,115 @@ public class NoteResource {
         boolean overQuota = usedBytes >= limitBytes;
         return Response.ok(new StorageUsage(usedBytes, limitBytes, noteCount,
                 notesBytes, attachmentsBytes, overQuota)).build();
+    }
+
+    /**
+     * Export every note and every attachment owned by the authenticated user as
+     * one compressed ZIP archive.
+     *
+     * <p>Notes are written as {@code notes/<id>-<title>.json} with
+     * {@code title}, {@code tags}, {@code pinned}, {@code attachments} and
+     * {@code content} fields. Attachment bytes are written as
+     * {@code attachments/<id>-<filename>}; the note's {@code attachments} array
+     * holds the matching relative paths.
+     *
+     * <p>At most {@value #EXPORT_PERMITS} exports run at once; further requests
+     * get 503 + Retry-After so temp archives cannot exhaust disk or heap under
+     * load.
+     */
+    /**
+     * 503 message when an export cannot start. If the caller is not the one
+     * exporting, say the limit is system-wide; otherwise point at their own
+     * in-flight export.
+     */
+    static String exportBusyMessage(boolean userExporting) {
+        return userExporting
+                ? "You already have a note export in progress; try again in a moment."
+                : "system wide concurrent export limit has been reached, try again in a moment.";
+    }
+
+    private static void releaseExportPermit(UUID userId) {
+        EXPORTS_IN_PROGRESS.remove(userId);
+        EXPORT_SEMAPHORE.release();
+    }
+
+    @GET
+    @Path("/export")
+    @Produces("application/zip")
+    public Response exportAll() {
+        User user = getAuthenticatedUser();
+        if (user == null) {
+            return Response.status(Response.Status.UNAUTHORIZED).build();
+        }
+        if (!EXPORT_SEMAPHORE.tryAcquire()) {
+            boolean userExporting = EXPORTS_IN_PROGRESS.contains(user.id);
+            return Response.status(Response.Status.SERVICE_UNAVAILABLE)
+                    .header("Retry-After", "60")
+                    .entity(exportBusyMessage(userExporting)).build();
+        }
+        if (!EXPORTS_IN_PROGRESS.add(user.id)) {
+            // This user already has an export running: don't let one account
+            // occupy both permits (or race its own temp-file lifecycle).
+            EXPORT_SEMAPHORE.release();
+            return Response.status(Response.Status.SERVICE_UNAVAILABLE)
+                    .header("Retry-After", "60")
+                    .entity(exportBusyMessage(true)).build();
+        }
+        final java.nio.file.Path archive;
+        try {
+            archive = noteExport.exportToTempFile(user.id);
+        } catch (IOException e) {
+            releaseExportPermit(user.id);
+            LOG.errorf(e, "Failed to build note export for user %s", user.id);
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                    .entity("Failed to build export").build();
+        }
+        long size;
+        try {
+            size = Files.size(archive);
+        } catch (IOException e) {
+            releaseExportPermit(user.id);
+            try {
+                Files.deleteIfExists(archive);
+            } catch (IOException ignored) {
+                // best effort; the error path already reports the failure
+            }
+            LOG.errorf(e, "Failed to size note export for user %s", user.id);
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                    .entity("Failed to build export").build();
+        }
+
+        String filename = NoteExportService.exportFilename(user.name, Instant.now());
+        StreamingOutput body = out -> {
+            try (InputStream in = Files.newInputStream(archive)) {
+                in.transferTo(out);
+            } finally {
+                releaseExportPermit(user.id);
+                try {
+                    Files.deleteIfExists(archive);
+                } catch (IOException cleanupError) {
+                    LOG.warnf(cleanupError, "Could not delete temporary export %s", archive);
+                }
+            }
+        };
+        try {
+            return Response.ok(body)
+                    .type("application/zip")
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
+                    .header(HttpHeaders.CONTENT_LENGTH, size)
+                    .header(HttpHeaders.CACHE_CONTROL, "no-store")
+                    .build();
+        } catch (RuntimeException e) {
+            // The response never reached the streaming phase: free the permit and
+            // temp file instead of leaking either.
+            releaseExportPermit(user.id);
+            try {
+                Files.deleteIfExists(archive);
+            } catch (IOException ignored) {
+                // best effort
+            }
+            throw e;
+        }
     }
 
     /**
