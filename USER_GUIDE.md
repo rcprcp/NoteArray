@@ -71,6 +71,7 @@ Once signed in, the header at the top of every page is your control center:
 Notes:
 
 - **Search Notes**, **Pinned**, **Untagged**, and **Import/Export** are only enabled while you're on the **List Notes** view. Switch to that view first, then toggle them.
+- The list loads the newest 50 matching notes first and appends more as you scroll, or when you click **Load more**. After creating, editing, deleting, or importing notes, an active search refreshes the loaded window so results stay current.
 - On narrow screens, header items that don't fit collapse into a **More actions (…)** menu on the right.
 
 ### Screen layouts
