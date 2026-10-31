@@ -1,7 +1,7 @@
 import { useState, useCallback, useLayoutEffect, useRef } from 'react'
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { Avatar, Box, Container, Group, Menu, Stack, Text, Title, UnstyledButton } from '@mantine/core'
-import { IconUpload, IconUser } from '@tabler/icons-react'
+import { IconArrowsExchange, IconUser } from '@tabler/icons-react'
 import LoginPage from './LoginPage'
 import NotesPanel from './NotesPanel'
 import HeaderActions from './HeaderActions'
@@ -110,7 +110,7 @@ export default function App({ themeColor, onThemeChange, onPlanChange, onPlanSyn
     { key: 'search', label: 'Search Notes', active: actions?.searchOpen, toggle: true, disabled: listOnlyDisabled, onClick: () => actions?.onToggleSearch?.() },
     { key: 'pinned', label: 'Pinned', active: actions?.pinnedActive, toggle: true, disabled: listOnlyDisabled, onClick: () => actions?.onSetPinned?.() },
     { key: 'untagged', label: 'Untagged', active: actions?.untaggedActive, toggle: true, disabled: listOnlyDisabled, onClick: () => actions?.onSetUntagged?.() },
-    { key: 'import', label: 'Import', icon: IconUpload, active: actions?.importOpen, toggle: true, disabled: listOnlyDisabled || !!actions?.overQuota, onClick: () => actions?.onImport?.() },
+    { key: 'importExport', label: 'Import/Export', icon: IconArrowsExchange, active: actions?.importOpen, toggle: true, disabled: listOnlyDisabled, onClick: () => actions?.onImport?.() },
     {
       key: 'help',
       label: 'Help/About',

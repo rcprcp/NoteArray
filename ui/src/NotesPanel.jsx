@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { ActionIcon, Alert, Box, Button, Checkbox, Group, List, Modal, Stack, Table, Text, TextInput, Title, UnstyledButton, Badge, FileInput, Loader, Card, SimpleGrid, Tooltip } from '@mantine/core'
-import { IconCheck, IconChevronDown, IconChevronUp, IconDownload, IconLayoutGrid, IconList, IconPaperclip, IconPin, IconSearch, IconSelector, IconUpload, IconMenu2, IconX } from '@tabler/icons-react'
+import { ActionIcon, Alert, Box, Button, Checkbox, Divider, Group, List, Modal, Stack, Table, Text, TextInput, Title, UnstyledButton, Badge, FileInput, Loader, Card, SimpleGrid, Tooltip } from '@mantine/core'
+import { IconCheck, IconChevronDown, IconChevronUp, IconDownload, IconLayoutGrid, IconList, IconPaperclip, IconPin, IconSearch, IconSelector, IconMenu2, IconX } from '@tabler/icons-react'
 import { useMediaQuery } from '@mantine/hooks'
+import { notifications } from '@mantine/notifications'
 import { RichTextEditor } from '@mantine/tiptap'
 import { Node, mergeAttributes } from '@tiptap/core'
 import { useEditor } from '@tiptap/react'
@@ -577,6 +578,7 @@ export default function NotesPanel({ registerActions } = {}) {
   }
   const [importLoading, setImportLoading] = useState(false)
   const [importResult, setImportResult] = useState(null)
+  const [exporting, setExporting] = useState(false)
   const [previewAttachment, setPreviewAttachment] = useState(null)
   // Attachments the note being edited is linked to (metadata only).
   const [noteAttachments, setNoteAttachments] = useState([])
@@ -694,12 +696,6 @@ export default function NotesPanel({ registerActions } = {}) {
         // Called by App before any route change / settings / help navigation.
         flush: () => flushPendingChangesRef.current(),
         onImport: () => {
-          if (storageInfo.overQuota) {
-            setError(
-              'You have reached your plan storage limit. Please delete unneeded notes to free up space or upgrade your plan in Personal Settings.',
-            )
-            return
-          }
           setImportModalOpened(true)
         },
         onToggleSearch: toggleSearchPanel,
@@ -1331,6 +1327,35 @@ export default function NotesPanel({ registerActions } = {}) {
     }
   }
 
+  /**
+   * Download a ZIP with one JSON file per note plus every attachment. The
+   * server builds the archive; the browser saves it through a Blob link.
+   */
+  const handleExport = async () => {
+    if (exporting) return
+    setExporting(true)
+    try {
+      await notesApi.exportAll()
+      notifications.show({
+        title: 'Export ready',
+        message: 'Your notes and attachments were downloaded as a ZIP file.',
+        color: 'primary',
+      })
+    } catch (e) {
+      const message = e.status === 401
+        ? 'Session expired. Please login again.'
+        : `Failed to export notes: ${e.message}`
+      setError(message)
+      notifications.show({
+        title: 'Export failed',
+        message,
+        color: 'red',
+      })
+    } finally {
+      setExporting(false)
+    }
+  }
+
   return (
     <Stack gap="md" p={{ base: 'sm', sm: 'md' }} style={{ width: '100%' }}>
       {/* Header */}
@@ -1577,11 +1602,11 @@ export default function NotesPanel({ registerActions } = {}) {
 
       </Stack>
 
-      {/* Import Modal */}
+      {/* Import / Export Modal */}
       <Modal
         opened={importModalOpened}
         onClose={() => setImportModalOpened(false)}
-        title="Import notes"
+        title="Import / Export notes"
         size={modalSize}
       >
         <Stack>
@@ -1619,6 +1644,15 @@ export default function NotesPanel({ registerActions } = {}) {
 
           {!importLoading && !importResult && (
             <Stack gap="md">
+              {storageInfo.overQuota && (
+                <Alert color="yellow" title="Storage limit reached">
+                  <Text size="sm">
+                    Importing is unavailable until you free up space or upgrade your plan.
+                    Exporting still works.
+                  </Text>
+                </Alert>
+              )}
+
               <Stack gap="sm">
                 <Text fw={500} size="sm">Import from Joplin (.jex)</Text>
                 <Text size="xs" c="dimmed">
@@ -1629,7 +1663,7 @@ export default function NotesPanel({ registerActions } = {}) {
                   placeholder="Choose .jex file"
                   accept=".jex"
                   onChange={handleImportJoplin}
-                  disabled={importLoading}
+                  disabled={importLoading || storageInfo.overQuota}
                   size="sm"
                 />
               </Stack>
@@ -1643,12 +1677,30 @@ export default function NotesPanel({ registerActions } = {}) {
                   placeholder="Choose .md file"
                   accept=".md"
                   onChange={handleImportMarkdown}
-                  disabled={importLoading}
+                  disabled={importLoading || storageInfo.overQuota}
                   size="sm"
                 />
               </Stack>
             </Stack>
           )}
+
+          <Divider />
+          <Stack gap="sm">
+            <Text fw={500} size="sm">Export all notes</Text>
+            <Text size="xs" c="dimmed">
+              Download a ZIP archive with one JSON file per note and every attachment.
+              Each note file contains its title, tags, linked attachments and content.
+            </Text>
+            <Button
+              leftSection={<IconDownload size={16} />}
+              onClick={handleExport}
+              loading={exporting}
+              disabled={importLoading}
+              size="sm"
+            >
+              Export .zip
+            </Button>
+          </Stack>
         </Stack>
       </Modal>
 

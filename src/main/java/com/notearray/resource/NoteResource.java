@@ -4,6 +4,7 @@ import com.notearray.entity.Note;
 import com.notearray.entity.NoteAttachment;
 import com.notearray.entity.User;
 import com.notearray.service.AttachmentCleanupService;
+import com.notearray.service.NoteExportService;
 import com.notearray.service.SessionService;
 import com.notearray.service.StorageQuota;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -26,6 +27,7 @@ import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.StreamingOutput;
 import jakarta.ws.rs.WebApplicationException;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -33,7 +35,10 @@ import java.io.InputStream;
 import java.io.IOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -85,6 +90,9 @@ public class NoteResource {
 
     @Inject
     AttachmentCleanupService attachmentCleanup;
+
+    @Inject
+    NoteExportService noteExport;
 
     @Inject
     ObjectMapper objectMapper;
@@ -423,6 +431,70 @@ public class NoteResource {
         boolean overQuota = usedBytes >= limitBytes;
         return Response.ok(new StorageUsage(usedBytes, limitBytes, noteCount,
                 notesBytes, attachmentsBytes, overQuota)).build();
+    }
+
+    /**
+     * Export every note and every attachment owned by the authenticated user as
+     * one compressed ZIP archive.
+     *
+     * <p>Notes are written as {@code notes/<id>-<title>.json} with
+     * {@code title}, {@code tags}, {@code attachments} and {@code content}
+     * fields. Attachment bytes are written as
+     * {@code attachments/<id>-<filename>}; the note's {@code attachments} array
+     * holds the matching relative paths.
+     */
+    @GET
+    @Path("/export")
+    @Produces("application/zip")
+    public Response exportAll() {
+        User user = getAuthenticatedUser();
+        if (user == null) {
+            return Response.status(Response.Status.UNAUTHORIZED).build();
+        }
+        final java.nio.file.Path archive;
+        try {
+            archive = noteExport.exportToTempFile(user.id);
+        } catch (IOException e) {
+            LOG.errorf(e, "Failed to build note export for user %s", user.id);
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                    .entity("Failed to build export").build();
+        }
+        long size;
+        try {
+            size = Files.size(archive);
+        } catch (IOException e) {
+            try {
+                Files.deleteIfExists(archive);
+            } catch (IOException ignored) {
+                // best effort; the error path already reports the failure
+            }
+            LOG.errorf(e, "Failed to size note export for user %s", user.id);
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                    .entity("Failed to build export").build();
+        }
+
+        String filename = "notearray-export-"
+                + DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")
+                        .withZone(ZoneOffset.UTC)
+                        .format(Instant.now())
+                + ".zip";
+        StreamingOutput body = out -> {
+            try (InputStream in = Files.newInputStream(archive)) {
+                in.transferTo(out);
+            } finally {
+                try {
+                    Files.deleteIfExists(archive);
+                } catch (IOException cleanupError) {
+                    LOG.warnf(cleanupError, "Could not delete temporary export %s", archive);
+                }
+            }
+        };
+        return Response.ok(body)
+                .type("application/zip")
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
+                .header(HttpHeaders.CONTENT_LENGTH, size)
+                .header(HttpHeaders.CACHE_CONTROL, "no-store")
+                .build();
     }
 
     /**
