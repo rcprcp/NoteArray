@@ -74,6 +74,9 @@ public class NoteResource {
     /** Bounded parallel imports so each buffered archive fits comfortably in heap. */
     private static final int IMPORT_PERMITS = 2;
     private static final Semaphore IMPORT_SEMAPHORE = new Semaphore(IMPORT_PERMITS);
+    /** Bounded parallel exports so temp archives cannot exhaust disk/heap under load. */
+    private static final int EXPORT_PERMITS = 2;
+    private static final Semaphore EXPORT_SEMAPHORE = new Semaphore(EXPORT_PERMITS);
     /** Maximum size of a single imported note body, matching the notes.content column limit. */
     static final int MAX_CONTENT_LENGTH = 10 * 1024 * 1024; // 10 MB
     /** Maximum lengths matching the notes table column definitions. */
@@ -438,10 +441,14 @@ public class NoteResource {
      * one compressed ZIP archive.
      *
      * <p>Notes are written as {@code notes/<id>-<title>.json} with
-     * {@code title}, {@code tags}, {@code attachments} and {@code content}
-     * fields. Attachment bytes are written as
+     * {@code title}, {@code tags}, {@code pinned}, {@code attachments} and
+     * {@code content} fields. Attachment bytes are written as
      * {@code attachments/<id>-<filename>}; the note's {@code attachments} array
      * holds the matching relative paths.
+     *
+     * <p>At most {@value #EXPORT_PERMITS} exports run at once; further requests
+     * get 503 + Retry-After so temp archives cannot exhaust disk or heap under
+     * load.
      */
     @GET
     @Path("/export")
@@ -451,10 +458,16 @@ public class NoteResource {
         if (user == null) {
             return Response.status(Response.Status.UNAUTHORIZED).build();
         }
+        if (!EXPORT_SEMAPHORE.tryAcquire()) {
+            return Response.status(Response.Status.SERVICE_UNAVAILABLE)
+                    .header("Retry-After", "60")
+                    .entity("A note export is already running; try again in a minute").build();
+        }
         final java.nio.file.Path archive;
         try {
             archive = noteExport.exportToTempFile(user.id);
         } catch (IOException e) {
+            EXPORT_SEMAPHORE.release();
             LOG.errorf(e, "Failed to build note export for user %s", user.id);
             return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
                     .entity("Failed to build export").build();
@@ -463,6 +476,7 @@ public class NoteResource {
         try {
             size = Files.size(archive);
         } catch (IOException e) {
+            EXPORT_SEMAPHORE.release();
             try {
                 Files.deleteIfExists(archive);
             } catch (IOException ignored) {
@@ -482,6 +496,7 @@ public class NoteResource {
             try (InputStream in = Files.newInputStream(archive)) {
                 in.transferTo(out);
             } finally {
+                EXPORT_SEMAPHORE.release();
                 try {
                     Files.deleteIfExists(archive);
                 } catch (IOException cleanupError) {
@@ -489,12 +504,24 @@ public class NoteResource {
                 }
             }
         };
-        return Response.ok(body)
-                .type("application/zip")
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
-                .header(HttpHeaders.CONTENT_LENGTH, size)
-                .header(HttpHeaders.CACHE_CONTROL, "no-store")
-                .build();
+        try {
+            return Response.ok(body)
+                    .type("application/zip")
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
+                    .header(HttpHeaders.CONTENT_LENGTH, size)
+                    .header(HttpHeaders.CACHE_CONTROL, "no-store")
+                    .build();
+        } catch (RuntimeException e) {
+            // The response never reached the streaming phase: free the permit and
+            // temp file instead of leaking either.
+            EXPORT_SEMAPHORE.release();
+            try {
+                Files.deleteIfExists(archive);
+            } catch (IOException ignored) {
+                // best effort
+            }
+            throw e;
+        }
     }
 
     /**

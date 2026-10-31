@@ -36,6 +36,7 @@ import java.util.zip.ZipOutputStream;
  * <ul>
  *   <li>{@code title} — the note title;</li>
  *   <li>{@code tags} — an array of the note's space-delimited tags (may be empty);</li>
+ *   <li>{@code pinned} — whether the note is pinned;</li>
  *   <li>{@code attachments} — relative paths of the attachments the note links
  *       to, pointing at files in this same archive (may be empty);</li>
  *   <li>{@code content} — the markdown body (may be empty).</li>
@@ -56,7 +57,8 @@ public class NoteExportService {
     ObjectMapper objectMapper;
 
     /** One note file inside the export archive. */
-    public record ExportNote(String title, List<String> tags, List<String> attachments, String content) {}
+    public record ExportNote(String title, List<String> tags, boolean pinned,
+                             List<String> attachments, String content) {}
 
     /**
      * Write the user's full export to a temporary ZIP file and return its path.
@@ -138,6 +140,7 @@ public class NoteExportService {
             ExportNote exported = new ExportNote(
                     note.title == null ? "" : note.title,
                     tagsOf(note.tags),
+                    note.pinned,
                     linked,
                     note.content == null ? "" : note.content);
             byte[] json = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsBytes(exported);

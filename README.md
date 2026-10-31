@@ -576,10 +576,12 @@ on another note start their grace clock right away. Deleting an **account** remo
   - Returns 401 if not authenticated
   - Archive layout:
     - `notes/<note-id>-<title>.json` — one file per note, containing `title` (string), `tags` (array),
-      `attachments` (array of relative archive paths for the files this note links to), and `content` (string)
+      `pinned` (boolean), `attachments` (array of relative archive paths for the files this note links to),
+      and `content` (string)
     - `attachments/<attachment-id>-<filename>` — every attachment the user owns
   - The export is independent of the current search/filter state and is available even over the plan storage limit
   - Built in a temporary file server-side and streamed to the client; the temp file is deleted after the response
+  - At most **2 exports** run at a time; further requests get **503** with `Retry-After` (protects temp disk/heap from parallel export floods)
 
 ### Notes – Import
 
@@ -789,9 +791,10 @@ The interactive Swagger UI allows you to test all endpoints directly from your b
 ### Import / Export Notes
 - **Import/Export button** – Opens a modal with import options above and a full data export below
 - **Export all data** – Download one ZIP containing:
-  - `notes/<note-id>-<title>.json` for every note, with `title`, `tags` (array), `attachments` (array) and `content`
+  - `notes/<note-id>-<title>.json` for every note, with `title`, `tags` (array), `pinned` (boolean), `attachments` (array) and `content`
   - `attachments/<attachment-id>-<filename>` for every attachment you own
   - Works regardless of search/filter state and even when you are over your plan's storage limit
+  - At most two exports run at once; busy servers return a retryable error instead of exhausting disk
 - **Joplin JEX import** – Import entire note collections from Joplin
   - Upload .jex files (Joplin's native export format)
   - Folder structure becomes hierarchical tags (`Work/Projects/Acme`), filterable from the Search Notes panel

@@ -323,11 +323,12 @@ Click **Export .zip** to download a single compressed archive containing:
 - one JSON file per note under `notes/`, named `<note-id>-<title>.json`, with these fields:
   - `title` — the note title;
   - `tags` — an array of tags (empty when the note has none);
+  - `pinned` — `true` when the note is pinned, otherwise `false`;
   - `attachments` — an array of relative paths to files in the same ZIP (empty when the note has none);
   - `content` — the markdown body (empty when the note has none).
 - every attachment you own under `attachments/`, named `<attachment-id>-<original-filename>`.
 
-The export always contains all of your notes and attachments, regardless of the current search or list filters, and it works even when you are over your plan's storage limit. The archive is built on the server and downloaded by your browser; large accounts may take a moment.
+The export always contains all of your notes and attachments, regardless of the current search or list filters, and it works even when you are over your plan's storage limit. The archive is built on the server and downloaded by your browser; large accounts may take a moment. At most two exports run at a time — if the server is busy, wait a minute and try again.
 
 ### Importing notes
 

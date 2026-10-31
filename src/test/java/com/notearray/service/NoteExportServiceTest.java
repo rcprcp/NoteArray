@@ -1,6 +1,7 @@
 package com.notearray.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -83,6 +84,7 @@ class NoteExportServiceTest {
         NoteExportService.ExportNote note = new NoteExportService.ExportNote(
                 "Title",
                 List.of("one", "two"),
+                true,
                 List.of("attachments/" + ATTACHMENT_ID + "-file.pdf"),
                 "Body");
         JsonNode json = new ObjectMapper().readTree(new ObjectMapper().writeValueAsString(note));
@@ -90,6 +92,7 @@ class NoteExportServiceTest {
         assertEquals("Title", json.get("title").asText());
         assertEquals("one", json.get("tags").get(0).asText());
         assertEquals("two", json.get("tags").get(1).asText());
+        assertTrue(json.get("pinned").asBoolean());
         assertEquals("attachments/" + ATTACHMENT_ID + "-file.pdf",
                 json.get("attachments").get(0).asText());
         assertEquals("Body", json.get("content").asText());
@@ -97,11 +100,12 @@ class NoteExportServiceTest {
 
     @Test
     void emptyFieldsSerializeAsEmptyArraysAndString() throws Exception {
-        NoteExportService.ExportNote note = new NoteExportService.ExportNote("", List.of(), List.of(), "");
+        NoteExportService.ExportNote note = new NoteExportService.ExportNote("", List.of(), false, List.of(), "");
         JsonNode json = new ObjectMapper().readTree(new ObjectMapper().writeValueAsString(note));
 
         assertTrue(json.get("tags").isArray());
         assertEquals(0, json.get("tags").size());
+        assertFalse(json.get("pinned").asBoolean());
         assertTrue(json.get("attachments").isArray());
         assertEquals(0, json.get("attachments").size());
         assertEquals("", json.get("content").asText());
