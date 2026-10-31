@@ -69,30 +69,47 @@ export const usersApi = {
   list: () => request('/api/users'),
 }
 
+function buildNoteListParams(search, filters) {
+  const params = new URLSearchParams()
+  const q = search && search.q ? search.q.trim() : ''
+  if (q) {
+    params.set('q', q)
+    params.set('searchTitles', String(!!search.searchTitles))
+    params.set('searchContent', String(!!search.searchContent))
+    params.set('searchTags', String(!!search.searchTags))
+  }
+  if (filters) {
+    ;(filters.tags || []).forEach((t) => params.append('tags', t))
+    ;(filters.tagPrefixes || []).forEach((t) => params.append('tagPrefix', t))
+    if (filters.untagged) params.set('untagged', 'true')
+    if (filters.hasAttachments) params.set('hasAttachments', 'true')
+    if (filters.pinned) params.set('pinned', 'true')
+    for (const key of ['createdFrom', 'createdTo', 'updatedFrom', 'updatedTo']) {
+      if (filters[key]) params.set(key, filters[key])
+    }
+  }
+  return params
+}
+
 export const notesApi = {
   // Optional search: { q, searchTitles, searchContent }
   // Optional filters: { tags: [], untagged, pinned, createdFrom, createdTo, updatedFrom, updatedTo }
   list: (search, filters) => {
-    const params = new URLSearchParams()
-    const q = search && search.q ? search.q.trim() : ''
-    if (q) {
-      params.set('q', q)
-      params.set('searchTitles', String(!!search.searchTitles))
-      params.set('searchContent', String(!!search.searchContent))
-      params.set('searchTags', String(!!search.searchTags))
-    }
-    if (filters) {
-      ;(filters.tags || []).forEach((t) => params.append('tags', t))
-      ;(filters.tagPrefixes || []).forEach((t) => params.append('tagPrefix', t))
-      if (filters.untagged) params.set('untagged', 'true')
-      if (filters.hasAttachments) params.set('hasAttachments', 'true')
-      if (filters.pinned) params.set('pinned', 'true')
-      for (const key of ['createdFrom', 'createdTo', 'updatedFrom', 'updatedTo']) {
-        if (filters[key]) params.set(key, filters[key])
-      }
-    }
+    const params = buildNoteListParams(search, filters)
     const qs = params.toString()
     return request(qs ? `/api/notes?${qs}` : '/api/notes')
+  },
+  /**
+   * One page of notes for infinite scroll. Returns
+   * `{ items, nextCursor, hasMore }`.
+   */
+  listPage: (search, filters, options = {}) => {
+    const params = buildNoteListParams(search, filters)
+    params.set('limit', String(options.limit ?? 50))
+    if (options.cursor) params.set('cursor', options.cursor)
+    params.set('sort', options.sort || 'createdAt')
+    params.set('order', options.order || 'desc')
+    return request(`/api/notes/page?${params.toString()}`, { signal: options.signal })
   },
   get: (id) => request(`/api/notes/${id}`),
   storage: () => request('/api/notes/storage'),

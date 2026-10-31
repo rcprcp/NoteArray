@@ -27,6 +27,18 @@ const FILTERS_KEY = 'notearray.filters'
 const VIEW_KEY = 'notearray.view'
 const DEFAULT_VIEW_MODE = 'auto'
 
+// Initial paint and "load more" page size; a refresh never re-fetches more than
+// MAX_REFRESH items even if the user has scrolled further.
+const PAGE_SIZE = 50
+const MAX_REFRESH = 200
+
+/** Merge a page into the loaded list, replacing duplicate ids in place. */
+function mergeNotes(previous, incoming) {
+  const byId = new Map(previous.map((note) => [note.id, note]))
+  for (const note of incoming) byId.set(note.id, note)
+  return [...byId.values()]
+}
+
 function readStorage(key, fallback) {
   try {
     const raw = window.localStorage.getItem(key)
@@ -514,6 +526,18 @@ export default function NotesPanel({ registerActions } = {}) {
   const inputSize = isMobile ? 'sm' : 'md'
   const modalSize = isMobile ? 'sm' : 'lg'
   const [notes, setNotes] = useState([])
+  // Pagination state: the cursor for the next page, whether more rows exist,
+  // and separate flags for the first/refresh request vs. an append request.
+  const [nextCursor, setNextCursor] = useState(null)
+  const [hasMore, setHasMore] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [loadMoreError, setLoadMoreError] = useState(null)
+  const notesRef = useRef(notes)
+  notesRef.current = notes
+  const loadingMoreRef = useRef(false)
+  const requestSeqRef = useRef(0)
+  const sentinelRef = useRef(null)
   const [sort, setSort] = useState({ field: 'createdAt', dir: 'desc' })
   const [error, setError] = useState(null)
   const [formError, setFormError] = useState(null)
@@ -590,40 +614,144 @@ export default function NotesPanel({ registerActions } = {}) {
     overQuota: false,
   })
 
-  const load = useCallback(async (searchParams, filterState) => {
+  const fetchPage = useCallback(async ({
+    searchParams,
+    filterState,
+    sortState,
+    cursor = null,
+    limit = PAGE_SIZE,
+    reset = false,
+    clearOnStart = false,
+  }) => {
+    const seq = ++requestSeqRef.current
+    if (reset) {
+      if (clearOnStart) {
+        setNotes([])
+        setNextCursor(null)
+        setHasMore(false)
+      }
+      setLoadingMore(false)
+      loadingMoreRef.current = false
+      setLoading(true)
+    } else {
+      if (loadingMoreRef.current) return
+      loadingMoreRef.current = true
+      setLoadingMore(true)
+    }
+    setLoadMoreError(null)
+
     try {
       const apiFilters = buildApiFilters(filterState)
-      const [filtered, storage] = await Promise.all([
-        notesApi.list(searchParams, apiFilters),
-        notesApi.storage().catch(() => null),
-      ])
-      setNotes(filtered)
-      if (storage) {
-        const used = Number(storage.usedBytes) || 0
-        const limit = Number(storage.limitBytes) || 100 * 1024 * 1024
-        setStorageInfo({
-          usedBytes: used,
-          limitBytes: limit,
-          noteCount: Number(storage.noteCount) || 0,
-          overQuota: storage.overQuota != null ? !!storage.overQuota : used >= limit,
-        })
+      const pagePromise = notesApi.listPage(searchParams, apiFilters, {
+        limit,
+        cursor,
+        sort: sortState.field,
+        order: sortState.dir,
+      })
+
+      if (reset) {
+        const [page, storage] = await Promise.all([
+          pagePromise,
+          notesApi.storage().catch(() => null),
+        ])
+        if (seq !== requestSeqRef.current) return
+        setNotes(Array.isArray(page?.items) ? page.items : [])
+        setNextCursor(page?.nextCursor || null)
+        setHasMore(!!page?.hasMore)
+        if (storage) {
+          const used = Number(storage.usedBytes) || 0
+          const storageLimit = Number(storage.limitBytes) || 100 * 1024 * 1024
+          setStorageInfo({
+            usedBytes: used,
+            limitBytes: storageLimit,
+            noteCount: Number(storage.noteCount) || 0,
+            overQuota: storage.overQuota != null ? !!storage.overQuota : used >= storageLimit,
+          })
+        }
+      } else {
+        const page = await pagePromise
+        if (seq !== requestSeqRef.current) return
+        setNotes((prev) => mergeNotes(prev, Array.isArray(page?.items) ? page.items : []))
+        setNextCursor(page?.nextCursor || null)
+        setHasMore(!!page?.hasMore)
       }
       setError(null)
     } catch (e) {
-      if (e.status === 401) {
-        setError('Session expired. Please login again.')
+      if (seq !== requestSeqRef.current) return
+      const message = e.status === 401
+        ? 'Session expired. Please login again.'
+        : `Failed to load notes: ${e.message}`
+      if (reset) setError(message)
+      else setLoadMoreError(message)
+    } finally {
+      if (reset) {
+        if (seq === requestSeqRef.current) setLoading(false)
       } else {
-        setError(`Failed to load notes: ${e.message}`)
+        loadingMoreRef.current = false
+        setLoadingMore(false)
       }
     }
   }, [])
 
-  useEffect(() => {
-    load(activeSearch, filters)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [load, filters])
+  /** Replace the list with the first page (search/filter/sort changed). */
+  const loadFirstPage = useCallback((searchParams, filterState, sortState) => {
+    return fetchPage({
+      searchParams,
+      filterState,
+      sortState,
+      limit: PAGE_SIZE,
+      reset: true,
+      clearOnStart: true,
+    })
+  }, [fetchPage])
 
-  const reload = () => load(activeSearch, filters)
+  useEffect(() => {
+    loadFirstPage(activeSearch, filters, sort)
+  }, [loadFirstPage, activeSearch, filters, sort])
+
+  /** Append the next page when the user scrolls to the sentinel. */
+  const loadMore = useCallback(() => {
+    if (loading || loadingMoreRef.current || !hasMore || !nextCursor) {
+      return Promise.resolve()
+    }
+    return fetchPage({
+      searchParams: activeSearch,
+      filterState: filters,
+      sortState: sort,
+      cursor: nextCursor,
+      limit: PAGE_SIZE,
+      reset: false,
+    })
+  }, [fetchPage, loading, hasMore, nextCursor, activeSearch, filters, sort])
+
+  /**
+   * Re-run the current query from the start and replace the loaded window.
+   * Used after mutations so active searches repaint and new/edited notes land
+   * in the correct sorted position.
+   */
+  const reload = useCallback(() => {
+    const limit = Math.min(Math.max(notesRef.current.length, PAGE_SIZE), MAX_REFRESH)
+    return fetchPage({
+      searchParams: activeSearch,
+      filterState: filters,
+      sortState: sort,
+      limit,
+      reset: true,
+    })
+  }, [fetchPage, activeSearch, filters, sort])
+
+  // Load the next page when the bottom sentinel becomes visible. A manual
+  // "Load more" button is rendered too, for browsers without IntersectionObserver.
+  useEffect(() => {
+    const el = sentinelRef.current
+    if (!el || !hasMore || loading) return undefined
+    if (typeof IntersectionObserver === 'undefined') return undefined
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) loadMore()
+    }, { rootMargin: '300px' })
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [hasMore, loading, loadMore, cardView])
 
   /**
    * "List Notes": back to the plain list — closes the editor/panels and clears
@@ -633,6 +761,7 @@ export default function NotesPanel({ registerActions } = {}) {
   const resetAll = async () => {
     const saved = await flushPendingChangesRef.current()
     if (!saved) return // stay in the editor rather than dropping unsaved fields
+    const hadActiveSearch = activeSearch != null
     clearAutoSaveTimer()
     createdNoteRef.current = null
     autoSavedRef.current = false
@@ -645,8 +774,11 @@ export default function NotesPanel({ registerActions } = {}) {
     setSearch(DEFAULT_SEARCH)
     setError(null)
     setFormError(null)
-    // filters are unchanged, so the filters effect will not reload for us.
-    await load(null, filters)
+    // A search change triggers the load effect; with no active search left,
+    // refresh explicitly so autosaved edits are reflected in the list.
+    if (!hadActiveSearch) {
+      await loadFirstPage(null, filters, sort)
+    }
   }
 
   const openCreate = async () => {
@@ -730,7 +862,7 @@ export default function NotesPanel({ registerActions } = {}) {
         overQuota: storageInfo.overQuota,
       })
     }
-  }, [registerActions, createMode, editMode, searchPanelOpen, importOpen, activeSearch, filters, storageInfo.overQuota])
+  }, [registerActions, createMode, editMode, searchPanelOpen, importOpen, activeSearch, filters, sort, storageInfo.overQuota])
 
   const updateFilters = (patch) => {
     setFilters((f) => ({ ...f, ...patch }))
@@ -755,11 +887,10 @@ export default function NotesPanel({ registerActions } = {}) {
     }
   }
 
-  const runSearch = async () => {
+  const runSearch = () => {
     if (!search.q.trim()) {
       // Empty search text: clear the search and show all notes.
       setActiveSearch(null)
-      await load(null, filters)
       return
     }
     if (!search.searchTitles && !search.searchContent && !search.searchTags) {
@@ -767,20 +898,17 @@ export default function NotesPanel({ registerActions } = {}) {
       return
     }
     setActiveSearch(search)
-    await load(search, filters)
   }
 
-  const clearAll = async () => {
+  const clearAll = () => {
     setSearch(DEFAULT_SEARCH)
     setActiveSearch(null)
     setFilters(DEFAULT_FILTERS)
-    await load(null, DEFAULT_FILTERS)
   }
 
-  const clearSearch = async () => {
+  const clearSearch = () => {
     setSearch(DEFAULT_SEARCH)
     setActiveSearch(null)
-    await load(null, filters)
   }
 
   const toggleSort = (field) =>
@@ -799,7 +927,12 @@ export default function NotesPanel({ registerActions } = {}) {
     return [...notes].sort((a, b) => {
       const x = value(a)
       const y = value(b)
-      return x < y ? -factor : x > y ? factor : 0
+      if (x < y) return -factor
+      if (x > y) return factor
+      // Stable tie-breaker matching the server's `, n.id ASC|DESC`.
+      if (a.id < b.id) return -factor
+      if (a.id > b.id) return factor
+      return 0
     })
   }, [notes, sort])
 
@@ -1369,6 +1502,33 @@ export default function NotesPanel({ registerActions } = {}) {
     }
   }
 
+  const loadMoreIndicator = (
+    <>
+      <div ref={sentinelRef} style={{ height: 1 }} aria-hidden="true" />
+      {loadingMore && (
+        <Group justify="center" py="md">
+          <Loader size="sm" />
+        </Group>
+      )}
+      {loadMoreError && (
+        <Alert color="red" mt="sm">
+          <Group justify="space-between" align="center" wrap="wrap" gap="xs">
+            <Text size="sm">{loadMoreError}</Text>
+            <Button size="xs" variant="light" onClick={loadMore}>Retry</Button>
+          </Group>
+        </Alert>
+      )}
+      {hasMore && !loadingMore && !loading && (
+        <Group justify="center" py="xs">
+          <Button variant="light" size="xs" onClick={loadMore}>Load more</Button>
+        </Group>
+      )}
+      {!hasMore && notes.length > 0 && (
+        <Text c="dimmed" ta="center" size="sm" py="md">End of notes</Text>
+      )}
+    </>
+  )
+
   return (
     <Stack gap="md" p={{ base: 'sm', sm: 'md' }} style={{ width: '100%' }}>
       {/* Header */}
@@ -1460,7 +1620,8 @@ export default function NotesPanel({ registerActions } = {}) {
               </Text>
             )}
             <Text size="sm" c="dimmed" role="status">
-              Found {notes.length} result{notes.length === 1 ? '' : 's'}
+              Showing {notes.length} note{notes.length === 1 ? '' : 's'}
+              {hasMore ? ' · more available' : ''}
             </Text>
           </Stack>
           <Group gap={4} wrap="nowrap" style={{ flex: '0 0 auto' }} role="group" aria-label="Notes display mode">
@@ -1575,17 +1736,28 @@ export default function NotesPanel({ registerActions } = {}) {
           onDismissResult={() => setImportResult(null)}
         />
       ) : notes.length === 0 ? (
-        <Text c="dimmed" ta="center" py="xl">{activeFilterCount > 0 ? 'No notes match your search or filters.' : 'You have no notes yet. Use Create Note or Import some notes from a backup.'}</Text>
+        loading ? (
+          <Stack align="center" gap="md" py="xl">
+            <Loader />
+            <Text c="dimmed" size="sm">Loading notes...</Text>
+          </Stack>
+        ) : (
+          <Text c="dimmed" ta="center" py="xl">{activeFilterCount > 0 ? 'No notes match your search or filters.' : 'You have no notes yet. Use Create Note or Import some notes from a backup.'}</Text>
+        )
       ) : cardView ? (
         // Card view (small screens by default, or when explicitly selected)
-        <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md" style={{ width: "100%" }}>
-          {sortedNotes.map((n) => (
-            <NoteCard key={n.id} note={n} onEdit={openEdit} onDelete={remove} onTogglePin={togglePin} />
-          ))}
-        </SimpleGrid>
+        <>
+          <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md" style={{ width: "100%" }}>
+            {sortedNotes.map((n) => (
+              <NoteCard key={n.id} note={n} onEdit={openEdit} onDelete={remove} onTogglePin={togglePin} />
+            ))}
+          </SimpleGrid>
+          {loadMoreIndicator}
+        </>
       ) : (
         // Table view
-        <Table striped highlightOnHover withTableBorder style={{ width: "100%" }}>
+        <>
+          <Table striped highlightOnHover withTableBorder style={{ width: "100%" }}>
           <Table.Thead>
             <Table.Tr>
               <SortableTh label="Created" field="createdAt" sort={sort} onSort={toggleSort} />
@@ -1622,7 +1794,9 @@ export default function NotesPanel({ registerActions } = {}) {
               </Table.Tr>
             ))}
           </Table.Tbody>
-        </Table>
+          </Table>
+          {loadMoreIndicator}
+        </>
       )}
 
       </Stack>

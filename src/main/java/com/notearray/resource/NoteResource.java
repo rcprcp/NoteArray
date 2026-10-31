@@ -39,6 +39,7 @@ import java.nio.file.Files;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -83,6 +84,10 @@ public class NoteResource {
     /** Maximum lengths matching the notes table column definitions. */
     static final int MAX_TITLE_LENGTH = 255;
     static final int MAX_TAGS_LENGTH = 10_000;
+    /** Paged list defaults: a small first paint, with a hard upper bound per request. */
+    static final int DEFAULT_PAGE_SIZE = 50;
+    static final int MAX_PAGE_SIZE = 200;
+    static final Set<String> PAGE_SORT_FIELDS = Set.of("createdAt", "updatedAt", "title");
 
     private static final Logger LOG = Logger.getLogger(NoteResource.class);
 
@@ -186,6 +191,15 @@ public class NoteResource {
 
     public record ImportResult(int imported, int errors, int attachments, List<String> messages) {}
 
+    /** One page of notes plus the cursor for the next page. */
+    public record NotePage(List<Note> items, String nextCursor, boolean hasMore) {}
+
+    /** Opaque keyset cursor: the last row's sort value and id. */
+    record NoteCursor(int version, String sort, String order, String key, UUID id) {}
+
+    /** Base SQL and parameters shared by the legacy list and paged list endpoints. */
+    record NoteListQuery(StringBuilder sql, Map<String, Object> params) {}
+
     public record StorageUsage(long usedBytes, long limitBytes, long noteCount,
                                long notesBytes, long attachmentsBytes, boolean overQuota) {}
 
@@ -211,8 +225,8 @@ public class NoteResource {
      *   searchContent  - search the note content (default false)
      *   searchTags     - search the tags as a partial match (default false):
      *                    every tag token containing the query matches, so
-     *                    "grq" finds tokens like grq and grq/cobol; notes
-     *                    without any tags are included as well
+     *                    "grq" finds tokens like grq and grq/cobol; untagged
+     *                    notes do not match a tag search
      * If q is provided, at least one of searchTitles / searchContent /
      * searchTags must be true (else 400).
      *
@@ -244,22 +258,177 @@ public class NoteResource {
             return Response.status(Response.Status.UNAUTHORIZED).build();
         }
 
-        boolean hasQuery = q != null && !q.isBlank();
-        if (hasQuery && !searchTitles && !searchContent && !searchTags) {
-            return Response.status(Response.Status.BAD_REQUEST)
-                    .entity("Select at least one of searchTitles, searchContent or searchTags").build();
+        String searchError = validateSearchScopes(q, searchTitles, searchContent, searchTags);
+        if (searchError != null) {
+            return badRequest(searchError);
         }
 
-        Instant cFrom, cTo, uFrom, uTo;
+        NoteListQuery parts;
         try {
-            cFrom = parseInstant(createdFrom);
-            cTo = parseInstant(createdTo);
-            uFrom = parseInstant(updatedFrom);
-            uTo = parseInstant(updatedTo);
+            parts = buildNoteListQuery(user, q, searchTitles, searchContent, searchTags,
+                    tags, tagPrefixes, untagged, hasAttachments, pinned,
+                    createdFrom, createdTo, updatedFrom, updatedTo);
         } catch (DateTimeParseException e) {
-            return Response.status(Response.Status.BAD_REQUEST)
-                    .entity("Dates must be ISO-8601 instants, e.g. 2024-01-31T00:00:00Z").build();
+            return badRequest("Dates must be ISO-8601 instants, e.g. 2024-01-31T00:00:00Z");
         }
+
+        parts.sql().append(" ORDER BY n.created_at DESC");
+        Query query = Note.getEntityManager().createNativeQuery(parts.sql().toString(), Note.class);
+        parts.params().forEach(query::setParameter);
+        List<Note> results = query.getResultList();
+        applyAttachmentCounts(results);
+        return Response.ok(results).build();
+    }
+
+    /**
+     * Paged version of {@link #list}: returns a small window plus a keyset
+     * cursor, so the UI can paint quickly and append more as the user scrolls.
+     *
+     * <p>Supported sorts: {@code createdAt}, {@code updatedAt}, {@code title};
+     * orders: {@code asc}, {@code desc}. Search and filter parameters are the
+     * same as {@code GET /api/notes}.
+     */
+    @GET
+    @Path("/page")
+    public Response page(
+            @QueryParam("q") String q,
+            @QueryParam("searchTitles") @jakarta.ws.rs.DefaultValue("false") boolean searchTitles,
+            @QueryParam("searchContent") @jakarta.ws.rs.DefaultValue("false") boolean searchContent,
+            @QueryParam("searchTags") @jakarta.ws.rs.DefaultValue("false") boolean searchTags,
+            @QueryParam("tags") List<String> tags,
+            @QueryParam("tagPrefix") List<String> tagPrefixes,
+            @QueryParam("untagged") @jakarta.ws.rs.DefaultValue("false") boolean untagged,
+            @QueryParam("hasAttachments") @jakarta.ws.rs.DefaultValue("false") boolean hasAttachments,
+            @QueryParam("pinned") @jakarta.ws.rs.DefaultValue("false") boolean pinned,
+            @QueryParam("createdFrom") String createdFrom,
+            @QueryParam("createdTo") String createdTo,
+            @QueryParam("updatedFrom") String updatedFrom,
+            @QueryParam("updatedTo") String updatedTo,
+            @QueryParam("limit") @jakarta.ws.rs.DefaultValue("" + DEFAULT_PAGE_SIZE) int limit,
+            @QueryParam("cursor") String cursor,
+            @QueryParam("sort") @jakarta.ws.rs.DefaultValue("createdAt") String sort,
+            @QueryParam("order") @jakarta.ws.rs.DefaultValue("desc") String order) {
+        User user = getAuthenticatedUser();
+        if (user == null) {
+            return Response.status(Response.Status.UNAUTHORIZED).build();
+        }
+        if (limit < 1 || limit > MAX_PAGE_SIZE) {
+            return badRequest("limit must be between 1 and " + MAX_PAGE_SIZE);
+        }
+        String sortField = sort == null || sort.isBlank() ? "createdAt" : sort.trim();
+        if (!PAGE_SORT_FIELDS.contains(sortField)) {
+            return badRequest("sort must be one of createdAt, updatedAt, title");
+        }
+        String direction = order == null || order.isBlank()
+                ? "desc" : order.trim().toLowerCase(Locale.ROOT);
+        if (!"asc".equals(direction) && !"desc".equals(direction)) {
+            return badRequest("order must be asc or desc");
+        }
+
+        String searchError = validateSearchScopes(q, searchTitles, searchContent, searchTags);
+        if (searchError != null) {
+            return badRequest(searchError);
+        }
+
+        NoteListQuery parts;
+        try {
+            parts = buildNoteListQuery(user, q, searchTitles, searchContent, searchTags,
+                    tags, tagPrefixes, untagged, hasAttachments, pinned,
+                    createdFrom, createdTo, updatedFrom, updatedTo);
+        } catch (DateTimeParseException e) {
+            return badRequest("Dates must be ISO-8601 instants, e.g. 2024-01-31T00:00:00Z");
+        }
+
+        NoteCursor decoded = null;
+        if (cursor != null && !cursor.isBlank()) {
+            try {
+                decoded = decodeCursor(objectMapper, cursor);
+            } catch (Exception e) {
+                return badRequest("Invalid cursor");
+            }
+            if (!sortField.equals(decoded.sort()) || !direction.equals(decoded.order())) {
+                return badRequest("Cursor does not match sort/order");
+            }
+        }
+
+        String sortExpr = switch (sortField) {
+            case "title" -> "lower(n.title)";
+            case "updatedAt" -> "n.updated_at";
+            default -> "n.created_at";
+        };
+        if (decoded != null) {
+            Object cursorKey;
+            try {
+                cursorKey = "title".equals(sortField) ? decoded.key() : Instant.parse(decoded.key());
+            } catch (DateTimeParseException e) {
+                return badRequest("Invalid cursor");
+            }
+            parts.sql().append(" AND (").append(sortExpr).append(", n.id) ")
+                    .append("asc".equals(direction) ? ">" : "<")
+                    .append(" (:cursorKey, :cursorId)");
+            parts.params().put("cursorKey", cursorKey);
+            parts.params().put("cursorId", decoded.id());
+        }
+        parts.sql().append(" ORDER BY ").append(sortExpr)
+                .append("asc".equals(direction) ? " ASC" : " DESC")
+                .append(", n.id ").append("asc".equals(direction) ? "ASC" : "DESC");
+        parts.sql().append(" LIMIT :pageLimit");
+        parts.params().put("pageLimit", limit + 1);
+
+        Query query = Note.getEntityManager().createNativeQuery(parts.sql().toString(), Note.class);
+        parts.params().forEach(query::setParameter);
+        List<Note> results = new ArrayList<>(query.getResultList());
+        boolean hasMore = results.size() > limit;
+        if (hasMore) {
+            results = new ArrayList<>(results.subList(0, limit));
+        }
+        applyAttachmentCounts(results);
+
+        String nextCursor = null;
+        if (hasMore && !results.isEmpty()) {
+            Note last = results.get(results.size() - 1);
+            String key = switch (sortField) {
+                case "title" -> last.title == null ? "" : last.title.toLowerCase(Locale.ROOT);
+                case "updatedAt" -> last.updatedAt.toString();
+                default -> last.createdAt.toString();
+            };
+            try {
+                nextCursor = encodeCursor(objectMapper,
+                        new NoteCursor(1, sortField, direction, key, last.id));
+            } catch (Exception e) {
+                LOG.error("Failed to encode note page cursor", e);
+                return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                        .entity("Failed to build next page").build();
+            }
+        }
+        return Response.ok(new NotePage(results, nextCursor, hasMore)).build();
+    }
+
+    private static Response badRequest(String message) {
+        return Response.status(Response.Status.BAD_REQUEST).entity(message).build();
+    }
+
+    static String validateSearchScopes(String q, boolean searchTitles,
+                                       boolean searchContent, boolean searchTags) {
+        boolean hasQuery = q != null && !q.isBlank();
+        if (hasQuery && !searchTitles && !searchContent && !searchTags) {
+            return "Select at least one of searchTitles, searchContent or searchTags";
+        }
+        return null;
+    }
+
+    /** Build the shared WHERE clause for the legacy list and the paged list. */
+    static NoteListQuery buildNoteListQuery(User user, String q,
+                                            boolean searchTitles, boolean searchContent, boolean searchTags,
+                                            List<String> tags, List<String> tagPrefixes,
+                                            boolean untagged, boolean hasAttachments, boolean pinned,
+                                            String createdFrom, String createdTo,
+                                            String updatedFrom, String updatedTo) {
+        boolean hasQuery = q != null && !q.isBlank();
+        Instant cFrom = parseInstant(createdFrom);
+        Instant cTo = parseInstant(createdTo);
+        Instant uFrom = parseInstant(updatedFrom);
+        Instant uTo = parseInstant(updatedTo);
 
         StringBuilder sql = new StringBuilder("SELECT n.* FROM notes n WHERE 1=1");
         Map<String, Object> params = new HashMap<>();
@@ -329,13 +498,28 @@ public class NoteResource {
         if (cTo != null) { sql.append(" AND n.created_at <= :cTo"); params.put("cTo", cTo); }
         if (uFrom != null) { sql.append(" AND n.updated_at >= :uFrom"); params.put("uFrom", uFrom); }
         if (uTo != null) { sql.append(" AND n.updated_at <= :uTo"); params.put("uTo", uTo); }
-        sql.append(" ORDER BY n.created_at DESC");
+        return new NoteListQuery(sql, params);
+    }
 
-        Query query = Note.getEntityManager().createNativeQuery(sql.toString(), Note.class);
-        params.forEach(query::setParameter);
-        List<Note> results = query.getResultList();
-        applyAttachmentCounts(results);
-        return Response.ok(results).build();
+    static String encodeCursor(ObjectMapper mapper, NoteCursor cursor) throws IOException {
+        String json = mapper.writeValueAsString(cursor);
+        return Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(json.getBytes(StandardCharsets.UTF_8));
+    }
+
+    static NoteCursor decodeCursor(ObjectMapper mapper, String encoded) throws IOException {
+        byte[] bytes;
+        try {
+            bytes = Base64.getUrlDecoder().decode(encoded);
+        } catch (IllegalArgumentException e) {
+            throw new IOException("Invalid cursor encoding", e);
+        }
+        NoteCursor cursor = mapper.readValue(bytes, NoteCursor.class);
+        if (cursor == null || cursor.version() != 1 || cursor.sort() == null
+                || cursor.order() == null || cursor.key() == null || cursor.id() == null) {
+            throw new IOException("Invalid cursor payload");
+        }
+        return cursor;
     }
 
     /** Lowercase a tag token and escape the three SQL LIKE wildcards. */
@@ -374,36 +558,41 @@ public class NoteResource {
      * attachments their *content* links to (not the number uploaded from them),
      * so a file shared by two notes counts on both, and a note whose link was
      * removed stops showing the paperclip immediately. Computed in memory from
-     * the content the list already carries — one extra query for the owner's
-     * attachment ids, no content scans.
+     * the content the list already carries — one extra query for only the
+     * attachment ids those notes reference, no content scans.
      */
     @SuppressWarnings("unchecked")
     private static void applyAttachmentCounts(List<Note> notes) {
         if (notes == null || notes.isEmpty()) {
             return;
         }
-        Set<UUID> owners = new LinkedHashSet<>();
+        // Resolve only the ids the page's note bodies actually reference, not
+        // every attachment the owner has ever uploaded.
+        Map<UUID, Set<UUID>> referencedByNote = new HashMap<>();
+        Set<UUID> allReferenced = new HashSet<>();
         for (Note note : notes) {
-            owners.add(note.ownerId);
+            Set<UUID> referenced = AttachmentCleanupService.referencedAttachmentIds(note.content);
+            referencedByNote.put(note.id, referenced);
+            allReferenced.addAll(referenced);
+        }
+        if (allReferenced.isEmpty()) {
+            for (Note note : notes) {
+                note.attachmentCount = 0L;
+            }
+            return;
         }
         Query idsQuery = Note.getEntityManager()
-                .createNativeQuery("SELECT owner_id, id FROM note_attachments WHERE owner_id IN (:owners)");
-        idsQuery.setParameter("owners", owners);
-        Map<UUID, Set<UUID>> attachmentIdsByOwner = new HashMap<>();
+                .createNativeQuery("SELECT id, owner_id FROM note_attachments WHERE id IN (:ids)");
+        idsQuery.setParameter("ids", allReferenced);
+        Map<UUID, UUID> ownerByAttachment = new HashMap<>();
         for (Object[] row : (List<Object[]>) idsQuery.getResultList()) {
-            attachmentIdsByOwner
-                    .computeIfAbsent((UUID) row[0], key -> new HashSet<>())
-                    .add((UUID) row[1]);
+            ownerByAttachment.put((UUID) row[0], (UUID) row[1]);
         }
         for (Note note : notes) {
-            Set<UUID> available = attachmentIdsByOwner.get(note.ownerId);
-            if (available == null || available.isEmpty()) {
-                note.attachmentCount = 0L;
-                continue;
-            }
-            Set<UUID> referenced = AttachmentCleanupService.referencedAttachmentIds(note.content);
-            referenced.retainAll(available);
-            note.attachmentCount = (long) referenced.size();
+            long count = referencedByNote.get(note.id).stream()
+                    .filter(id -> note.ownerId.equals(ownerByAttachment.get(id)))
+                    .count();
+            note.attachmentCount = count;
         }
     }
 

@@ -61,7 +61,7 @@ NoteArray/
 │   │   └── resources/
 │   │       ├── application.properties         # Quarkus config (DB, Flyway, OpenAPI, sessions, limits, headers, Stripe)
 │   │       └── db/migration/                  # Flyway migrations V1.0.0 … V1.3.0 (22 files)
-│   └── test/java/com/notearray/               # 162 JUnit 5 unit tests across 24 classes
+│   └── test/java/com/notearray/               # 186 JUnit 5 unit tests across 27 classes
 │       ├── NoteArrayApplicationTest.java      # JAX-RS registration and SPA route redirects
 │       ├── resource/                          # AttachmentQuota, BillingConfig, ImportLimits, JoplinAttachmentImport,
 │       │                                      # JoplinFolderTags, NoteEditorHeight, NoteVersionConflict, StripeWebhook,
@@ -569,6 +569,18 @@ on another note start their grace clock right away. Deleting an **account** remo
   - Superusers search all notes; regular users search only their own
   - Can be combined with filter parameters: `?q=bug&searchTitles=true&tags=urgent`
 
+### Notes – Paged list
+
+- `GET /api/notes/page` – One page for infinite scroll; search/filter parameters are the same as `GET /api/notes`
+  - `limit` – page size, default **50**, maximum **200**
+  - `cursor` – opaque value from the previous response’s `nextCursor`; omit for the first page
+  - `sort` – `createdAt` (default), `updatedAt`, or `title`
+  - `order` – `asc` or `desc` (default `desc`)
+  - **Response:** `{ "items": [...], "nextCursor": "..." | null, "hasMore": true|false }`
+  - A cursor is tied to its `sort`/`order`; changing either starts a new pagination sequence
+  - The UI requests 50 notes for the first paint, appends more as the bottom sentinel becomes visible (or via **Load more**), and refreshes the currently loaded window after mutations so active searches repaint correctly
+  - `attachmentCount` is computed only for the page’s referenced attachments
+
 ### Notes – Export
 
 - `GET /api/notes/export` – Download every note and attachment owned by the signed-in user
@@ -948,7 +960,7 @@ Backend unit tests run with JUnit 5 (no database or server required):
 mvn test
 ```
 
-Covered so far (**173 unit tests across 25 test classes**): login-throttle backoff/lockout rules (`LoginThrottlePolicyTest`), client-IP / `X-Forwarded-For` parsing (`ClientIpTest`), password and email policies (`PasswordPolicyTest`, `EmailPolicyTest`), JAX-RS registration and SPA redirects (`NoteArrayApplicationTest`), password change and account-deletion confirmation (`UserPasswordChangeTest`, `UserDeleteVerificationTest`), CSRF filtering (`CsrfFilterTest`), security headers / request-id / ingest XSS sanitization (`SecurityHeadersFilterTest`), note version conflicts (`NoteVersionConflictTest`), per-note editor-height clamping and read-only column mapping (`NoteEditorHeightTest`), RFC 6238 vectors/base32/skew (`TotpServiceTest`), AES-GCM secret encryption (`TotpCryptoTest`), recovery-code hashing (`RecoveryCodeServiceTest`), tag prefix filtering (`TagPrefixFilterTest`), imports and Joplin folder/attachment mapping (`ImportLimitsTest`, `JoplinFolderTagsTest`, `JoplinAttachmentImportTest`), export naming/tag/JSON shape (`NoteExportServiceTest`), attachment quotas and cleanup (`AttachmentQuotaTest`, `AttachmentCleanupServiceTest`), plan/Stripe handling and the billing feature switch (`UserPlanSyncTest`, `StripeWebhookResourceTest`, `BillingConfigResourceTest`), and the Stripe subscription cancellation that precedes a downgrade or account deletion (`StripeBillingServiceTest`, wire-level `DELETE /v1/subscriptions/{id}` against a local HTTP server). `mvn clean package` runs the tests as part of the build.
+Covered so far (**186 unit tests across 27 test classes**): login-throttle backoff/lockout rules (`LoginThrottlePolicyTest`), client-IP / `X-Forwarded-For` parsing (`ClientIpTest`), password and email policies (`PasswordPolicyTest`, `EmailPolicyTest`), JAX-RS registration and SPA redirects (`NoteArrayApplicationTest`), password change and account-deletion confirmation (`UserPasswordChangeTest`, `UserDeleteVerificationTest`), CSRF filtering (`CsrfFilterTest`), security headers / request-id / ingest XSS sanitization (`SecurityHeadersFilterTest`), note version conflicts (`NoteVersionConflictTest`), per-note editor-height clamping and read-only column mapping (`NoteEditorHeightTest`), RFC 6238 vectors/base32/skew (`TotpServiceTest`), AES-GCM secret encryption (`TotpCryptoTest`), recovery-code hashing (`RecoveryCodeServiceTest`), tag prefix filtering and tag-only search semantics (`TagPrefixFilterTest`), keyset cursor round-trips and paged query ownership (`NotePaginationTest`), imports and Joplin folder/attachment mapping (`ImportLimitsTest`, `JoplinFolderTagsTest`, `JoplinAttachmentImportTest`), export naming/tag/JSON shape (`NoteExportServiceTest`), attachment quotas and cleanup (`AttachmentQuotaTest`, `AttachmentCleanupServiceTest`), plan/Stripe handling and the billing feature switch (`UserPlanSyncTest`, `StripeWebhookResourceTest`, `BillingConfigResourceTest`), and the Stripe subscription cancellation that precedes a downgrade or account deletion (`StripeBillingServiceTest`, wire-level `DELETE /v1/subscriptions/{id}` against a local HTTP server). `mvn clean package` runs the tests as part of the build.
 
 ### Testing on Mobile Devices
 
