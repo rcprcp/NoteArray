@@ -717,7 +717,7 @@ The interactive Swagger UI allows you to test all endpoints directly from your b
 - Downgrading to Free cancels the paid Stripe subscription first (server-side) and only then applies the Free
   limits; if Stripe cannot be reached or does not confirm, the downgrade is refused and the paid plan stays
   active, so a recurring charge is never silently left running
-- At the storage limit a banner disables **Create Note**; **Import/Export** stays available so data can be exported, and imports are disabled inside the modal
+- At the storage limit a banner disables **Create Note**; **Import/Export** stays available so data can be exported, and imports are disabled inside the Import / Export view
 - The **Available Plans** card is shown only when the operator enables billing (`NOTEARRAY_BILLING_ENABLED=true`,
   the default); when disabled, the card is hidden and checkout is refused server-side
 - See [USER_GUIDE.md](USER_GUIDE.md) §9 and [STRIPE.md](STRIPE.md) for the operator setup
@@ -790,7 +790,7 @@ The interactive Swagger UI allows you to test all endpoints directly from your b
 - **Combined with filters** – Use search and filters together for powerful discovery
 
 ### Import / Export Notes
-- **Import/Export button** – Opens a modal with import options above and a full data export below
+- **Import/Export button** – Opens the Import / Export view in the main content pane, with import options above and a full data export below
 - **Export all data** – Download one ZIP containing:
   - `<title>.json` at the archive root for every note, with `title`, `tags` (array), `pinned` (boolean), `attachments` (array) and `content`
   - `attachments/<attachment-id>-<filename>` for every attachment you own

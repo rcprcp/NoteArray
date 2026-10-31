@@ -80,7 +80,7 @@ const PAGES = {
       },
       {
         heading: 'Can I import or export my notes?',
-        body: 'Yes. Click Import/Export in the top navigation bar while on the List Notes view. The top half of the modal imports notes: a Joplin .jex archive (ZIP or TAR up to 50 MB) or individual .md Markdown files (up to 10 MB), with Joplin folder names and metadata tags preserved as NoteArray tags. The bottom half exports all of your notes as one JSON file per note plus every attachment, packed into a single ZIP archive.',
+        body: 'Yes. Click Import/Export in the top navigation bar while on the List Notes view. The Import / Export view opens in the main pane. The top half imports notes: a Joplin .jex archive (ZIP or TAR up to 50 MB) or individual .md Markdown files (up to 10 MB), with Joplin folder names and metadata tags preserved as NoteArray tags. The bottom half exports all of your notes as one JSON file per note plus every attachment, packed into a single ZIP archive.',
       },
       {
         heading: 'How do I customize my theme or change my password?',

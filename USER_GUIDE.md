@@ -64,7 +64,7 @@ Once signed in, the header at the top of every page is your control center:
 | **Search Notes** | Toggles the search panel — text search with its scope checkboxes and the attachment / untagged filters (List Notes view only) |
 | **Pinned** | Filters the list to your pinned notes (List Notes view only) |
 | **Untagged** | Filters the list to notes with no tags (List Notes view only) |
-| **Import/Export** | Opens the Import / Export notes modal: import Joplin or Markdown files, or download all your notes and attachments as a ZIP (List Notes view only) |
+| **Import/Export** | Opens the Import / Export view in the main pane: import Joplin or Markdown files, or download all your notes and attachments as a ZIP (List Notes view only) |
 | **Help/About** | Dropdown with **FAQ**, **User Guide**, **Privacy Policy**, and **Security Notes** pages |
 | **Your avatar** | Shows your initials; click it to open **Personal Settings** |
 
@@ -314,7 +314,7 @@ Clicking **Delete** asks for confirmation with the note's name: *"Delete note "T
 
 ## 7. Importing & Exporting Notes
 
-Click **Import/Export** in the header (List Notes view) to open the **Import / Export notes** modal. The top half imports notes; the bottom half exports everything.
+Click **Import/Export** in the header (List Notes view) to open the **Import / Export notes** view in the main pane. The top half imports notes; the bottom half exports everything. Use **Back to notes** (or click the header button again) to return to the list.
 
 ### Exporting your notes
 
@@ -337,7 +337,7 @@ Two formats are supported:
 ### Joplin (.jex) — bring your whole notebook
 
 1. Export your notes from **Joplin** as a JEX archive (Joplin's native export format: a single `.jex` file).
-2. In NoteArray's Import modal, upload the `.jex` file (up to **50 MB**).
+2. In NoteArray's Import / Export view, upload the `.jex` file (up to **50 MB**).
 3. Wait for the result alert.
 
 What you get:
@@ -370,7 +370,7 @@ Upload one `.md` file (up to **10 MB**). The **first line becomes the title**, t
 
 ### Reading the result
 
-The modal shows *"Imported N note(s) [and N attachment(s)] [with N error(s)]."* — with a bulleted list of any per-note problems. If some notes failed, the rest still imported; fix the source and import only those notes individually (re-running the whole JEX would duplicate everything that already imported). Imports respect your plan's storage limit: if the import would overshoot your plan, **nothing is saved** and the error names your plan's limit (see the next section).
+The view shows *"Imported N note(s) [and N attachment(s)] [with N error(s)]."* — with a bulleted list of any per-note problems. If some notes failed, the rest still imported; fix the source and import only those notes individually (re-running the whole JEX would duplicate everything that already imported). Imports respect your plan's storage limit: if the import would overshoot your plan, **nothing is saved** and the error names your plan's limit (see the next section).
 
 ---
 
@@ -466,7 +466,7 @@ Changing plans keeps all your notes; only your limit changes.
 If your notes reach your plan's limit:
 
 - A yellow **"Storage Limit Reached"** banner appears above the list showing your exact usage, with an **Upgrade Plan** button.
-- **Create Note** is **disabled** in the header. **Import/Export** stays available so you can export your data; importing is disabled inside the modal until you free space.
+- **Create Note** is **disabled** in the header. **Import/Export** stays available so you can export your data; importing is disabled inside the Import / Export view until you free space.
 - You can still: **delete notes or attachments** (freeing space immediately), **shrink existing notes** (making a note smaller is always allowed), and **upgrade your plan**.
 - The server enforces this limit too, so it's never just a UI suggestion.
 
