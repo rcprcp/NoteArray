@@ -1,6 +1,7 @@
 package com.notearray.resource;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.HashMap;
@@ -48,5 +49,17 @@ class TagPrefixFilterTest {
         assertEquals(4, params.size());
         assertEquals("% k8s %", params.get("prefix2"));
         assertEquals("% k8s/% %", params.get("prefix3"));
+    }
+
+    @Test
+    void tagSearchMatchesTaggedNotesOnly() {
+        StringBuilder sql = new StringBuilder();
+        Map<String, Object> params = new HashMap<>();
+        NoteResource.appendTagSearchCondition(sql, params, "work");
+        // Untagged notes must not be pulled into a tag-only search.
+        assertFalse(sql.toString().contains("= ''"), sql.toString());
+        assertFalse(sql.toString().contains("btrim"), sql.toString());
+        assertTrue(sql.toString().contains("LIKE :tagq"), sql.toString());
+        assertEquals("%work%", params.get("tagq"));
     }
 }

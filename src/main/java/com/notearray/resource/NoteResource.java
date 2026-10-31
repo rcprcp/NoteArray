@@ -275,14 +275,7 @@ public class NoteResource {
             }
             if (searchTags) {
                 if (!or.isEmpty()) or.append(" OR ");
-                // Partial tag search: every tag token containing the query
-                // matches (token = one space-delimited entry, possibly a
-                // hierarchical grq/cobol path), so "sup" finds super-duper.
-                // Notes with no tags at all are included too — they have no
-                // tags to match, so a tag search does not exclude them.
-                or.append("((' ' || lower(coalesce(n.tags, '')) || ' ') LIKE :tagq"
-                        + " OR btrim(coalesce(n.tags, '')) = '')");
-                params.put("tagq", "%" + escapeLike(q) + "%");
+                appendTagSearchCondition(or, params, q);
             }
             sql.append(or).append(")");
             // Native queries reject setParameter for names absent from the SQL:
@@ -349,6 +342,17 @@ public class NoteResource {
     static String escapeLike(String tag) {
         return tag.trim().toLowerCase(Locale.ROOT)
                 .replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
+    }
+
+    /**
+     * Tag-scope search: match any tag token containing the query. Untagged
+     * notes do NOT match a tag-only search — they have no tag to match. (When
+     * titles/content are also in scope, an untagged note can still match on
+     * those fields, which is expected.)
+     */
+    static void appendTagSearchCondition(StringBuilder sql, Map<String, Object> params, String query) {
+        sql.append("(' ' || lower(coalesce(n.tags, '')) || ' ') LIKE :tagq");
+        params.put("tagq", "%" + escapeLike(query) + "%");
     }
 
     /**
