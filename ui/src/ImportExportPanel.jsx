@@ -115,15 +115,18 @@ export default function ImportExportPanel({
           Download a ZIP archive with one JSON file per note and every attachment.
           Each note file contains its title, tags, pinned state, linked attachments and content.
         </Text>
-        <Button
-          leftSection={<IconDownload size={16} />}
-          onClick={onExport}
-          loading={exporting}
-          disabled={importLoading}
-          size="sm"
-        >
-          Export .zip
-        </Button>
+        <Group mt="xs" gap="xs">
+          <Button
+            leftSection={<IconDownload size={14} />}
+            onClick={onExport}
+            loading={exporting}
+            disabled={importLoading}
+            size="xs"
+            w="fit-content"
+          >
+            Export .zip
+          </Button>
+        </Group>
       </Stack>
     </Stack>
   )
