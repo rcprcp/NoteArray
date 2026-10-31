@@ -580,7 +580,8 @@ on another note start their grace clock right away. Deleting an **account** remo
       and `content` (string). Duplicate titles get a `-2`, `-3`, … suffix
     - `attachments/<attachment-id>-<filename>` — every attachment the user owns
   - The export is independent of the current search/filter state and is available even over the plan storage limit
-  - Downloaded as `{user}-{UTC date/time}-export.zip` (for example `Jane-Doe-20261031-153045-export.zip`)
+  - Downloaded as `{user}-{local date}-{HH_mm_ss}-export.zip` (for example `Jane-Doe-20261031-15_30_45-export.zip`)
+  - The UI sends the browser's IANA time zone as `?timezone=America/New_York`; missing or invalid values fall back to UTC
   - Built in a temporary file server-side and streamed to the client; the temp file is deleted after the response
   - At most **2 exports** run at a time; further requests get **503** with `Retry-After` (protects temp disk/heap from parallel export floods). A caller with no export of their own is told the *system wide concurrent export limit* was reached; a caller already exporting gets an "export in progress" message
 

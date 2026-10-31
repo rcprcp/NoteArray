@@ -328,7 +328,7 @@ Click **Export .zip** to download a single compressed archive containing:
   - `content` — the markdown body (empty when the note has none).
 - every attachment you own under `attachments/`, named `<attachment-id>-<original-filename>`.
 
-The export always contains all of your notes and attachments, regardless of the current search or list filters, and it works even when you are over your plan's storage limit. The archive is saved as `<your-user-name>-<date-time>-export.zip` (for example `Jane-Doe-20261031-153045-export.zip`) and is built on the server before your browser downloads it; large accounts may take a moment. At most two exports run at a time — if the server is busy, wait a minute and try again.
+The export always contains all of your notes and attachments, regardless of the current search or list filters, and it works even when you are over your plan's storage limit. The archive is saved as `<your-user-name>-<date>-<HH_mm_ss>-export.zip` in your local time zone (for example `Jane-Doe-20261031-15_30_45-export.zip`) and is built on the server before your browser downloads it; large accounts may take a moment. At most two exports run at a time — if the server is busy, wait a minute and try again.
 
 ### Importing notes
 

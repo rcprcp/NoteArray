@@ -7,6 +7,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -89,19 +91,34 @@ class NoteExportServiceTest {
     // --- download filename ---------------------------------------------------
 
     @Test
-    void exportFilenameUsesUserAndUtcTimestamp() {
+    void exportFilenameUsesUserAndLocalTimestamp() {
+        Instant now = Instant.parse("2026-10-31T19:30:45Z");
+        assertEquals("Jane-Doe-20261031-15_30_45-export.zip",
+                NoteExportService.exportFilename("Jane Doe", now, ZoneId.of("America/New_York")));
+    }
+
+    @Test
+    void exportFilenameFallsBackToUtcWhenZoneIsNull() {
         Instant now = Instant.parse("2026-10-31T15:30:45Z");
-        assertEquals("Jane-Doe-20261031-153045-export.zip",
-                NoteExportService.exportFilename("Jane Doe", now));
+        assertEquals("Jane-Doe-20261031-15_30_45-export.zip",
+                NoteExportService.exportFilename("Jane Doe", now, null));
     }
 
     @Test
     void exportFilenameSanitizesUserAndFallsBackWhenBlank() {
         Instant now = Instant.parse("2026-10-31T15:30:45Z");
-        assertEquals("etc-passwd-20261031-153045-export.zip",
-                NoteExportService.exportFilename("../../etc/passwd", now));
-        assertEquals("user-20261031-153045-export.zip",
-                NoteExportService.exportFilename("   ", now));
+        assertEquals("etc-passwd-20261031-15_30_45-export.zip",
+                NoteExportService.exportFilename("../../etc/passwd", now, ZoneOffset.UTC));
+        assertEquals("user-20261031-15_30_45-export.zip",
+                NoteExportService.exportFilename("   ", now, ZoneOffset.UTC));
+    }
+
+    @Test
+    void exportZoneAcceptsIanaNamesAndFallsBackToUtc() {
+        assertEquals(ZoneId.of("America/New_York"), NoteExportService.exportZone("America/New_York"));
+        assertEquals(ZoneOffset.UTC, NoteExportService.exportZone(null));
+        assertEquals(ZoneOffset.UTC, NoteExportService.exportZone("  "));
+        assertEquals(ZoneOffset.UTC, NoteExportService.exportZone("not/a/real-zone"));
     }
 
     // --- JSON shape ---------------------------------------------------------

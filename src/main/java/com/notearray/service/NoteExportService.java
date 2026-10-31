@@ -12,7 +12,9 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.DateTimeException;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -206,15 +208,32 @@ public class NoteExportService {
     }
 
     /**
-     * Download name for the archive: {@code {user}-{UTC date/time}-export.zip}.
-     * The user name is sanitized so it is safe inside Content-Disposition.
+     * Download name for the archive:
+     * {@code {user}-{local date}-{HH_mm_ss}-export.zip}. The user name is
+     * sanitized so it is safe inside Content-Disposition.
      */
-    public static String exportFilename(String userName, Instant now) {
+    public static String exportFilename(String userName, Instant now, ZoneId zone) {
         String safeUser = sanitizeName(userName, "user");
-        String timestamp = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")
-                .withZone(ZoneOffset.UTC)
+        ZoneId effectiveZone = zone != null ? zone : ZoneOffset.UTC;
+        String timestamp = DateTimeFormatter.ofPattern("yyyyMMdd-HH_mm_ss", Locale.ROOT)
+                .withZone(effectiveZone)
                 .format(now);
         return safeUser + "-" + timestamp + "-export.zip";
+    }
+
+    /**
+     * Resolve the browser-supplied IANA time zone (for example
+     * {@code America/New_York}); invalid or missing values fall back to UTC.
+     */
+    public static ZoneId exportZone(String timezone) {
+        if (timezone == null || timezone.isBlank()) {
+            return ZoneOffset.UTC;
+        }
+        try {
+            return ZoneId.of(timezone.trim());
+        } catch (DateTimeException e) {
+            return ZoneOffset.UTC;
+        }
     }
 
     /**
