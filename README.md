@@ -765,7 +765,7 @@ The interactive Swagger UI allows you to test all endpoints directly from your b
 ### Rich Text Editing with Markdown
 - **Formatting toolbar** – Bold, Italic, Underline, Strikethrough, Clear formatting
 - **Headings** – H1, H2, H3 support
-- **Lists** – Bullet lists and ordered lists
+- **Lists** – Bullet lists and ordered lists, plus interactive task lists with clickable checkboxes and nesting
 - **Code blocks** – Inline code and multi-line code blocks
 - **Links** – Insert and remove links
 - **Blockquotes** – Quote formatting

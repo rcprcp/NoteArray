@@ -102,11 +102,12 @@ A **Created: …** line appears under the title once the note exists, and the bu
 | **B / I / U / S / Clear formatting** | Bold, italic, underline, strikethrough, remove all formatting |
 | **H1, H2, H3** | Heading levels |
 | **Bullet list / Ordered list** | Unordered and numbered lists |
+| **Task list** | Interactive checkboxes: click a checkbox to mark an item done; completed items are struck through. Task items can be nested. Stored as standard markdown (`- [ ]` / `- [x]`) |
 | **Blockquote ("** ) | Quoted text |
 | **Code / Code block** | Inline code or a fenced multi-line code block |
 | **Link / Unlink** | Add a hyperlink to the selected text (http, https, or mailto) or remove one |
 
-Markdown shortcuts work while typing — for example `**bold**`, `*italic*`, starting a line with `# `, `- `, `1. `, or `> `. Text alignment (left/center/right) is supported for headings and paragraphs.
+Markdown shortcuts work while typing — for example `**bold**`, `*italic*`, starting a line with `# `, `- `, `1. `, `- [ ] ` for a task item, or `> `. Text alignment (left/center/right) is supported for headings and paragraphs.
 
 ### Click, link & HTML safety
 
