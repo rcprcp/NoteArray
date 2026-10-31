@@ -582,7 +582,7 @@ on another note start their grace clock right away. Deleting an **account** remo
   - The export is independent of the current search/filter state and is available even over the plan storage limit
   - Downloaded as `{user}-{UTC date/time}-export.zip` (for example `Jane-Doe-20261031-153045-export.zip`)
   - Built in a temporary file server-side and streamed to the client; the temp file is deleted after the response
-  - At most **2 exports** run at a time; further requests get **503** with `Retry-After` (protects temp disk/heap from parallel export floods)
+  - At most **2 exports** run at a time; further requests get **503** with `Retry-After` (protects temp disk/heap from parallel export floods). A caller with no export of their own is told the *system wide concurrent export limit* was reached; a caller already exporting gets an "export in progress" message
 
 ### Notes – Import
 
