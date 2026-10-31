@@ -1,6 +1,6 @@
 # NoteArray — Security & Functionality Review
 
-> Captured: 2026-10-18. Last reviewed: 2026-10-21. Working document: findings are checked off as they are implemented.
+> Captured: 2026-10-18. Last reviewed: 2026-10-31. Working document: findings are checked off as they are implemented.
 > Use this as the backlog for making NoteArray a world-class note-taking application.
 > Priority order lives in the "Top-10 roadmap" at the end; each item links back to its finding.
 
@@ -206,11 +206,12 @@
   (`NotesPanel.jsx:412-440` — one filtered, one "everything" just for tag lists/counts, plus a cheap
   new `/api/notes/storage` usage call). With 10 MB notes
   this collapses at scale. Biggest engineering gap:
-  - Add pagination (`page`/`size`) + server-side sorting (sort is client-side today).
+  *Partially done (branch `agent/notes-pagination`, merged 2026-10-31 as `77837a0`): added
+  `GET /api/notes/page` with keyset pagination (`limit`, `cursor`, `sort`, `order`) over the same
+  search/filter parameters, `(sortKey, id)` tie-breaking, owner+sort composite indexes (`V1.4.0`),
+  and a UI that paints 50 notes then appends on scroll / **Load more**. Remaining:*
   - Return a list projection without `content` (e.g. first ~300 chars preview).
   - Add `/api/notes/tags` returning distinct tags + counts instead of downloading all notes.
-  - Add composite index `(owner_id, created_at DESC)` — today only `idx_notes_owner_id` and a global
-    `created_at` index exist.
 
 - [ ] **13. Search ceiling** (`NoteResource.java:137-148`): `plainto_tsquery` = AND-all-words,
   `'english'` hardcoded, no prefix/phrase/fuzzy match, no highlighting (`ts_headline`), unbounded `q`
@@ -219,15 +220,24 @@
   set them** (`FilterPanel.buildApiFilters` only passes tags/collections) — re-expose or drop the dead
   API surface.
 
-- [ ] **14. No export.** You can import Joplin/Markdown but can't get data *out* except SQL. Add
+- [x] **14. No export.** You can import Joplin/Markdown but can't get data *out* except SQL. Add
   Export Markdown (.zip), JSON backup, and full account export. Import-only = lock-in.
+  *Done: `GET /api/notes/export` streams a ZIP containing one `<title>.json` per note (`title`, `tags`,
+  `pinned`, `attachments`, `content`) plus every attachment under `attachments/<id>-<filename>`, with
+  local-time `{user}-{date}-{HH_mm_ss}-export.zip` naming, duplicate-title suffixes, and a
+  two-concurrent-export bound. The Import/Export view lives in the main pane
+  (`ImportExportPanel.jsx`; `NoteExportServiceTest`, `ExportLimitsTest`).*
 
 - [ ] **15. Deletes are permanent with a `window.confirm`** (`NotesPanel.jsx:601`). Add soft-delete
   (trash, 30-day restore) + an undo toast, plus **note version history** — critical given autosave and
   multi-device editing can silently destroy content.
 
-- [ ] **16. Joplin folders are flattened to tags** (`NoteResource.java:394-402`) — hierarchy is lost on
+- [x] **16. Joplin folders are flattened to tags** (`NoteResource.java:394-402`) — hierarchy is lost on
   import. Preserve folders as a real nesting structure (or nested tag convention).
+  *Done: Joplin folders are imported as hierarchical tags (`Work ▸ Projects ▸ Acme` →
+  `work/projects/acme`), and tag search/filtering understands the `a/b/c` path (a query for `grq`
+  matches `grq/cobol`, and `tags=grq/` selects the whole subtree). See `JoplinFolderTagsTest` and
+  `TagPrefixFilterTest`.*
 
 - [x] **17. No images/attachments** — rich text editor with no way to insert an image. Add upload
   endpoint + storage with size quotas, or at minimum paste-an-image.
@@ -319,11 +329,11 @@
 | 2 | Security headers + CSP + link/HTML sanitization | #3 | ✓ (`security-sanitization`, `agent/security-xss-headers`) |
 | 3 | Email normalization/validation + signup config flag | #4, #10 | ✓ (`agent/email-validation`) |
 | 4 | Fix body-size limit & import expansion caps | #5 | ✅ (body limit 55M, expansion budget 256 MB, entry cap 10k, concurrency semaphore, per-note plan-quota rollback) |
-| 5 | Test suite + CI | #21, #22 | ◐ (unit suite done — 80 tests/13 classes; CI & lint/formatter config outstanding) |
-| 6 | Paginated list + lightweight projection + tags endpoint | #12 | ☐ |
+| 5 | Test suite + CI | #21, #22 | ◐ (unit suite done — 186 tests/27 classes; CI & lint/formatter config outstanding) |
+| 6 | Paginated list + lightweight projection + tags endpoint | #12 | ◐ (keyset paging + infinite scroll + composite indexes done; projection and tags endpoint outstanding) |
 | 7 | Optimistic locking + serialized autosave | #9 | ✓ (`agent/optimistic-locking-autosave`) |
 | 8 | Trash/undo + note history | #15 | ☐ |
-| 9 | Export (MD/ZIP/JSON) | #14 | ☐ |
+| 9 | Export (MD/ZIP/JSON) | #14 | ✓ (`GET /api/notes/export` — ZIP of per-note JSON + attachments) |
 | 10 | Prod config hardening + health/metrics | #6, #23 | ✓ (`agent/disable-prod-openapi-metrics`, `agent/prod-config-hygiene`) |
 
 ---
@@ -357,3 +367,5 @@
 | 2026-10-27 | fix: tall editor on small screens | `agent/editor-height-mobile` | A note resized to 1200 px on desktop opened on a phone was visually clamped to 85% of the viewport, but the drag still started from 1200 — so the first ~480 px of dragging did nothing (verified at 390×844: drag up 120 px updated the DB to 1080 while the visible box stayed 717). The drag now starts from the rendered height and is capped to 85% of the dynamic viewport (`85dvh`, `85vh` fallback), pointer-up/keyboard commits are skipped when nothing changed (so merely touching the grip cannot shrink a stored desktop height), and keyboard steps base off the visible height. Re-verified at iPhone size: 1200 stored → 717 shown, opening does not rewrite it, no-op drag preserves 1200, drag up 120 → 597 immediately, survives reload; desktop drag/keyboard E2E still green, no horizontal overflow |
 | 2026-10-27 | docs/help: in-app User Guide + resize FAQ | `agent/help-userguide-faq` | Added **User Guide** to the Help/About menu directly after FAQ, rendered at `/help/user-guide` from the shipped `USER_GUIDE.md` (Vite `?raw` import; `markdown-it` as a direct dependency; GH-style heading ids so the guide's Contents anchors work; external links get `target=_blank`/`rel=noopener`; output sanitized with DOMPurify). Added a resize FAQ entry (corner grip, keyboard, per-note persistence, mobile 85% cap, width always fits) and refreshed the save FAQ to mention navigation flushes. Added `help/user-guide` to the `SpaResource` allow-list (direct URL/refresh previously redirected to `/notes`), plus `help.css` for typography/tables. Verified in headless Chromium: menu order, rendered guide (4 tables), anchor jump (scrollY 1907/top 80), FAQ entry, and a 390px mobile load with no horizontal page overflow |
 | 2026-10-27 | new: TOTP two-factor authentication | `agent/totp-2fa` | Opt-in RFC 6238 TOTP (SHA-1/6/30, Google Authenticator) with recovery codes. New `V1.3.0` tables (`user_totp` encrypted secrets + replay step, `user_recovery_codes` hashed single-use, `login_challenges` hashed 5-min single-use); AES-256-GCM secret storage via `NOTEARRAY_TOTP_ENCRYPTION_KEY`; password login now returns **202 + challenge** for TOTP users and `POST /login/totp` issues the session only after code/recovery verification (last_login deferred until then); replay rejection under a row lock; 5-attempt challenge cap + per-user second-factor backoff + per-IP budget; enrollment requires current password and returns QR/otpauth + one-time recovery codes; disable/regenerate require password + factor; password change and account deletion require the factor when enabled; enabling/disabling invalidates other sessions and pending challenges; email-change/setup/abandoned-enrollment cleanup. UI: login second step (code or recovery), Personal Settings 2FA card with QR (`qrcode.react`), copy/download recovery codes, disable/regenerate, and auth-code fields on password-change/delete; HelpPage FAQ + User Guide updated. Tests: `TotpServiceTest` (RFC vectors), `TotpCryptoTest`, `RecoveryCodeServiceTest`, suite 162 / 24; backend curl flow (enroll, 202, wrong/replayed code, recovery login, password change with factor, disable) and headless Chromium UI flow (QR setup, recovery codes, 2FA login, sensitive-action fields, disable) verified |
+| 2026-10-31 | #12 (partial) | `agent/notes-pagination` | Added `GET /api/notes/page` keyset pagination (`limit` 1–200 default 50, opaque `cursor`, `sort` = createdAt/updatedAt/title, `order` = asc/desc) reusing the same search/filter SQL; `(sortKey, id)` tie-break, `limit + 1` `hasMore` detection, cursor bound to sort/order (mismatch → 400), and `V1.4.0` composite indexes for owner+created/updated/title. `attachmentCount` now queries only attachments referenced by the page. UI paints 50 notes, appends via `IntersectionObserver` or **Load more**, merges by id, and refreshes the loaded window after mutations; search/filter/sort changes reset the cursor. `NotePaginationTest`; suite 186 tests / 27 classes |
+| 2026-10-31 | new: interactive task lists | `agent/task-list-editor` | Added TipTap `TaskList` + `TaskItem` (`nested: true`) to the note editor at the existing TipTap 3.32.0 version, a checklist toolbar button, and editor CSS for aligned checkboxes and struck-through completed items. Checked state round-trips as standard markdown (`- [ ]` / `- [x]`); README and User Guide updated. Verified with `npm run build` and `mvn test` |
