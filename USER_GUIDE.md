@@ -320,7 +320,7 @@ Click **Import/Export** in the header (List Notes view) to open the **Import / E
 
 Click **Export .zip** to download a single compressed archive containing:
 
-- one JSON file per note under `notes/`, named `<note-id>-<title>.json`, with these fields:
+- one JSON file per note at the top level of the archive, named `<title>.json` (duplicate titles get `-2`, `-3`, …), with these fields:
   - `title` — the note title;
   - `tags` — an array of tags (empty when the note has none);
   - `pinned` — `true` when the note is pinned, otherwise `false`;

@@ -575,9 +575,9 @@ on another note start their grace clock right away. Deleting an **account** remo
   - **Response:** `application/zip` archive
   - Returns 401 if not authenticated
   - Archive layout:
-    - `notes/<note-id>-<title>.json` — one file per note, containing `title` (string), `tags` (array),
+    - `<title>.json` at the archive root — one file per note, containing `title` (string), `tags` (array),
       `pinned` (boolean), `attachments` (array of relative archive paths for the files this note links to),
-      and `content` (string)
+      and `content` (string). Duplicate titles get a `-2`, `-3`, … suffix
     - `attachments/<attachment-id>-<filename>` — every attachment the user owns
   - The export is independent of the current search/filter state and is available even over the plan storage limit
   - Downloaded as `{user}-{UTC date/time}-export.zip` (for example `Jane-Doe-20261031-153045-export.zip`)
@@ -792,7 +792,7 @@ The interactive Swagger UI allows you to test all endpoints directly from your b
 ### Import / Export Notes
 - **Import/Export button** – Opens a modal with import options above and a full data export below
 - **Export all data** – Download one ZIP containing:
-  - `notes/<note-id>-<title>.json` for every note, with `title`, `tags` (array), `pinned` (boolean), `attachments` (array) and `content`
+  - `<title>.json` at the archive root for every note, with `title`, `tags` (array), `pinned` (boolean), `attachments` (array) and `content`
   - `attachments/<attachment-id>-<filename>` for every attachment you own
   - Works regardless of search/filter state and even when you are over your plan's storage limit
   - At most two exports run at once; busy servers return a retryable error instead of exhausting disk

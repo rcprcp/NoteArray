@@ -441,7 +441,7 @@ public class NoteResource {
      * Export every note and every attachment owned by the authenticated user as
      * one compressed ZIP archive.
      *
-     * <p>Notes are written as {@code notes/<id>-<title>.json} with
+     * <p>Notes are written as {@code <title>.json} at the archive root with
      * {@code title}, {@code tags}, {@code pinned}, {@code attachments} and
      * {@code content} fields. Attachment bytes are written as
      * {@code attachments/<id>-<filename>}; the note's {@code attachments} array
