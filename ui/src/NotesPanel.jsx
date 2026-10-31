@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { ActionIcon, Alert, Box, Button, Checkbox, Group, List, Modal, Stack, Table, Text, TextInput, UnstyledButton, Badge, Loader, Card, SimpleGrid, Tooltip } from '@mantine/core'
-import { IconCheck, IconChevronDown, IconChevronUp, IconDownload, IconLayoutGrid, IconList, IconPaperclip, IconPin, IconSearch, IconSelector, IconMenu2, IconX } from '@tabler/icons-react'
+import { IconCheck, IconChevronDown, IconChevronUp, IconDownload, IconLayoutGrid, IconList, IconListCheck, IconPaperclip, IconPin, IconSearch, IconSelector, IconMenu2, IconX } from '@tabler/icons-react'
 import { useMediaQuery } from '@mantine/hooks'
 import { notifications } from '@mantine/notifications'
 import ImportExportPanel from './ImportExportPanel'
@@ -10,6 +10,8 @@ import { Node, mergeAttributes } from '@tiptap/core'
 import { useEditor } from '@tiptap/react'
 import dompurify from 'dompurify'
 import StarterKit from '@tiptap/starter-kit'
+import TaskList from '@tiptap/extension-task-list'
+import TaskItem from '@tiptap/extension-task-item'
 import Highlight from '@tiptap/extension-highlight'
 import TextAlign from '@tiptap/extension-text-align'
 import Placeholder from '@tiptap/extension-placeholder'
@@ -254,6 +256,8 @@ function MarkdownEditor({ value, onChange, onDropFiles, onPreviewAttachment, hei
       // StarterKit 3 bundles link/underline extensions. Keep underline, but use
       // Mantine's Link so RichTextEditor.Link/Unlink controls can manage it.
       (StarterKit.default || StarterKit).configure({ link: false }),
+      TaskList,
+      TaskItem.configure({ nested: true }),
       ImageNode,
       Link.configure({
         openOnClick: false,
@@ -355,6 +359,14 @@ function MarkdownEditor({ value, onChange, onDropFiles, onPreviewAttachment, hei
           <RichTextEditor.ControlsGroup>
             <RichTextEditor.BulletList />
             <RichTextEditor.OrderedList />
+            <RichTextEditor.Control
+              onClick={() => editor.chain().focus().toggleTaskList().run()}
+              active={editor.isActive('taskList')}
+              aria-label="Task list"
+              title="Task list"
+            >
+              <IconListCheck size={16} />
+            </RichTextEditor.Control>
             <RichTextEditor.Blockquote />
             <RichTextEditor.Code />
             <RichTextEditor.CodeBlock />

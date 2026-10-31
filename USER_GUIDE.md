@@ -2,7 +2,7 @@
 
 A practical guide to using NoteArray, a modern note-taking application that works on desktop, tablet, and mobile devices.
 
-**Last updated: October 2026**
+**Last updated: 31 October 2026**
 
 ---
 
@@ -71,7 +71,7 @@ Once signed in, the header at the top of every page is your control center:
 Notes:
 
 - **Search Notes**, **Pinned**, **Untagged**, and **Import/Export** are only enabled while you're on the **List Notes** view. Switch to that view first, then toggle them.
-- The list loads the newest 50 matching notes first and appends more as you scroll, or when you click **Load more**. After creating, editing, deleting, or importing notes, an active search refreshes the loaded window so results stay current.
+- The list loads the first **50** matching notes (in the current sort order) and appends more as you scroll, or when you click **Load more**. After creating, editing, deleting, or importing notes, an active search refreshes the loaded window so results stay current.
 - On narrow screens, header items that don't fit collapse into a **More actions (…)** menu on the right.
 
 ### Screen layouts
@@ -102,11 +102,12 @@ A **Created: …** line appears under the title once the note exists, and the bu
 | **B / I / U / S / Clear formatting** | Bold, italic, underline, strikethrough, remove all formatting |
 | **H1, H2, H3** | Heading levels |
 | **Bullet list / Ordered list** | Unordered and numbered lists |
+| **Task list** | Interactive checkboxes: click a checkbox to mark an item done; completed items are struck through. Task items can be nested. Stored as standard markdown (`- [ ]` / `- [x]`) |
 | **Blockquote ("** ) | Quoted text |
 | **Code / Code block** | Inline code or a fenced multi-line code block |
 | **Link / Unlink** | Add a hyperlink to the selected text (http, https, or mailto) or remove one |
 
-Markdown shortcuts work while typing — for example `**bold**`, `*italic*`, starting a line with `# `, `- `, `1. `, or `> `. Text alignment (left/center/right) is supported for headings and paragraphs.
+Markdown shortcuts work while typing — for example `**bold**`, `*italic*`, starting a line with `# `, `- `, `1. `, `- [ ] ` for a task item, or `> `. Text alignment (left/center/right) is supported for headings and paragraphs.
 
 ### Click, link & HTML safety
 
@@ -279,7 +280,7 @@ If you try to search with no box checked, a **"How to search your notes"** help 
 
 ### Combining search with filters
 
-You can pair a search with the Search Titles / Search Note Content / Search Tags scope boxes, the **Find notes with attachments** filter, the header **Pinned** and **Untagged** toggles, and the Pinned filter all at once — they combine with AND logic for powerful, narrow results. Result counts are shown above the list: *"Search results for '…'"* / *"Found N result(s)."*
+You can pair a search with the Search Titles / Search Note Content / Search Tags scope boxes, the **Find notes with attachments** filter, the header **Pinned** and **Untagged** toggles, and the Pinned filter all at once — they combine with AND logic for powerful, narrow results. Above the list you'll see *"Search results for '…'"* and a live count of the notes currently loaded — *"Showing N notes · more available"* while more pages remain, or *"Showing N notes"* once the list is complete.
 
 ---
 
@@ -295,6 +296,7 @@ phones the card view suits best; the list view is a compact table). On desktop t
 - A **paperclip icon** next to the title — and in card view — marks notes that carry one or more attachments (hover for the count)
 - Untitled notes show as italic *"Untitled"*
 - Row actions: **Pin** (a pin/star icon button), **Edit**, and **Delete**
+- The list paints the first **50** notes, then appends more as you scroll. The footer shows **Load more** (also usable with the keyboard), a spinner while the next page loads, or **End of notes** when everything is loaded
 
 On mobile, the default is **cards** with the created/updated dates, a 2-line-clamped title, tags, and the same Pin/Edit/Delete actions (you can switch to the table with the toggle).
 
@@ -302,7 +304,8 @@ On mobile, the default is **cards** with the created/updated dates, a 2-line-cla
 
 - **Default order:** Created, **newest first**.
 - Click any column header (desktop) to sort by it; click again to reverse. Clicking a date column defaults to newest-first, and the Title column to A→Z — an arrow shows the current direction.
-- Sorting is instant and client-side; no reload.
+- The chosen sort is applied by the server, so every page you append stays in the same order. Changing the sort reloads the first page (with a brief loading state); the card view uses the same sort, so switch to the table view to change it.
+- When a note is edited or created while a sort/search is active, the currently loaded pages are refreshed so it lands in the right place.
 
 ### Deleting
 

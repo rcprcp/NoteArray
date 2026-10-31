@@ -60,12 +60,12 @@ NoteArray/
 │   │   │       └── StripeBillingService.java  # Stripe Checkout verification and subscription cancellation (see STRIPE.md)
 │   │   └── resources/
 │   │       ├── application.properties         # Quarkus config (DB, Flyway, OpenAPI, sessions, limits, headers, Stripe)
-│   │       └── db/migration/                  # Flyway migrations V1.0.0 … V1.3.0 (22 files)
+│   │       └── db/migration/                  # Flyway migrations V1.0.0 … V1.4.0 (23 files)
 │   └── test/java/com/notearray/               # 186 JUnit 5 unit tests across 27 classes
 │       ├── NoteArrayApplicationTest.java      # JAX-RS registration and SPA route redirects
 │       ├── resource/                          # AttachmentQuota, BillingConfig, ImportLimits, JoplinAttachmentImport,
-│       │                                      # JoplinFolderTags, NoteEditorHeight, NoteVersionConflict, StripeWebhook,
-│       │                                      # TagPrefixFilter, UserDeleteVerification,
+│       │                                      # JoplinFolderTags, NoteEditorHeight, NotePagination, NoteVersionConflict,
+│       │                                      # StripeWebhook, TagPrefixFilter, UserDeleteVerification,
 │       │                                      # UserPasswordChange, UserPlanSync
 │       ├── security/                          # CsrfFilterTest, SecurityHeadersFilterTest
 │       └── service/                           # AttachmentCleanupService, ClientIp, EmailPolicy, LoginThrottlePolicy,
@@ -700,6 +700,8 @@ The interactive Swagger UI allows you to test all endpoints directly from your b
   - **Mobile:** Card view with note title, dates, and tags
   - Default sort: Created, descending (newest first)
   - Click column headers (desktop) to sort; click again to reverse direction
+  - The list loads the first **50** matching notes (in the current sort order), then appends more as you scroll or click **Load more**; the footer shows **End of notes** when complete
+  - Search/filter/sort changes reset to a fresh first page, and mutations refresh the currently loaded window so active searches stay accurate
   - Tags displayed as badges below each note's title
   - A paperclip badge marks notes with attachments (hover shows the count)
   - Star icon to pin/unpin notes as favorites
@@ -765,7 +767,7 @@ The interactive Swagger UI allows you to test all endpoints directly from your b
 ### Rich Text Editing with Markdown
 - **Formatting toolbar** – Bold, Italic, Underline, Strikethrough, Clear formatting
 - **Headings** – H1, H2, H3 support
-- **Lists** – Bullet lists and ordered lists
+- **Lists** – Bullet lists and ordered lists, plus interactive task lists with clickable checkboxes and nesting
 - **Code blocks** – Inline code and multi-line code blocks
 - **Links** – Insert and remove links
 - **Blockquotes** – Quote formatting
@@ -796,7 +798,7 @@ The interactive Swagger UI allows you to test all endpoints directly from your b
   - **Search Tags** – Partial match inside tag tokens (including hierarchical `a/b/c` tags); untagged notes do
     not match a tag search
   - Any combination can be checked together for comprehensive search
-- **Search results** – Shows matching notes with result count
+- **Search results** – Shows matching notes with a count of the notes currently loaded (*"Showing N notes · more available"* while more pages remain)
 - **Smart search** – Word-based and case-insensitive for titles/content (stop words ignored, word endings normalized);
   tag matching is a partial substring match
 - **Help modal** – Click search with no checkboxes to see instructions
@@ -987,7 +989,7 @@ Covered so far (**186 unit tests across 27 test classes**): login-throttle backo
 - **Database migrations:** Flyway runs automatically on startup. Add new migrations to `src/main/resources/db/migration/` with naming `V{version}__{description}.sql`.
 - **OpenAPI updates:** Changes to REST endpoint signatures are reflected in the OpenAPI spec automatically on next Quarkus hot-reload.
 - **Theme persistence:** The selected theme is saved to your user record in the database and restored on login.
-- **Note sorting:** Notes are sorted by creation time (newest first) by default. Click any column header in the Notes table to sort by that field (desktop only; mobile cards maintain date sort).
+- **Note sorting:** Notes are sorted by creation time (newest first) by default. Click any column header in the Notes table to sort by that field; the chosen sort is applied by the server so appended pages stay in order, and the card view uses the same sort.
 - **Login tracking:** Each successful login via `POST /api/users/login` updates the user's `last_login` timestamp.
 - **Session security:** Sessions are stored (SHA-256 hashed) in the `sessions` table, so they survive restarts and allow multiple concurrent logins; cookies are HttpOnly and SameSite=Strict (plus Secure in `prod`).
 - **Login throttling:** Failed logins back off exponentially (1s doubling to 64s; 15-minute lockout after 8 consecutive failures, reset by a successful login), and each client IP gets 120 login + 30 signup requests per hour. Throttled requests return `429` with a `Retry-After` header. Tune via `notearray.rate-limit.*` properties — repeated failed logins while testing locally will hit the lockout.

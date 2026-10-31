@@ -528,7 +528,7 @@ journalctl -u notearray -f          # watch startup; look for "Profile prod acti
 Startup is fast (~1–2 s) ✅ and **Flyway migrations run automatically at boot** ✅ (validated, then applied if new):
 
 ```
-Successfully validated 22 migrations … Current version of schema "public": 1.3.0 … up to date. No migration necessary
+Successfully validated 23 migrations … Current version of schema "public": 1.4.0 … up to date. No migration necessary
 ```
 
 > **Never edit a migration file that has already run.** Flyway validates checksums and will refuse to start.

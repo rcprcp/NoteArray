@@ -50,3 +50,39 @@
   outline: 2px solid var(--mantine-primary-color-filled);
   outline-offset: 1px;
 }
+
+/* Interactive task lists (TipTap TaskList / TaskItem). */
+.notearray-editor-shell ul[data-type='taskList'] {
+  list-style: none;
+  padding-left: 0;
+}
+
+.notearray-editor-shell ul[data-type='taskList'] li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.notearray-editor-shell ul[data-type='taskList'] li > label {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  user-select: none;
+}
+
+.notearray-editor-shell ul[data-type='taskList'] li > div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.notearray-editor-shell ul[data-type='taskList'] li > div > p {
+  margin: 0;
+}
+
+.notearray-editor-shell ul[data-type='taskList'] li[data-checked='true'] > div {
+  opacity: 0.65;
+  text-decoration: line-through;
+}
+
+.notearray-editor-shell ul[data-type='taskList'] input[type='checkbox'] {
+  cursor: pointer;
+}
