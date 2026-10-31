@@ -64,7 +64,7 @@ Once signed in, the header at the top of every page is your control center:
 | **Search Notes** | Toggles the search panel — text search with its scope checkboxes and the attachment / untagged filters (List Notes view only) |
 | **Pinned** | Filters the list to your pinned notes (List Notes view only) |
 | **Untagged** | Filters the list to notes with no tags (List Notes view only) |
-| **Import/Export** | Opens the Import / Export notes modal: import Joplin or Markdown files, or download all your notes and attachments as a ZIP (List Notes view only) |
+| **Import/Export** | Opens the Import / Export view in the main pane: import Joplin or Markdown files, or download all your notes and attachments as a ZIP (List Notes view only) |
 | **Help/About** | Dropdown with **FAQ**, **User Guide**, **Privacy Policy**, and **Security Notes** pages |
 | **Your avatar** | Shows your initials; click it to open **Personal Settings** |
 
@@ -314,13 +314,13 @@ Clicking **Delete** asks for confirmation with the note's name: *"Delete note "T
 
 ## 7. Importing & Exporting Notes
 
-Click **Import/Export** in the header (List Notes view) to open the **Import / Export notes** modal. The top half imports notes; the bottom half exports everything.
+Click **Import/Export** in the header (List Notes view) to open the **Import / Export notes** view in the main pane. The top half imports notes; the bottom half exports everything. Use **Back to notes** (or click the header button again) to return to the list.
 
 ### Exporting your notes
 
 Click **Export .zip** to download a single compressed archive containing:
 
-- one JSON file per note under `notes/`, named `<note-id>-<title>.json`, with these fields:
+- one JSON file per note at the top level of the archive, named `<title>.json` (duplicate titles get `-2`, `-3`, …), with these fields:
   - `title` — the note title;
   - `tags` — an array of tags (empty when the note has none);
   - `pinned` — `true` when the note is pinned, otherwise `false`;
@@ -328,7 +328,7 @@ Click **Export .zip** to download a single compressed archive containing:
   - `content` — the markdown body (empty when the note has none).
 - every attachment you own under `attachments/`, named `<attachment-id>-<original-filename>`.
 
-The export always contains all of your notes and attachments, regardless of the current search or list filters, and it works even when you are over your plan's storage limit. The archive is saved as `<your-user-name>-<date-time>-export.zip` (for example `Jane-Doe-20261031-153045-export.zip`) and is built on the server before your browser downloads it; large accounts may take a moment. At most two exports run at a time — if the server is busy, wait a minute and try again.
+The export always contains all of your notes and attachments, regardless of the current search or list filters, and it works even when you are over your plan's storage limit. The archive is saved as `<your-user-name>-<date>-<HH_mm_ss>-export.zip` in your local time zone (for example `Jane-Doe-20261031-15_30_45-export.zip`) and is built on the server before your browser downloads it; large accounts may take a moment. At most two exports run at a time — if the server is busy, wait a minute and try again.
 
 ### Importing notes
 
@@ -337,7 +337,7 @@ Two formats are supported:
 ### Joplin (.jex) — bring your whole notebook
 
 1. Export your notes from **Joplin** as a JEX archive (Joplin's native export format: a single `.jex` file).
-2. In NoteArray's Import modal, upload the `.jex` file (up to **50 MB**).
+2. In NoteArray's Import / Export view, upload the `.jex` file (up to **50 MB**).
 3. Wait for the result alert.
 
 What you get:
@@ -370,7 +370,7 @@ Upload one `.md` file (up to **10 MB**). The **first line becomes the title**, t
 
 ### Reading the result
 
-The modal shows *"Imported N note(s) [and N attachment(s)] [with N error(s)]."* — with a bulleted list of any per-note problems. If some notes failed, the rest still imported; fix the source and import only those notes individually (re-running the whole JEX would duplicate everything that already imported). Imports respect your plan's storage limit: if the import would overshoot your plan, **nothing is saved** and the error names your plan's limit (see the next section).
+The view shows *"Imported N note(s) [and N attachment(s)] [with N error(s)]."* — with a bulleted list of any per-note problems. If some notes failed, the rest still imported; fix the source and import only those notes individually (re-running the whole JEX would duplicate everything that already imported). Imports respect your plan's storage limit: if the import would overshoot your plan, **nothing is saved** and the error names your plan's limit (see the next section).
 
 ---
 
@@ -466,7 +466,7 @@ Changing plans keeps all your notes; only your limit changes.
 If your notes reach your plan's limit:
 
 - A yellow **"Storage Limit Reached"** banner appears above the list showing your exact usage, with an **Upgrade Plan** button.
-- **Create Note** is **disabled** in the header. **Import/Export** stays available so you can export your data; importing is disabled inside the modal until you free space.
+- **Create Note** is **disabled** in the header. **Import/Export** stays available so you can export your data; importing is disabled inside the Import / Export view until you free space.
 - You can still: **delete notes or attachments** (freeing space immediately), **shrink existing notes** (making a note smaller is always allowed), and **upgrade your plan**.
 - The server enforces this limit too, so it's never just a UI suggestion.
 

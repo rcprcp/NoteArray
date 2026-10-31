@@ -12,13 +12,17 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.DateTimeException;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -31,9 +35,12 @@ import java.util.zip.ZipOutputStream;
  *
  * <p>Layout of the archive:
  * <pre>
- *   notes/&lt;note-id&gt;-&lt;title&gt;.json
+ *   &lt;title&gt;.json
  *   attachments/&lt;attachment-id&gt;-&lt;filename&gt;
  * </pre>
+ *
+ * <p>Note files sit at the archive root. Duplicate titles get a {@code -2},
+ * {@code -3}, … suffix so every entry stays unique without an id prefix.
  *
  * <p>Each note JSON contains:
  * <ul>
@@ -125,6 +132,7 @@ public class NoteExportService {
                         + " WHERE n.ownerId = :owner ORDER BY n.createdAt, n.id", UUID.class)
                 .setParameter("owner", ownerId)
                 .getResultList();
+        Set<String> usedNames = new HashSet<>();
         for (UUID id : ids) {
             Note note = Note.findById(id);
             if (note == null) {
@@ -148,7 +156,7 @@ public class NoteExportService {
                     note.content == null ? "" : note.content);
             byte[] json = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsBytes(exported);
 
-            zip.putNextEntry(new ZipEntry(noteEntryName(note.id, note.title)));
+            zip.putNextEntry(new ZipEntry(uniqueNoteEntryName(note.title, usedNames)));
             zip.write(json);
             zip.closeEntry();
             Note.getEntityManager().detach(note);
@@ -169,12 +177,29 @@ public class NoteExportService {
         return result;
     }
 
-    /** Archive entry for a note: {@code notes/<uuid>-<title>.json}. */
-    static String noteEntryName(UUID noteId, String title) {        String name = sanitizeName(title, "untitled");
-        if (name.toLowerCase(java.util.Locale.ROOT).endsWith(".json")) {
+    /** Archive entry for a note: {@code <title>.json} at the archive root. */
+    static String noteEntryName(String title) {
+        String name = sanitizeName(title, "untitled");
+        if (name.toLowerCase(Locale.ROOT).endsWith(".json")) {
             name = name.substring(0, name.length() - 5);
         }
-        return "notes/" + noteId + "-" + name + ".json";
+        return name + ".json";
+    }
+
+    /**
+     * Note entry name that does not collide with an earlier note: duplicate
+     * titles get {@code -2}, {@code -3}, … before the extension. Comparison is
+     * case-insensitive so the archive extracts cleanly on any filesystem.
+     */
+    static String uniqueNoteEntryName(String title, Set<String> usedLowercase) {
+        String base = noteEntryName(title);
+        String stem = base.substring(0, base.length() - 5);
+        String candidate = base;
+        int suffix = 2;
+        while (!usedLowercase.add(candidate.toLowerCase(Locale.ROOT))) {
+            candidate = stem + "-" + suffix++ + ".json";
+        }
+        return candidate;
     }
 
     /** Archive entry for an attachment: {@code attachments/<uuid>-<filename>}. */
@@ -183,15 +208,32 @@ public class NoteExportService {
     }
 
     /**
-     * Download name for the archive: {@code {user}-{UTC date/time}-export.zip}.
-     * The user name is sanitized so it is safe inside Content-Disposition.
+     * Download name for the archive:
+     * {@code {user}-{local date}-{HH_mm_ss}-export.zip}. The user name is
+     * sanitized so it is safe inside Content-Disposition.
      */
-    public static String exportFilename(String userName, Instant now) {
+    public static String exportFilename(String userName, Instant now, ZoneId zone) {
         String safeUser = sanitizeName(userName, "user");
-        String timestamp = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")
-                .withZone(ZoneOffset.UTC)
+        ZoneId effectiveZone = zone != null ? zone : ZoneOffset.UTC;
+        String timestamp = DateTimeFormatter.ofPattern("yyyyMMdd-HH_mm_ss", Locale.ROOT)
+                .withZone(effectiveZone)
                 .format(now);
         return safeUser + "-" + timestamp + "-export.zip";
+    }
+
+    /**
+     * Resolve the browser-supplied IANA time zone (for example
+     * {@code America/New_York}); invalid or missing values fall back to UTC.
+     */
+    public static ZoneId exportZone(String timezone) {
+        if (timezone == null || timezone.isBlank()) {
+            return ZoneOffset.UTC;
+        }
+        try {
+            return ZoneId.of(timezone.trim());
+        } catch (DateTimeException e) {
+            return ZoneOffset.UTC;
+        }
     }
 
     /**

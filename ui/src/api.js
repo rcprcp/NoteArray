@@ -130,10 +130,21 @@ export const notesApi = {
   /**
    * Download a ZIP of every note (one JSON file each) plus every attachment
    * owned by the signed-in user. The archive is built server-side and saved via
-   * a Blob, like attachment downloads.
+   * a Blob, like attachment downloads. The browser's IANA time zone is sent so
+   * the filename uses the user's local time.
    */
   exportAll: async () => {
-    const res = await fetch('/api/notes/export', { credentials: 'include' })
+    const params = new URLSearchParams()
+    try {
+      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
+      if (timezone) params.set('timezone', timezone)
+    } catch (e) {
+      // Intl unavailable — the server falls back to UTC
+    }
+    const qs = params.toString()
+    const res = await fetch(qs ? `/api/notes/export?${qs}` : '/api/notes/export', {
+      credentials: 'include',
+    })
     if (!res.ok) {
       let message = `${res.status} ${res.statusText}`
       try {

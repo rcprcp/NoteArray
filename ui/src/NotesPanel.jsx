@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { ActionIcon, Alert, Box, Button, Checkbox, Divider, Group, List, Modal, Stack, Table, Text, TextInput, Title, UnstyledButton, Badge, FileInput, Loader, Card, SimpleGrid, Tooltip } from '@mantine/core'
+import { ActionIcon, Alert, Box, Button, Checkbox, Group, List, Modal, Stack, Table, Text, TextInput, UnstyledButton, Badge, Loader, Card, SimpleGrid, Tooltip } from '@mantine/core'
 import { IconCheck, IconChevronDown, IconChevronUp, IconDownload, IconLayoutGrid, IconList, IconPaperclip, IconPin, IconSearch, IconSelector, IconMenu2, IconX } from '@tabler/icons-react'
 import { useMediaQuery } from '@mantine/hooks'
 import { notifications } from '@mantine/notifications'
+import ImportExportPanel from './ImportExportPanel'
 import { RichTextEditor } from '@mantine/tiptap'
 import { Node, mergeAttributes } from '@tiptap/core'
 import { useEditor } from '@tiptap/react'
@@ -564,8 +565,8 @@ export default function NotesPanel({ registerActions } = {}) {
   useEffect(() => writeStorage(VIEW_KEY, viewMode), [viewMode])
   const cardView = viewMode === 'card' || (viewMode === 'auto' && isMobile)
 
-  // Import states
-  const [importModalOpened, setImportModalOpened] = useState(false)
+  // Import / Export states
+  const [importOpen, setImportOpen] = useState(false)
   const [searchVisible, setSearchVisible] = useState(false)
   const [tagsVisible, setTagsVisible] = useState(false)
   // Search Text and Find by Tag are one panel: the "Search Notes" header button
@@ -637,7 +638,7 @@ export default function NotesPanel({ registerActions } = {}) {
     autoSavedRef.current = false
     setSearchVisible(false)
     setTagsVisible(false)
-    setImportModalOpened(false)
+    setImportOpen(false)
     setCreateMode(false)
     setEditMode(false)
     setActiveSearch(null)
@@ -670,6 +671,7 @@ export default function NotesPanel({ registerActions } = {}) {
     setNoteAttachments([])
     setEditorHeight(DEFAULT_EDITOR_HEIGHT)
     setEditMode(false)
+    setImportOpen(false)
     setCreateMode(true)
     if (needsReload) await reload()
   }
@@ -696,16 +698,26 @@ export default function NotesPanel({ registerActions } = {}) {
         // Called by App before any route change / settings / help navigation.
         flush: () => flushPendingChangesRef.current(),
         onImport: () => {
-          setImportModalOpened(true)
+          if (importOpen) {
+            setImportOpen(false)
+            return
+          }
+          setImportResult(null)
+          setImportOpen(true)
         },
-        onToggleSearch: toggleSearchPanel,
+        onToggleSearch: () => {
+          setImportOpen(false)
+          toggleSearchPanel()
+        },
         // Pinned / Untagged are click-on, click-off list filters. They combine
         // with whatever the Search Notes panel is searching, and stay on until
         // clicked off (or until List Notes resets everything).
         onSetPinned: () => {
+          setImportOpen(false)
           setFilters((f) => ({ ...f, collection: f.collection === 'pinned' ? null : 'pinned' }))
         },
         onSetUntagged: () => {
+          setImportOpen(false)
           setFilters((f) => ({ ...f, untagged: !f.untagged }))
         },
         onReset: resetAll,
@@ -714,11 +726,11 @@ export default function NotesPanel({ registerActions } = {}) {
         searchOpen: searchPanelOpen,
         pinnedActive: filters.collection === 'pinned',
         untaggedActive: !!filters.untagged,
-        importOpen: importModalOpened,
+        importOpen,
         overQuota: storageInfo.overQuota,
       })
     }
-  }, [registerActions, createMode, editMode, searchPanelOpen, importModalOpened, activeSearch, filters, storageInfo.overQuota])
+  }, [registerActions, createMode, editMode, searchPanelOpen, importOpen, activeSearch, filters, storageInfo.overQuota])
 
   const updateFilters = (patch) => {
     setFilters((f) => ({ ...f, ...patch }))
@@ -847,6 +859,7 @@ export default function NotesPanel({ registerActions } = {}) {
     setForm({ title: note.title || '', content: note.content || '', tags: (note.tags || '').toLowerCase() })
     setFormError(null)
     setCreateMode(false)
+    setImportOpen(false)
     setEditMode(true)
     refreshNoteAttachments(note.id)
   }
@@ -1363,7 +1376,7 @@ export default function NotesPanel({ registerActions } = {}) {
 
       <Stack gap="md" style={{ flex: 1, minWidth: 0, width: '100%' }}>
       {/* Search Section */}
-      {!(createMode || editMode) && searchPanelOpen && (
+      {!(createMode || editMode) && !importOpen && searchPanelOpen && (
       <Stack gap="xs">
         <Group align="flex-end" wrap="nowrap" gap={{ base: 'xs', sm: 'md' }}>
           <TextInput
@@ -1438,7 +1451,7 @@ export default function NotesPanel({ registerActions } = {}) {
         </Alert>
       )}
 
-      {!(createMode || editMode) && (
+      {!(createMode || editMode) && !importOpen && (
         <Group justify="space-between" align="flex-end" wrap="nowrap" gap="xs">
           <Stack gap="xs">
             {activeSearch && (
@@ -1549,6 +1562,18 @@ export default function NotesPanel({ registerActions } = {}) {
 
           </Group>
         </Stack>
+      ) : importOpen ? (
+        <ImportExportPanel
+          importResult={importResult}
+          importLoading={importLoading}
+          exporting={exporting}
+          overQuota={storageInfo.overQuota}
+          onImportJoplin={handleImportJoplin}
+          onImportMarkdown={handleImportMarkdown}
+          onExport={handleExport}
+          onClose={() => setImportOpen(false)}
+          onDismissResult={() => setImportResult(null)}
+        />
       ) : notes.length === 0 ? (
         <Text c="dimmed" ta="center" py="xl">{activeFilterCount > 0 ? 'No notes match your search or filters.' : 'You have no notes yet. Use Create Note or Import some notes from a backup.'}</Text>
       ) : cardView ? (
@@ -1601,108 +1626,6 @@ export default function NotesPanel({ registerActions } = {}) {
       )}
 
       </Stack>
-
-      {/* Import / Export Modal */}
-      <Modal
-        opened={importModalOpened}
-        onClose={() => setImportModalOpened(false)}
-        title="Import / Export notes"
-        size={modalSize}
-      >
-        <Stack>
-          {importResult && (
-            <Alert
-              color={importResult.errors === 0 ? 'primary' : 'yellow'}
-              withCloseButton
-              onClose={() => setImportResult(null)}
-            >
-              <Stack gap="xs">
-                <Text size="sm">
-                  Imported {importResult.imported} note{importResult.imported === 1 ? '' : 's'}
-                  {importResult.attachments > 0 && (
-                    ` and ${importResult.attachments} attachment${importResult.attachments === 1 ? '' : 's'}`
-                  )}
-                  {importResult.errors > 0 && ` with ${importResult.errors} error${importResult.errors === 1 ? '' : 's'}`}
-                </Text>
-                {importResult.messages.length > 0 && (
-                  <List size="sm">
-                    {importResult.messages.map((msg, idx) => (
-                      <List.Item key={idx}>{msg}</List.Item>
-                    ))}
-                  </List>
-                )}
-              </Stack>
-            </Alert>
-          )}
-
-          {importLoading && (
-            <Stack align="center" gap="md">
-              <Loader />
-              <Text c="dimmed" size="sm">Importing...</Text>
-            </Stack>
-          )}
-
-          {!importLoading && !importResult && (
-            <Stack gap="md">
-              {storageInfo.overQuota && (
-                <Alert color="yellow" title="Storage limit reached">
-                  <Text size="sm">
-                    Importing is unavailable until you free up space or upgrade your plan.
-                    Exporting still works.
-                  </Text>
-                </Alert>
-              )}
-
-              <Stack gap="sm">
-                <Text fw={500} size="sm">Import from Joplin (.jex)</Text>
-                <Text size="xs" c="dimmed">
-                  Export from Joplin, then upload the .jex file. Folder hierarchy will be converted to tags, and
-                  attachments referenced in your notes are imported and linked automatically.
-                </Text>
-                <FileInput
-                  placeholder="Choose .jex file"
-                  accept=".jex"
-                  onChange={handleImportJoplin}
-                  disabled={importLoading || storageInfo.overQuota}
-                  size="sm"
-                />
-              </Stack>
-
-              <Stack gap="sm">
-                <Text fw={500} size="sm">Import Markdown file (.md)</Text>
-                <Text size="xs" c="dimmed">
-                  Upload a single markdown file. The first line will be used as the title.
-                </Text>
-                <FileInput
-                  placeholder="Choose .md file"
-                  accept=".md"
-                  onChange={handleImportMarkdown}
-                  disabled={importLoading || storageInfo.overQuota}
-                  size="sm"
-                />
-              </Stack>
-            </Stack>
-          )}
-
-          <Divider />
-          <Stack gap="sm">
-            <Text fw={500} size="sm">Export all notes</Text>
-            <Text size="xs" c="dimmed">
-              Download a ZIP archive with one JSON file per note and every attachment.
-              Each note file contains its title, tags, linked attachments and content.
-            </Text>
-            <Button
-              leftSection={<IconDownload size={16} />}
-              onClick={handleExport}
-              loading={exporting}
-              disabled={importLoading}
-              size="sm"
-            >
-              Export .zip
-            </Button>
-          </Stack>
-        </Stack>
-      </Modal>
 
       {/* Help Modal */}
       <Modal

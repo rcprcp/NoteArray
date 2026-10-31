@@ -438,20 +438,6 @@ public class NoteResource {
     }
 
     /**
-     * Export every note and every attachment owned by the authenticated user as
-     * one compressed ZIP archive.
-     *
-     * <p>Notes are written as {@code notes/<id>-<title>.json} with
-     * {@code title}, {@code tags}, {@code pinned}, {@code attachments} and
-     * {@code content} fields. Attachment bytes are written as
-     * {@code attachments/<id>-<filename>}; the note's {@code attachments} array
-     * holds the matching relative paths.
-     *
-     * <p>At most {@value #EXPORT_PERMITS} exports run at once; further requests
-     * get 503 + Retry-After so temp archives cannot exhaust disk or heap under
-     * load.
-     */
-    /**
      * 503 message when an export cannot start. If the caller is not the one
      * exporting, say the limit is system-wide; otherwise point at their own
      * in-flight export.
@@ -467,10 +453,27 @@ public class NoteResource {
         EXPORT_SEMAPHORE.release();
     }
 
+    /**
+     * Export every note and every attachment owned by the authenticated user as
+     * one compressed ZIP archive.
+     *
+     * <p>Notes are written as {@code <title>.json} at the archive root with
+     * {@code title}, {@code tags}, {@code pinned}, {@code attachments} and
+     * {@code content} fields. Attachment bytes are written as
+     * {@code attachments/<id>-<filename>}; the note's {@code attachments} array
+     * holds the matching relative paths.
+     *
+     * <p>At most {@value #EXPORT_PERMITS} exports run at once; further requests
+     * get 503 + Retry-After so temp archives cannot exhaust disk or heap under
+     * load.
+     *
+     * @param timezone optional browser IANA zone (e.g. {@code America/New_York});
+     *                 used for the download filename, with UTC as the fallback
+     */
     @GET
     @Path("/export")
     @Produces("application/zip")
-    public Response exportAll() {
+    public Response exportAll(@QueryParam("timezone") String timezone) {
         User user = getAuthenticatedUser();
         if (user == null) {
             return Response.status(Response.Status.UNAUTHORIZED).build();
@@ -513,7 +516,8 @@ public class NoteResource {
                     .entity("Failed to build export").build();
         }
 
-        String filename = NoteExportService.exportFilename(user.name, Instant.now());
+        String filename = NoteExportService.exportFilename(
+                user.name, Instant.now(), NoteExportService.exportZone(timezone));
         StreamingOutput body = out -> {
             try (InputStream in = Files.newInputStream(archive)) {
                 in.transferTo(out);

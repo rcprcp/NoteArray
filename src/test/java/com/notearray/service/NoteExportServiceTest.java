@@ -7,14 +7,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 /** Naming, tag splitting and JSON shape for the user data export. */
 class NoteExportServiceTest {
 
-    private static final UUID NOTE_ID = UUID.fromString("11111111-1111-1111-1111-111111111111");
     private static final UUID ATTACHMENT_ID = UUID.fromString("22222222-2222-2222-2222-222222222222");
 
     // --- tags ---------------------------------------------------------------
@@ -35,27 +38,34 @@ class NoteExportServiceTest {
 
     @Test
     void noteEntryKeepsTitleAndUsesJsonSuffix() {
-        String name = NoteExportService.noteEntryName(NOTE_ID, "Quarterly Report");
-        assertEquals("notes/" + NOTE_ID + "-Quarterly-Report.json", name);
+        assertEquals("Quarterly-Report.json",
+                NoteExportService.noteEntryName("Quarterly Report"));
     }
 
     @Test
     void noteEntryFallsBackForBlankTitleAndDoesNotDoubleJson() {
-        assertTrue(NoteExportService.noteEntryName(NOTE_ID, "   ").endsWith("-untitled.json"));
-        assertEquals("notes/" + NOTE_ID + "-backup.json",
-                NoteExportService.noteEntryName(NOTE_ID, "backup.json"));
+        assertEquals("untitled.json", NoteExportService.noteEntryName("   "));
+        assertEquals("backup.json", NoteExportService.noteEntryName("backup.json"));
     }
 
     @Test
     void noteEntryStripsPathSeparators() {
-        String name = NoteExportService.noteEntryName(NOTE_ID, "../../etc/passwd");
-        assertEquals("notes/" + NOTE_ID + "-etc-passwd.json", name);
+        assertEquals("etc-passwd.json",
+                NoteExportService.noteEntryName("../../etc/passwd"));
     }
 
     @Test
     void noteEntryKeepsUnicodeLetters() {
-        assertEquals("notes/" + NOTE_ID + "-Café-日本語.json",
-                NoteExportService.noteEntryName(NOTE_ID, "Café 日本語"));
+        assertEquals("Café-日本語.json",
+                NoteExportService.noteEntryName("Café 日本語"));
+    }
+
+    @Test
+    void duplicateNoteTitlesGetNumericSuffixes() {
+        Set<String> used = new HashSet<>();
+        assertEquals("Same.json", NoteExportService.uniqueNoteEntryName("Same", used));
+        assertEquals("same-2.json", NoteExportService.uniqueNoteEntryName("same", used));
+        assertEquals("SAME-3.json", NoteExportService.uniqueNoteEntryName("SAME", used));
     }
 
     @Test
@@ -81,19 +91,34 @@ class NoteExportServiceTest {
     // --- download filename ---------------------------------------------------
 
     @Test
-    void exportFilenameUsesUserAndUtcTimestamp() {
+    void exportFilenameUsesUserAndLocalTimestamp() {
+        Instant now = Instant.parse("2026-10-31T19:30:45Z");
+        assertEquals("Jane-Doe-20261031-15_30_45-export.zip",
+                NoteExportService.exportFilename("Jane Doe", now, ZoneId.of("America/New_York")));
+    }
+
+    @Test
+    void exportFilenameFallsBackToUtcWhenZoneIsNull() {
         Instant now = Instant.parse("2026-10-31T15:30:45Z");
-        assertEquals("Jane-Doe-20261031-153045-export.zip",
-                NoteExportService.exportFilename("Jane Doe", now));
+        assertEquals("Jane-Doe-20261031-15_30_45-export.zip",
+                NoteExportService.exportFilename("Jane Doe", now, null));
     }
 
     @Test
     void exportFilenameSanitizesUserAndFallsBackWhenBlank() {
         Instant now = Instant.parse("2026-10-31T15:30:45Z");
-        assertEquals("etc-passwd-20261031-153045-export.zip",
-                NoteExportService.exportFilename("../../etc/passwd", now));
-        assertEquals("user-20261031-153045-export.zip",
-                NoteExportService.exportFilename("   ", now));
+        assertEquals("etc-passwd-20261031-15_30_45-export.zip",
+                NoteExportService.exportFilename("../../etc/passwd", now, ZoneOffset.UTC));
+        assertEquals("user-20261031-15_30_45-export.zip",
+                NoteExportService.exportFilename("   ", now, ZoneOffset.UTC));
+    }
+
+    @Test
+    void exportZoneAcceptsIanaNamesAndFallsBackToUtc() {
+        assertEquals(ZoneId.of("America/New_York"), NoteExportService.exportZone("America/New_York"));
+        assertEquals(ZoneOffset.UTC, NoteExportService.exportZone(null));
+        assertEquals(ZoneOffset.UTC, NoteExportService.exportZone("  "));
+        assertEquals(ZoneOffset.UTC, NoteExportService.exportZone("not/a/real-zone"));
     }
 
     // --- JSON shape ---------------------------------------------------------

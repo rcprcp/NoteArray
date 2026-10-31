@@ -575,12 +575,13 @@ on another note start their grace clock right away. Deleting an **account** remo
   - **Response:** `application/zip` archive
   - Returns 401 if not authenticated
   - Archive layout:
-    - `notes/<note-id>-<title>.json` — one file per note, containing `title` (string), `tags` (array),
+    - `<title>.json` at the archive root — one file per note, containing `title` (string), `tags` (array),
       `pinned` (boolean), `attachments` (array of relative archive paths for the files this note links to),
-      and `content` (string)
+      and `content` (string). Duplicate titles get a `-2`, `-3`, … suffix
     - `attachments/<attachment-id>-<filename>` — every attachment the user owns
   - The export is independent of the current search/filter state and is available even over the plan storage limit
-  - Downloaded as `{user}-{UTC date/time}-export.zip` (for example `Jane-Doe-20261031-153045-export.zip`)
+  - Downloaded as `{user}-{local date}-{HH_mm_ss}-export.zip` (for example `Jane-Doe-20261031-15_30_45-export.zip`)
+  - The UI sends the browser's IANA time zone as `?timezone=America/New_York`; missing or invalid values fall back to UTC
   - Built in a temporary file server-side and streamed to the client; the temp file is deleted after the response
   - At most **2 exports** run at a time; further requests get **503** with `Retry-After` (protects temp disk/heap from parallel export floods). A caller with no export of their own is told the *system wide concurrent export limit* was reached; a caller already exporting gets an "export in progress" message
 
@@ -717,7 +718,7 @@ The interactive Swagger UI allows you to test all endpoints directly from your b
 - Downgrading to Free cancels the paid Stripe subscription first (server-side) and only then applies the Free
   limits; if Stripe cannot be reached or does not confirm, the downgrade is refused and the paid plan stays
   active, so a recurring charge is never silently left running
-- At the storage limit a banner disables **Create Note**; **Import/Export** stays available so data can be exported, and imports are disabled inside the modal
+- At the storage limit a banner disables **Create Note**; **Import/Export** stays available so data can be exported, and imports are disabled inside the Import / Export view
 - The **Available Plans** card is shown only when the operator enables billing (`NOTEARRAY_BILLING_ENABLED=true`,
   the default); when disabled, the card is hidden and checkout is refused server-side
 - See [USER_GUIDE.md](USER_GUIDE.md) §9 and [STRIPE.md](STRIPE.md) for the operator setup
@@ -790,9 +791,9 @@ The interactive Swagger UI allows you to test all endpoints directly from your b
 - **Combined with filters** – Use search and filters together for powerful discovery
 
 ### Import / Export Notes
-- **Import/Export button** – Opens a modal with import options above and a full data export below
+- **Import/Export button** – Opens the Import / Export view in the main content pane, with import options above and a full data export below
 - **Export all data** – Download one ZIP containing:
-  - `notes/<note-id>-<title>.json` for every note, with `title`, `tags` (array), `pinned` (boolean), `attachments` (array) and `content`
+  - `<title>.json` at the archive root for every note, with `title`, `tags` (array), `pinned` (boolean), `attachments` (array) and `content`
   - `attachments/<attachment-id>-<filename>` for every attachment you own
   - Works regardless of search/filter state and even when you are over your plan's storage limit
   - At most two exports run at once; busy servers return a retryable error instead of exhausting disk
