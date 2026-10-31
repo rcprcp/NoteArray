@@ -238,7 +238,7 @@ The header **Untagged** button is a filter toggle like **Pinned**: click it to s
 Click **Search Notes** in the header (List Notes view) to open the search panel. It holds the text search and the list filters together:
 
 - **Text search**: the search box with its **Search** button (Enter also works) and **Clear**.
-- **Search Titles** / **Search Note Content** / **Search Tags**: choose where the text search looks. Tags are matched on **any part** of a tag — "sup" finds notes tagged *super-duper* or *supper*, and "grq" finds notes in folders *grq* and *grq/cobol* — so there is no separate tag picker. Notes with **no tags** are included in tag searches too: they have no tags to match, so the tag scope does not exclude them.
+- **Search Titles** / **Search Note Content** / **Search Tags**: choose where the text search looks. Tags are matched on **any part** of a tag — "sup" finds notes tagged *super-duper* or *supper*, and "grq" finds notes in folders *grq* and *grq/cobol* — so there is no separate tag picker. Untagged notes do **not** match a tag search; if you also search titles or content, they can still match on those fields.
 - **Find notes with attachments**: only notes that carry at least one attachment.
 
 Search text and filters combine with AND logic, so you can search text and narrow the results by attachments or tags at the same time. Each active filter shows as a removable chip above the list.

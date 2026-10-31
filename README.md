@@ -560,7 +560,7 @@ on another note start their grace clock right away. Deleting an **account** remo
     - `q` – Search query (required when searching)
     - `searchTitles` – Search in note titles (boolean, default false)
     - `searchContent` – Search in note content (boolean, default false)
-    - `searchTags` – Search the tags as a partial match (boolean, default false): every tag token containing the query matches, so `q=sup` finds tags like `super-duper` and `supper`, and `q=grq` finds notes in folders `grq` and `grq/cobol`. Notes with no tags at all are included too, since they have no tags to match
+    - `searchTags` – Search the tags as a partial match (boolean, default false): every tag token containing the query matches, so `q=sup` finds tags like `super-duper` and `supper`, and `q=grq` finds notes in folders `grq` and `grq/cobol`. Untagged notes do not match a tag search
   - **Response:** Array of matching note objects, sorted by `createdAt` descending
   - Returns 401 if not authenticated
   - Returns 400 if q is provided but neither searchTitles nor searchContent nor searchTags is true
@@ -781,8 +781,8 @@ The interactive Swagger UI allows you to test all endpoints directly from your b
   - **Desktop:** Always-visible checkboxes
   - **Search Titles** – Match words in note titles
   - **Search Note Content** – Match words in note content
-  - **Search Tags** – Partial match inside tag tokens (including hierarchical `a/b/c` tags); notes with no tags are
-    included because they have no tags to exclude them
+  - **Search Tags** – Partial match inside tag tokens (including hierarchical `a/b/c` tags); untagged notes do
+    not match a tag search
   - Any combination can be checked together for comprehensive search
 - **Search results** – Shows matching notes with result count
 - **Smart search** – Word-based and case-insensitive for titles/content (stop words ignored, word endings normalized);
