@@ -4,6 +4,7 @@ import { Avatar, Box, Container, Group, Menu, Stack, Text, Title, UnstyledButton
 import { IconArrowsExchange, IconUser } from '@tabler/icons-react'
 import LoginPage from './LoginPage'
 import NotesPanel from './NotesPanel'
+import TodoPanel from './TodoPanel'
 import HeaderActions from './HeaderActions'
 import PersonalSettings from './PersonalSettings'
 import HelpPage from './HelpPage'
@@ -93,6 +94,11 @@ export default function App({ themeColor, onThemeChange, onPlanChange, onPlanSyn
     navigate(path)
   }
 
+  const goToTodos = async () => {
+    if (!(await flushEditor())) return
+    navigate('/todos')
+  }
+
   const goToCreate = async () => {
     if (location.pathname !== '/notes') {
       navigate('/notes', { state: { createNote: true } })
@@ -107,6 +113,7 @@ export default function App({ themeColor, onThemeChange, onPlanChange, onPlanSyn
   const headerItems = [
     { key: 'create', label: 'Create Note', active: actions?.createOpen, disabled: !!actions?.overQuota, onClick: goToCreate },
     { key: 'list', label: 'List Notes', onClick: goToList },
+    { key: 'todos', label: 'TODO Lists', active: location.pathname === '/todos', onClick: goToTodos },
     { key: 'search', label: 'Search Notes', active: actions?.searchOpen, toggle: true, disabled: listOnlyDisabled, onClick: () => actions?.onToggleSearch?.() },
     { key: 'pinned', label: 'Pinned', active: actions?.pinnedActive, toggle: true, disabled: listOnlyDisabled, onClick: () => actions?.onSetPinned?.() },
     { key: 'untagged', label: 'Untagged', active: actions?.untaggedActive, toggle: true, disabled: listOnlyDisabled, onClick: () => actions?.onSetUntagged?.() },
@@ -199,6 +206,7 @@ export default function App({ themeColor, onThemeChange, onPlanChange, onPlanSyn
       >
         <Routes>
           <Route path="/notes" element={<NotesPanel registerActions={handleRegister} wideMode={wideMode} userId={currentUser.id} />} />
+          <Route path="/todos" element={<TodoPanel />} />
           <Route
             path="/settings"
             element={

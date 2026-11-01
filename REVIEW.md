@@ -11,6 +11,7 @@
 - **SQL injection**: every query in `NoteResource.list` uses bound parameters (`NoteResource.java:135-177`); tag filters are escaped and bound too.
 - **Sessions**: SHA-256-hashed tokens stored server-side, `HttpOnly; SameSite=Strict`, `Secure` in prod profile, TTL + hourly purge (`SessionService.java`).
 - **Session-expiry recovery**: in-place re-auth (password + TOTP/recovery) keeps the editor mounted and retries the pending save once; an IndexedDB journal restores drafts after a reload/crash (`sessionExpiry.js`, `draftStore.js`, `ReauthModal.jsx`).
+- **TODO lists**: standalone, owner-scoped lists with nested items, priorities, due dates, optimistic locking and markdown-checklist conversion (`TodoListResource`, `TodoChecklistParser`, `TodoPanel.jsx`).
 - **Login timing**: bcrypt comparison runs even for unknown emails via a decoy hash (`UserResource.java:95-100`).
 - **Secrets in JSON**: `passwordHash` and `superuser` are `@JsonIgnore` (`User.java:21,37`).
 - **Import hardening**: per-entry 10 MB cap, BOM handling, surrogate-safe title truncation, archive type sniffing.
@@ -335,7 +336,7 @@
 | 2 | Security headers + CSP + link/HTML sanitization | #3 | ✓ (`security-sanitization`, `agent/security-xss-headers`) |
 | 3 | Email normalization/validation + signup config flag | #4, #10 | ✓ (`agent/email-validation`) |
 | 4 | Fix body-size limit & import expansion caps | #5 | ✅ (body limit 55M, expansion budget 256 MB, entry cap 10k, concurrency semaphore, per-note plan-quota rollback) |
-| 5 | Test suite + CI | #21, #22 | ◐ (unit suite done — 189 tests/28 classes; CI & lint/formatter config outstanding) |
+| 5 | Test suite + CI | #21, #22 | ◐ (unit suite done — 198 tests/30 classes; CI & lint/formatter config outstanding) |
 | 6 | Paginated list + lightweight projection + tags endpoint | #12 | ◐ (keyset paging + infinite scroll + composite indexes done; projection and tags endpoint outstanding) |
 | 7 | Optimistic locking + serialized autosave | #9 | ✓ (`agent/optimistic-locking-autosave`) |
 | 8 | Trash/undo + note history | #15 | ☐ |
@@ -376,3 +377,4 @@
 | 2026-10-31 | #12 (partial) | `agent/notes-pagination` | Added `GET /api/notes/page` keyset pagination (`limit` 1–200 default 50, opaque `cursor`, `sort` = createdAt/updatedAt/title, `order` = asc/desc) reusing the same search/filter SQL; `(sortKey, id)` tie-break, `limit + 1` `hasMore` detection, cursor bound to sort/order (mismatch → 400), and `V1.4.0` composite indexes for owner+created/updated/title. `attachmentCount` now queries only attachments referenced by the page. UI paints 50 notes, appends via `IntersectionObserver` or **Load more**, merges by id, and refreshes the loaded window after mutations; search/filter/sort changes reset the cursor. `NotePaginationTest`; suite 186 tests / 27 classes |
 | 2026-10-31 | new: interactive task lists | `agent/task-list-editor` | Added TipTap `TaskList` + `TaskItem` (`nested: true`) to the note editor at the existing TipTap 3.32.0 version, a checklist toolbar button, and editor CSS for aligned checkboxes and struck-through completed items. Checked state round-trips as standard markdown (`- [ ]` / `- [x]`); README and User Guide updated. Verified with `npm run build` and `mvn test` |
 | 2026-11-01 | #8 (partial) | `agent/session-expiry-recovery` | In-place re-auth modal (password + TOTP/recovery) keeps the SPA mounted and retries the failed save once; IndexedDB draft journal with restore/discard, 7-day retention and explicit-sign-out clearing; `401 {"code":"session_expired"}` for protected endpoints; FAQ, User Guide and README updated. Remaining from #8: idle timeout/rotation, Active Sessions / Sign out everywhere panel, password-reset tokens. Suite 189 tests / 28 classes |
+| 2026-11-01 | new: standalone TODO lists | `agent/todo-lists` | Added `todo_lists`/`todo_items` (`V1.5.0`) with nested items, priorities, due dates, optimistic locking, owner-scoped CRUD (`TodoListResource`), markdown-checklist conversion (`TodoChecklistParser`), and a standalone `TodoPanel` UI with drag reorder, filters/progress, note linking and deep-link from a note. Note editor gained **Create TODO list**. README/User Guide/FAQ updated; 198 tests / 30 classes |
