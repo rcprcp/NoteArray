@@ -127,7 +127,7 @@ public class TodoListResource {
         Map<UUID, String> noteTitles = noteTitles(lists);
         List<TodoListSummary> summaries = lists.stream()
                 .map(list -> toSummary(list, itemsByList.getOrDefault(list.id, List.of()),
-                        noteTitles.get(list.noteId)))
+                        noteTitleFor(list.noteId, noteTitles)))
                 .toList();
         return Response.ok(summaries).build();
     }
@@ -540,6 +540,17 @@ public class TodoListResource {
         }
         return Note.<Note>list("id in ?1", noteIds).stream()
                 .collect(Collectors.toMap(note -> note.id, note -> note.title, (a, b) -> a));
+    }
+
+    /**
+     * Null-safe title lookup: lists without a linked note have a null id, and
+     * {@code Map.of().get(null)} throws (the bug behind the empty-list NPE).
+     */
+    static String noteTitleFor(UUID noteId, Map<UUID, String> noteTitles) {
+        if (noteId == null || noteTitles == null) {
+            return null;
+        }
+        return noteTitles.get(noteId);
     }
 
     private TodoListSummary toSummary(TodoList list, List<TodoItem> items, String noteTitle) {

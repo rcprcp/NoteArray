@@ -7,6 +7,7 @@ import com.notearray.entity.TodoItem;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
@@ -34,6 +35,16 @@ class TodoListResourceTest {
         assertEquals("Groceries", TodoListResource.normalizeTitle("  Groceries  "));
         assertNull(TodoListResource.normalizeTitle("   "));
         assertEquals(255, TodoListResource.normalizeTitle("x".repeat(400)).length());
+    }
+
+    @Test
+    void handlesListsWithoutALinkedNote() {
+        // Regression: Map.of().get(null) throws when a list has no note link.
+        assertNull(TodoListResource.noteTitleFor(null, Map.of()));
+        assertNull(TodoListResource.noteTitleFor(UUID.randomUUID(), Map.of()));
+
+        UUID noteId = UUID.randomUUID();
+        assertEquals("Trip", TodoListResource.noteTitleFor(noteId, Map.of(noteId, "Trip")));
     }
 
     @Test
