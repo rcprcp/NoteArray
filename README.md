@@ -66,7 +66,7 @@ NoteArray/
 │   │   └── resources/
 │   │       ├── application.properties         # Quarkus config (DB, Flyway, OpenAPI, sessions, limits, headers, Stripe)
 │   │       └── db/migration/                  # Flyway migrations V1.0.0 … V1.5.0 (24 files)
-│   └── test/java/com/notearray/               # 198 JUnit 5 unit tests across 30 classes
+│   └── test/java/com/notearray/               # 199 JUnit 5 unit tests across 30 classes
 │       ├── NoteArrayApplicationTest.java      # JAX-RS registration and SPA route redirects
 │       ├── resource/                          # AttachmentQuota, BillingConfig, ImportLimits, JoplinAttachmentImport,
 │       │                                      # JoplinFolderTags, NoteEditorHeight, NotePagination, NoteVersionConflict,
