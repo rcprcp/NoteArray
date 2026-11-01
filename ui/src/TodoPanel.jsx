@@ -78,6 +78,10 @@ export default function TodoPanel() {
 
   const [newItemText, setNewItemText] = useState('')
   const [addingItem, setAddingItem] = useState(false)
+  const newItemInputRef = useRef(null)
+  // Set when a new list is created, so focus moves to its "Add an item" field
+  // once the detail request has populated the panel.
+  const focusNewItemRef = useRef(false)
   const [subItemParentId, setSubItemParentId] = useState(null)
   const [subItemText, setSubItemText] = useState('')
   const [editingItemId, setEditingItemId] = useState(null)
@@ -156,6 +160,15 @@ export default function TodoPanel() {
   useEffect(() => {
     loadDetail(selectedId)
   }, [selectedId, loadDetail])
+
+  // After creating a list, wait for its detail to render, then put the cursor
+  // in the item input so the user can start typing immediately.
+  useEffect(() => {
+    if (!focusNewItemRef.current) return
+    if (!detail || detail.id !== selectedId) return
+    focusNewItemRef.current = false
+    newItemInputRef.current?.focus()
+  }, [detail, selectedId])
 
   // Note picker for "Link note".
   useEffect(() => {
@@ -302,6 +315,11 @@ export default function TodoPanel() {
       }
       await loadDetail(detail.id, true)
       await loadLists()
+      // Keep the cursor in the main add field so several items can be typed
+      // in a row without clicking back into it.
+      if (!parentId) {
+        requestAnimationFrame(() => newItemInputRef.current?.focus())
+      }
     } catch (e) {
       notifyError('Could not add item', e)
     } finally {
@@ -379,6 +397,7 @@ export default function TodoPanel() {
       const created = await todoApi.create({ title })
       setCreateOpen(false)
       setNewListTitle('')
+      focusNewItemRef.current = true
       await loadLists()
       setSelectedId(created.id)
     } catch (e) {
@@ -711,6 +730,7 @@ export default function TodoPanel() {
 
                 <Group align="flex-end" gap="xs">
                   <TextInput
+                    ref={newItemInputRef}
                     placeholder="Add an item..."
                     value={newItemText}
                     onChange={(e) => setNewItemText(e.currentTarget.value)}
