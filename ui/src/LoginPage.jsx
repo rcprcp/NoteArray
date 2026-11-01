@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Container, Stack, Text, Button, PasswordInput, TextInput, Group, Card, Title, Alert } from '@mantine/core'
+import { Alert, Box, Button, Card, Container, Group, PasswordInput, Stack, Text, TextInput, Title } from '@mantine/core'
 import { usersApi } from './api'
 
 const LOCAL_PART_RE = /^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+$/
@@ -212,8 +212,16 @@ export default function LoginPage({ onLogin }) {
   }
 
   return (
-    <Container size="xs" my={40}>
-      <Card withBorder shadow="sm" p="lg" radius="md">
+    <Box style={{ minHeight: '100vh' }}>
+      <Box
+        component="header"
+        p="md"
+        style={{ borderBottom: '1px solid var(--mantine-color-default-border)' }}
+      >
+        <Title order={1} size="h3">NoteArray</Title>
+      </Box>
+      <Container size="xs" my={40}>
+        <Card withBorder shadow="sm" p="lg" radius="md">
         <Title order={2} mb="md" c="red">
           {totpChallenge ? 'Two-factor verification' : mode === 'login' ? 'Login' : 'Create Account'}
         </Title>
@@ -348,7 +356,8 @@ export default function LoginPage({ onLogin }) {
             )}
           </Stack>
         </form>
-      </Card>
-    </Container>
+        </Card>
+      </Container>
+    </Box>
   )
 }
