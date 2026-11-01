@@ -336,7 +336,7 @@
 | 2 | Security headers + CSP + link/HTML sanitization | #3 | ✓ (`security-sanitization`, `agent/security-xss-headers`) |
 | 3 | Email normalization/validation + signup config flag | #4, #10 | ✓ (`agent/email-validation`) |
 | 4 | Fix body-size limit & import expansion caps | #5 | ✅ (body limit 55M, expansion budget 256 MB, entry cap 10k, concurrency semaphore, per-note plan-quota rollback) |
-| 5 | Test suite + CI | #21, #22 | ◐ (unit suite done — 198 tests/30 classes; CI & lint/formatter config outstanding) |
+| 5 | Test suite + CI | #21, #22 | ◐ (unit suite done — 199 tests/30 classes; CI & lint/formatter config outstanding) |
 | 6 | Paginated list + lightweight projection + tags endpoint | #12 | ◐ (keyset paging + infinite scroll + composite indexes done; projection and tags endpoint outstanding) |
 | 7 | Optimistic locking + serialized autosave | #9 | ✓ (`agent/optimistic-locking-autosave`) |
 | 8 | Trash/undo + note history | #15 | ☐ |
