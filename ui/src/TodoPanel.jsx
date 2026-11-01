@@ -94,6 +94,9 @@ export default function TodoPanel() {
   const [dragOverId, setDragOverId] = useState(null)
 
   const [createOpen, setCreateOpen] = useState(false)
+  // True once the create-list modal has fully closed. Focusing before the
+  // modal's exit transition ends loses the cursor to the trigger button.
+  const [createModalExited, setCreateModalExited] = useState(true)
   const [newListTitle, setNewListTitle] = useState('')
   const [creatingList, setCreatingList] = useState(false)
 
@@ -165,10 +168,11 @@ export default function TodoPanel() {
   // in the item input so the user can start typing immediately.
   useEffect(() => {
     if (!focusNewItemRef.current) return
+    if (!createModalExited) return
     if (!detail || detail.id !== selectedId) return
     focusNewItemRef.current = false
     newItemInputRef.current?.focus()
-  }, [detail, selectedId])
+  }, [detail, selectedId, createModalExited])
 
   // Note picker for "Link note".
   useEffect(() => {
@@ -582,7 +586,14 @@ export default function TodoPanel() {
             <Stack gap="sm">
               <Group justify="space-between">
                 <Text fw={600} size="lg">TODO Lists</Text>
-                <Button size="xs" leftSection={<IconPlus size={14} />} onClick={() => setCreateOpen(true)}>
+                <Button
+                  size="xs"
+                  leftSection={<IconPlus size={14} />}
+                  onClick={() => {
+                    setCreateModalExited(false)
+                    setCreateOpen(true)
+                  }}
+                >
                   New
                 </Button>
               </Group>
@@ -972,7 +983,13 @@ export default function TodoPanel() {
         )}
       </Group>
 
-      <Modal opened={createOpen} onClose={() => setCreateOpen(false)} title="New TODO list" centered>
+      <Modal
+        opened={createOpen}
+        onClose={() => setCreateOpen(false)}
+        onExitTransitionEnd={() => setCreateModalExited(true)}
+        title="New TODO list"
+        centered
+      >
         <form onSubmit={createList}>
           <Stack>
             <TextInput
