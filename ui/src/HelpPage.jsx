@@ -67,6 +67,14 @@ const PAGES = {
         body: 'No. Each device has its own session, so re-authenticating on one device creates a new session for that device only; the other device stays signed in on its existing session until its own 7-day session expires or is revoked. Changing your password signs out every device, and enabling or disabling two-factor authentication signs out every other device. If you are using two tabs in the same browser, they share the session cookie, so signing in again in one tab lets the other continue without a separate prompt.',
       },
       {
+        heading: 'How do TODO lists work?',
+        body: 'TODO Lists in the header is a standalone task manager, separate from notes. Create a list, add items, and check them off. Items can be nested, dragged to reorder, given a priority (None/Low/Medium/High) and an optional due date (overdue items turn red). Use All/Open/Done to filter, and Link note to attach a note.',
+      },
+      {
+        heading: 'Can I convert a note checklist into a TODO list?',
+        body: 'Yes. Open the note and click Create TODO list next to Delete Note. NoteArray converts every - [ ] / - [x] line (including indented sub-items) into a standalone TODO list linked to that note; the note itself is unchanged. If the note has no checklist items, you will see an error instead.',
+      },
+      {
         heading: 'How are my notes saved?',
         body: 'NoteArray automatically saves your changes after two seconds of typing inactivity. When you close a note or navigate away (Create Note, List Notes, Settings, Help, browser Back), pending edits are flushed first so your work is not lost. A brand-new note with a title is created on the way out too.',
       },
