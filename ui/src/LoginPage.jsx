@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Container, Stack, Text, Button, PasswordInput, TextInput, Group, Card, Title, Alert } from '@mantine/core'
 import { usersApi } from './api'
 
@@ -81,6 +81,16 @@ export default function LoginPage({ onLogin }) {
   const [totpCode, setTotpCode] = useState('')
   const [recoveryCode, setRecoveryCode] = useState('')
   const [useRecoveryCode, setUseRecoveryCode] = useState(false)
+  const totpInputRef = useRef(null)
+  const recoveryInputRef = useRef(null)
+
+  // Move the cursor into the active second-factor field as soon as the
+  // two-factor screen appears (or when switching to/from a recovery code).
+  useEffect(() => {
+    if (!totpChallenge) return
+    const target = useRecoveryCode ? recoveryInputRef.current : totpInputRef.current
+    target?.focus()
+  }, [totpChallenge, useRecoveryCode])
 
   const handleLogin = async () => {
     const normalizedEmail = normalizeEmail(email)
@@ -241,6 +251,7 @@ export default function LoginPage({ onLogin }) {
                     value={recoveryCode}
                     onChange={(e) => setRecoveryCode(e.currentTarget.value)}
                     autoComplete="one-time-code"
+                    ref={recoveryInputRef}
                   />
                 ) : (
                   <TextInput
@@ -252,6 +263,7 @@ export default function LoginPage({ onLogin }) {
                     inputMode="numeric"
                     autoComplete="one-time-code"
                     maxLength={6}
+                    ref={totpInputRef}
                   />
                 )}
                 <Button type="submit" loading={loading} fullWidth color="red">
