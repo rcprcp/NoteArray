@@ -1,6 +1,6 @@
 # NoteArray — Security & Functionality Review
 
-> Captured: 2026-10-18. Last reviewed: 2026-10-31. Working document: findings are checked off as they are implemented.
+> Captured: 2026-10-18. Last reviewed: 2026-11-01. Working document: findings are checked off as they are implemented.
 > Use this as the backlog for making NoteArray a world-class note-taking application.
 > Priority order lives in the "Top-10 roadmap" at the end; each item links back to its finding.
 
@@ -10,6 +10,7 @@
 
 - **SQL injection**: every query in `NoteResource.list` uses bound parameters (`NoteResource.java:135-177`); tag filters are escaped and bound too.
 - **Sessions**: SHA-256-hashed tokens stored server-side, `HttpOnly; SameSite=Strict`, `Secure` in prod profile, TTL + hourly purge (`SessionService.java`).
+- **Session-expiry recovery**: in-place re-auth (password + TOTP/recovery) keeps the editor mounted and retries the pending save once; an IndexedDB journal restores drafts after a reload/crash (`sessionExpiry.js`, `draftStore.js`, `ReauthModal.jsx`).
 - **Login timing**: bcrypt comparison runs even for unknown emails via a decoy hash (`UserResource.java:95-100`).
 - **Secrets in JSON**: `passwordHash` and `superuser` are `@JsonIgnore` (`User.java:21,37`).
 - **Import hardening**: per-entry 10 MB cap, BOM handling, surrogate-safe title truncation, archive type sniffing.
@@ -156,6 +157,11 @@
   `change_password`): Personal Settings page includes a Change Password workflow that verifies the
   current password first, enforces `PasswordPolicy` and confirmation matching on the new password,
   invalidates all active sessions for the user, expires the session cookie, and redirects to `/login`.*
+  *Extended (branch `agent/session-expiry-recovery`): an expired session no longer costs work. The SPA
+  keeps the editor mounted, journals the draft to IndexedDB, shows an in-place password + TOTP/recovery
+  dialog, and retries the pending save once; a draft that outlives the tab is restored from the notes-list
+  banner. Protected endpoints now return `401 {"code":"session_expired"}`. Still open from the original
+  finding: idle timeout/rotation, an Active Sessions / Sign out everywhere panel, and password-reset tokens.*
 
 - [x] **9. Lost updates between devices** (`NoteResource.update`, `NotesPanel.jsx:479-555`).
   No `@Version` column — concurrent edits are silent last-write-wins, and the debounced auto-saves aren't
@@ -329,7 +335,7 @@
 | 2 | Security headers + CSP + link/HTML sanitization | #3 | ✓ (`security-sanitization`, `agent/security-xss-headers`) |
 | 3 | Email normalization/validation + signup config flag | #4, #10 | ✓ (`agent/email-validation`) |
 | 4 | Fix body-size limit & import expansion caps | #5 | ✅ (body limit 55M, expansion budget 256 MB, entry cap 10k, concurrency semaphore, per-note plan-quota rollback) |
-| 5 | Test suite + CI | #21, #22 | ◐ (unit suite done — 186 tests/27 classes; CI & lint/formatter config outstanding) |
+| 5 | Test suite + CI | #21, #22 | ◐ (unit suite done — 189 tests/28 classes; CI & lint/formatter config outstanding) |
 | 6 | Paginated list + lightweight projection + tags endpoint | #12 | ◐ (keyset paging + infinite scroll + composite indexes done; projection and tags endpoint outstanding) |
 | 7 | Optimistic locking + serialized autosave | #9 | ✓ (`agent/optimistic-locking-autosave`) |
 | 8 | Trash/undo + note history | #15 | ☐ |
@@ -369,3 +375,4 @@
 | 2026-10-27 | new: TOTP two-factor authentication | `agent/totp-2fa` | Opt-in RFC 6238 TOTP (SHA-1/6/30, Google Authenticator) with recovery codes. New `V1.3.0` tables (`user_totp` encrypted secrets + replay step, `user_recovery_codes` hashed single-use, `login_challenges` hashed 5-min single-use); AES-256-GCM secret storage via `NOTEARRAY_TOTP_ENCRYPTION_KEY`; password login now returns **202 + challenge** for TOTP users and `POST /login/totp` issues the session only after code/recovery verification (last_login deferred until then); replay rejection under a row lock; 5-attempt challenge cap + per-user second-factor backoff + per-IP budget; enrollment requires current password and returns QR/otpauth + one-time recovery codes; disable/regenerate require password + factor; password change and account deletion require the factor when enabled; enabling/disabling invalidates other sessions and pending challenges; email-change/setup/abandoned-enrollment cleanup. UI: login second step (code or recovery), Personal Settings 2FA card with QR (`qrcode.react`), copy/download recovery codes, disable/regenerate, and auth-code fields on password-change/delete; HelpPage FAQ + User Guide updated. Tests: `TotpServiceTest` (RFC vectors), `TotpCryptoTest`, `RecoveryCodeServiceTest`, suite 162 / 24; backend curl flow (enroll, 202, wrong/replayed code, recovery login, password change with factor, disable) and headless Chromium UI flow (QR setup, recovery codes, 2FA login, sensitive-action fields, disable) verified |
 | 2026-10-31 | #12 (partial) | `agent/notes-pagination` | Added `GET /api/notes/page` keyset pagination (`limit` 1–200 default 50, opaque `cursor`, `sort` = createdAt/updatedAt/title, `order` = asc/desc) reusing the same search/filter SQL; `(sortKey, id)` tie-break, `limit + 1` `hasMore` detection, cursor bound to sort/order (mismatch → 400), and `V1.4.0` composite indexes for owner+created/updated/title. `attachmentCount` now queries only attachments referenced by the page. UI paints 50 notes, appends via `IntersectionObserver` or **Load more**, merges by id, and refreshes the loaded window after mutations; search/filter/sort changes reset the cursor. `NotePaginationTest`; suite 186 tests / 27 classes |
 | 2026-10-31 | new: interactive task lists | `agent/task-list-editor` | Added TipTap `TaskList` + `TaskItem` (`nested: true`) to the note editor at the existing TipTap 3.32.0 version, a checklist toolbar button, and editor CSS for aligned checkboxes and struck-through completed items. Checked state round-trips as standard markdown (`- [ ]` / `- [x]`); README and User Guide updated. Verified with `npm run build` and `mvn test` |
+| 2026-11-01 | #8 (partial) | `agent/session-expiry-recovery` | In-place re-auth modal (password + TOTP/recovery) keeps the SPA mounted and retries the failed save once; IndexedDB draft journal with restore/discard, 7-day retention and explicit-sign-out clearing; `401 {"code":"session_expired"}` for protected endpoints; FAQ, User Guide and README updated. Remaining from #8: idle timeout/rotation, Active Sessions / Sign out everywhere panel, password-reset tokens. Suite 189 tests / 28 classes |

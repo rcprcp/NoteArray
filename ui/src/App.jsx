@@ -198,7 +198,7 @@ export default function App({ themeColor, onThemeChange, onPlanChange, onPlanSyn
         }}
       >
         <Routes>
-          <Route path="/notes" element={<NotesPanel registerActions={handleRegister} wideMode={wideMode} />} />
+          <Route path="/notes" element={<NotesPanel registerActions={handleRegister} wideMode={wideMode} userId={currentUser.id} />} />
           <Route
             path="/settings"
             element={

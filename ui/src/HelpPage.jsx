@@ -56,8 +56,16 @@ const USER_GUIDE_HTML = dompurify.sanitize(
 const PAGES = {
   faq: {
     title: 'Frequently Asked Questions (FAQ)',
-    updated: 'October 2026',
+    updated: 'November 2026',
     sections: [
+      {
+        heading: 'What happens if my session expires while I am editing?',
+        body: 'NoteArray keeps the editor open and saves your current draft on this device. A "Session expired" dialog asks you to sign in again — including your two-factor code or a recovery code — and then automatically saves the note. If you close or reload the browser before signing in, reopen NoteArray and choose Restore on the "Unsaved draft on this device" banner. Drafts are kept for 7 days and are discarded when you sign out explicitly.',
+      },
+      {
+        heading: 'I am signed in on two devices. Does signing in again on one sign me out of the other?',
+        body: 'No. Each device has its own session, so re-authenticating on one device creates a new session for that device only; the other device stays signed in on its existing session until its own 7-day session expires or is revoked. Changing your password signs out every device, and enabling or disabling two-factor authentication signs out every other device. If you are using two tabs in the same browser, they share the session cookie, so signing in again in one tab lets the other continue without a separate prompt.',
+      },
       {
         heading: 'How are my notes saved?',
         body: 'NoteArray automatically saves your changes after two seconds of typing inactivity. When you close a note or navigate away (Create Note, List Notes, Settings, Help, browser Back), pending edits are flushed first so your work is not lost. A brand-new note with a title is created on the way out too.',
