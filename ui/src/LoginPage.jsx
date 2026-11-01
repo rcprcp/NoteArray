@@ -310,6 +310,7 @@ export default function LoginPage({ onLogin }) {
                   label="Email"
                   type="email"
                   required
+                  autoFocus
                   value={email}
                   error={fieldErrors.email}
                   onChange={(e) => setEmail(e.currentTarget.value)}
