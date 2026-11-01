@@ -41,7 +41,8 @@ NoteArray/
 │   │   │   │   └── SpaResource.java           # SPA route handler and unauthenticated redirect to /login
 │   │   │   ├── security/
 │   │   │   │   ├── CsrfFilter.java            # Origin / Sec-Fetch-Site check for state-changing requests
-│   │   │   │   └── SecurityHeadersFilter.java # Per-request X-Request-Id trace header (security headers live in application.properties)
+│   │   │   │   ├── SecurityHeadersFilter.java # Per-request X-Request-Id trace header (security headers live in application.properties)
+│   │   │   │   └── SessionExpiredFilter.java  # Machine-readable 401 {"code":"session_expired"} for protected endpoints
 │   │   │   └── service/
 │   │   │       ├── SessionService.java        # Persisted session create/resolve/invalidate + scheduled purge
 │   │   │       ├── AuthenticationService.java # BCrypt credential check for login (timing-safe for unknown emails)
@@ -61,13 +62,13 @@ NoteArray/
 │   │   └── resources/
 │   │       ├── application.properties         # Quarkus config (DB, Flyway, OpenAPI, sessions, limits, headers, Stripe)
 │   │       └── db/migration/                  # Flyway migrations V1.0.0 … V1.4.0 (23 files)
-│   └── test/java/com/notearray/               # 186 JUnit 5 unit tests across 27 classes
+│   └── test/java/com/notearray/               # 189 JUnit 5 unit tests across 28 classes
 │       ├── NoteArrayApplicationTest.java      # JAX-RS registration and SPA route redirects
 │       ├── resource/                          # AttachmentQuota, BillingConfig, ImportLimits, JoplinAttachmentImport,
 │       │                                      # JoplinFolderTags, NoteEditorHeight, NotePagination, NoteVersionConflict,
 │       │                                      # StripeWebhook, TagPrefixFilter, UserDeleteVerification,
 │       │                                      # UserPasswordChange, UserPlanSync
-│       ├── security/                          # CsrfFilterTest, SecurityHeadersFilterTest
+│       ├── security/                          # CsrfFilterTest, SecurityHeadersFilterTest, SessionExpiredFilterTest
 │       └── service/                           # AttachmentCleanupService, ClientIp, EmailPolicy, LoginThrottlePolicy,
 │                                              # PasswordPolicy, RecoveryCodeService, StripeBillingService,
 │                                              # TotpCrypto, TotpService
@@ -77,8 +78,11 @@ NoteArray/
 │   │   ├── HeaderActions.jsx                  # Dynamic right-to-left header action overflow menu
 │   │   ├── HelpPage.jsx                       # In-app FAQ, User Guide, Privacy Policy and Security Notes pages
 │   │   ├── PersonalSettings.jsx               # Profile, appearance, password, storage meter, plans, 2FA, delete account
+│   │   ├── ReauthModal.jsx                    # In-place password + TOTP re-authentication dialog
+│   │   ├── sessionExpiry.js                   # Single-flight re-auth gate shared by the API client and modal
 │   │   ├── main.jsx                           # React entry point with session check, theme and plan syncing
-│   │   ├── api.js                             # Fetch wrapper for REST API (includes credentials)
+│   │   ├── api.js                             # Fetch wrapper for REST API (credentials, 401 re-auth retry)
+│   │   ├── draftStore.js                      # IndexedDB draft journal (sessionStorage fallback) for expiry/crash recovery
 │   │   ├── filters.js                         # Persisted list filters, API serialization, active-filter chips
 │   │   ├── TwoFactorCard.jsx                  # TOTP enrollment (QR), recovery codes, disable/regenerate
 │   │   ├── LoginPage.jsx                      # Login (password + TOTP step) and signup page
@@ -240,7 +244,7 @@ All three cascade on user deletion. Expired challenges and abandoned enrollments
 1. **Login:** POST `/api/users/login` with email and password sets an HttpOnly, SameSite=Strict session cookie.
 2. **Session:** The session cookie is automatically included in all subsequent requests; the server looks up the owning user from the persisted session.
 3. **Logout:** POST `/api/users/logout` clears the persisted session and expires the cookie.
-4. **Protected Routes:** All endpoints require authentication. Unauthenticated requests return **401**.
+4. **Protected Routes:** All endpoints require authentication. Unauthenticated requests return **401** with `{"code":"session_expired"}`, so the SPA can prompt for re-authentication instead of navigating away.
 
 Sessions are **persisted in a dedicated `sessions` table in PostgreSQL** (via Hibernate Panache),
 so they survive application restarts and are shared across multiple application instances that use
@@ -259,6 +263,12 @@ IndexedDB journal, and asks for the password (and TOTP code) in place. After re-
 the pending save is retried once. A draft that outlives the tab can be restored from the
 **Unsaved draft on this device** banner on the notes list. Explicit sign-out clears the journal;
 unexpected expiry keeps it.
+
+Re-authenticating on one device creates a new session for **that device only**; other devices
+keep their existing sessions and are not notified. They are asked to sign in again only when
+their own session expires or is revoked. Changing a password invalidates every session for the
+user; enabling or disabling TOTP invalidates every session except the current one. Two tabs in
+the same browser share the cookie, so a re-authentication in one tab applies to the other.
 
 ### Session Cookies & CSRF Protection
 

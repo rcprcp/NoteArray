@@ -1,6 +1,7 @@
 # Security Scan — NoteArray on `192.168.0.2:8080`
 
 - **Date:** 2026-10-24
+- **Post-scan update:** 2026-11-01 — session-expiry recovery added (F8) and 401 responses made machine-readable.
 - **Target:** `192.168.0.2:8080` (packaged jar, `prod` profile)
 - **Scanned from:** `192.168.0.146` (same LAN)
 - **Method:** non-intrusive — common-port check, HTTP header/endpoint probing, one
@@ -24,6 +25,7 @@ flags, and rate limiting are all correctly implemented. The material issues were
 |---|---|
 | Prod profile active | Yes — HSTS present; `/q/openapi`, `/q/swagger-ui`, `/q/metrics` all `404` |
 | Authentication enforced | `/api/notes`, `/api/users`, `/api/attachments/{uuid}` → `401` unauthenticated |
+| Unauthenticated API body | `401 {"code":"session_expired"}` (machine-readable, no PII); login failures keep their generic text |
 | Object-level access | Non-existent / non-owned attachment → `404` (no existence disclosure) |
 | CSRF | `POST` with `Origin: https://evil.example` → `403`; same-origin passes |
 | CORS | No `Access-Control-Allow-Origin` reflection for foreign origins |
@@ -44,6 +46,7 @@ flags, and rate limiting are all correctly implemented. The material issues were
 | F5 | Low | Duplicate security headers on REST responses (config + filter both set them) | **Fixed** — consolidated into config only |
 | F6 | Info | `SSH (22)` open, advertising `OpenSSH_10.0p2 Debian-7+deb13u4` | **Pending** — confirm key-only (host action) |
 | F7 | Info | `index.html` served `cache-control: public, immutable, max-age=86400` | Open (correctness, not security) |
+| F8 | Info | Local draft journal stores plaintext note content in IndexedDB for up to 7 days; cleared on explicit sign-out, retained on unexpected expiry | **Accepted** — documented |
 
 ### F1 — CSP / anti-framing missing on the document (fixed)
 
@@ -88,6 +91,27 @@ sudo sshd -T | grep -E 'passwordauthentication|permitrootlogin|pubkeyauthenticat
 sudo ufw allow from 192.168.0.0/24 to any port 22 proto tcp
 ```
 
+### F8 — Local draft journal (accepted)
+
+The session-expiry recovery flow writes the editor's title, tags and content to an
+origin-scoped IndexedDB store (`ui/src/draftStore.js`) so a reload, crash or expired
+session cannot lose work. It is **plaintext client storage**: readable by any script
+on the origin (XSS) and by anyone with access to the browser profile or disk. Nothing
+is sent anywhere until the normal save succeeds.
+
+Mitigations: 7-day retention, cleared on explicit sign-out, keyed by user id (another
+account cannot see it in the UI), and the normal CSP/DOMPurify defenses. Accepted
+because losing a draft is worse for a note app; encryption at rest or server-side
+drafts are the follow-ups if the threat model includes shared devices or disk
+forensics.
+
+### 401 response code
+
+Protected endpoints now return `401 {"code":"session_expired"}` instead of an empty
+body (`SessionExpiredFilter`); login endpoints keep their human-readable 401 message.
+The body reveals no account information and lets the SPA distinguish an expired
+session from a bad credential.
+
 ## How to re-verify (from the LAN)
 
 ```bash
@@ -106,3 +130,4 @@ curl -s -o /dev/null -w '%{http_code}\n' http://192.168.0.2:8080/q/health/ready
 | Date | Change | Files |
 |---|---|---|
 | 2026-10-24 | Global CSP + `X-Frame-Options` via config; filter reduced to `X-Request-Id`; health disabled in prod; docs updated | `application.properties`, `SecurityHeadersFilter.java`, `SecurityHeadersFilterTest.java`, `README.md`, `DEVOPS.md`, `pom.xml` |
+| 2026-11-01 | Session-expiry recovery (in-place re-auth + IndexedDB draft journal); protected endpoints return `401 {"code":"session_expired"}`; F8 documented | `ui/src/sessionExpiry.js`, `ui/src/draftStore.js`, `ui/src/ReauthModal.jsx`, `ui/src/api.js`, `ui/src/main.jsx`, `ui/src/NotesPanel.jsx`, `SessionExpiredFilter.java`, `SessionExpiredFilterTest.java`, `README.md`, `USER_GUIDE.md`, `HelpPage.jsx` |

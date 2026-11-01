@@ -2,7 +2,7 @@
 
 A practical guide to using NoteArray, a modern note-taking application that works on desktop, tablet, and mobile devices.
 
-**Last updated: 31 October 2026**
+**Last updated: 1 November 2026**
 
 ---
 
@@ -51,8 +51,19 @@ If your account has **two-factor authentication** enabled, a correct password is
 
 - You stay signed in for **7 days** on each device, even if the server restarts.
 - You can be signed in on **multiple devices at once**; logging out only signs out the *current* device.
-- If your session expires while you're using the app, NoteArray keeps your unsaved changes on this device and asks you to sign in again in place — including your two-factor code. After you sign in, the note is saved automatically.
-- If you close or reload the browser before signing in, reopen NoteArray and choose **Restore** on the **Unsaved draft on this device** banner. Drafts are kept for 7 days and are discarded when you sign out explicitly.
+- Your session is a per-device cookie. Signing in again on one device creates a new session for that device only and does **not** sign you out on the others. Another device keeps using its own session until it expires or is revoked.
+- Changing your password signs out **every** device. Enabling or disabling two-factor authentication signs out every **other** device.
+- Two tabs in the same browser share the session cookie, so signing in again in one tab lets the other continue without a separate prompt.
+
+#### If your session expires while you're editing
+
+1. NoteArray keeps the editor open and writes the current title, tags, and content to a local draft on this device.
+2. A **Session expired** dialog asks you to sign in again. Enter your password, then your 6-digit authenticator code (or a recovery code if you cannot use the authenticator).
+3. After you sign in, the pending save is retried automatically and the note is saved to your account. Your cursor and scroll position stay where they were.
+4. If you close or reload the browser before signing in, reopen NoteArray and choose **Restore** on the **Unsaved draft on this device** banner. **Discard** removes the local copy.
+5. Drafts are kept for **7 days** and are deleted after a successful save or when you sign out explicitly. An unexpected session expiry keeps the draft so you can recover it.
+
+> **Multiple devices:** re-authenticating on one device is local to that device. The other device is not notified and does not need the new session key — it continues on its own session. It will only ask you to sign in when its own 7-day session expires, when you change your password, when you enable or disable two-factor authentication, or when it is otherwise revoked.
 
 ### Getting to know the header
 
@@ -518,7 +529,7 @@ Where messages come from and what to do:
 
 | What you see | What it means | What to do |
 |---|---|---|
-| *"Session expired. Please login again."* | Your 7-day session ran out. | Sign in again. |
+| *"Session expired. Please login again."* | Your 7-day session ran out (or was revoked). | Sign in again in the **Session expired** dialog; your unsaved draft is kept. If you closed the page, use **Restore** on the unsaved-draft banner. |
 | *"invalid email or password"* | Wrong credentials. | Check for typos / Caps Lock. Wait out any throttle timer. |
 | *"too many attempts; try again in N seconds"* | Throttling after repeated failures or heavy traffic. | Wait the stated time (or 15 min after 8 consecutive failures). |
 | *"Note was modified in another session. Close and reopen the note to load the latest version."* | The same note was saved from another window/device while you edited. | Close and reopen the note to load the latest saved version. |
