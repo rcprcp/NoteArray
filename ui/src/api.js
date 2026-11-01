@@ -1,6 +1,16 @@
 // Small fetch wrapper for the Quarkus REST API.
 // Credentials (cookies) are included automatically.
-async function request(path, options = {}) {
+import { requestReauth } from './sessionExpiry'
+
+// Endpoints whose 401 means "these credentials are wrong", not "your session
+// expired". They must never open the re-authentication prompt.
+const AUTH_PATHS = [/^\/api\/users\/login(\/|$)/, /^\/api\/users\/logout$/, /^\/api\/users$/]
+
+function isAuthPath(path) {
+  return AUTH_PATHS.some((pattern) => pattern.test(path))
+}
+
+async function request(path, options = {}, retried = false) {
   const headers = { ...(options.headers || {}) }
   // Default to JSON for string bodies unless the caller set a Content-Type.
   // Binary/FormData bodies keep their explicit header (or none, to let the browser set it).
@@ -14,14 +24,38 @@ async function request(path, options = {}) {
   })
   if (!res.ok) {
     let message = `${res.status} ${res.statusText}`
+    let code = null
     try {
       const text = await res.text()
-      if (text) message = text
+      if (text) {
+        try {
+          const parsed = JSON.parse(text)
+          if (parsed && typeof parsed === 'object') {
+            code = typeof parsed.code === 'string' ? parsed.code : null
+            message = parsed.message || parsed.error || (code === 'session_expired' ? 'Session expired' : code) || text
+          } else {
+            message = text
+          }
+        } catch (e) {
+          // Plain-text error (the login endpoints use this).
+          message = text
+        }
+      }
     } catch (e) {
       // ignore body read errors
     }
+
+    // A 401 on a protected endpoint means the session cookie is no longer
+    // valid. Keep the SPA mounted, ask for credentials, then replay the
+    // request once with the new cookie. Login/logout endpoints are excluded.
+    if (res.status === 401 && !retried && !isAuthPath(path) && options.retryOnReauth !== false) {
+      const ok = await requestReauth()
+      if (ok) return request(path, options, true)
+    }
+
     const err = new Error(message)
     err.status = res.status
+    err.code = code
     throw err
   }
   if (res.status === 204) return null
@@ -29,12 +63,22 @@ async function request(path, options = {}) {
   return text ? JSON.parse(text) : null
 }
 
+/** Raw fetch for blob downloads that still gets the re-auth + retry behavior. */
+async function fetchWithReauth(url, options = {}, retried = false) {
+  const res = await fetch(url, { ...options, credentials: 'include' })
+  if (res.status === 401 && !retried) {
+    const ok = await requestReauth()
+    if (ok) return fetchWithReauth(url, options, true)
+  }
+  return res
+}
+
 export const billingApi = {
   config: () => request('/api/billing/config'),
 }
 
 export const usersApi = {
-  getCurrentUser: () => request('/api/users/me'),
+  getCurrentUser: (options) => request('/api/users/me', options),
   login: (email, password) => request('/api/users/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
   loginTotp: (challenge, code, recoveryCode) => request('/api/users/login/totp', {
     method: 'POST',
@@ -159,9 +203,7 @@ export const notesApi = {
       // Intl unavailable — the server falls back to UTC
     }
     const qs = params.toString()
-    const res = await fetch(qs ? `/api/notes/export?${qs}` : '/api/notes/export', {
-      credentials: 'include',
-    })
+    const res = await fetchWithReauth(qs ? `/api/notes/export?${qs}` : '/api/notes/export')
     if (!res.ok) {
       let message = `${res.status} ${res.statusText}`
       try {
@@ -214,7 +256,7 @@ export const notesApi = {
     // built-in PDF handling otherwise saves AND re-opens even blob downloads
     // typed application/pdf (Bugzilla 1756980).
     const fetchUrl = url.includes('?') ? `${url}&download=1` : `${url}?download=1`
-    const res = await fetch(fetchUrl, { credentials: 'include' })
+    const res = await fetchWithReauth(fetchUrl)
     if (!res.ok) {
       let message = `${res.status} ${res.statusText}`
       try {

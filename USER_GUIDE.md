@@ -51,7 +51,8 @@ If your account has **two-factor authentication** enabled, a correct password is
 
 - You stay signed in for **7 days** on each device, even if the server restarts.
 - You can be signed in on **multiple devices at once**; logging out only signs out the *current* device.
-- If your session expires while you're using the app, you'll see **"Session expired. Please login again."** — just sign in again.
+- If your session expires while you're using the app, NoteArray keeps your unsaved changes on this device and asks you to sign in again in place — including your two-factor code. After you sign in, the note is saved automatically.
+- If you close or reload the browser before signing in, reopen NoteArray and choose **Restore** on the **Unsaved draft on this device** banner. Drafts are kept for 7 days and are discarded when you sign out explicitly.
 
 ### Getting to know the header
 

@@ -18,6 +18,8 @@ import Placeholder from '@tiptap/extension-placeholder'
 import { Markdown } from 'tiptap-markdown'
 import { Link } from '@mantine/tiptap'
 import { notesApi } from './api'
+import { getDraft, putDraft, deleteDraft, listDrafts, purgeExpired, draftKey, newDraftId } from './draftStore'
+import { isReauthEnabled } from './sessionExpiry'
 import { DEFAULT_FILTERS, buildApiFilters, describeFilters, sanitizeFilters } from './filters'
 import './editor.css'
 
@@ -529,7 +531,7 @@ function NoteCard({ note, onEdit, onDelete, onTogglePin }) {
 const TEXT_FIELDS = ['title']
 
 // Notes of the authenticated user. No owner selection needed.
-export default function NotesPanel({ registerActions } = {}) {
+export default function NotesPanel({ registerActions, userId } = {}) {
   const navigate = useNavigate()
   const location = useLocation()
   const openCreateRef = useRef(null)
@@ -583,6 +585,20 @@ export default function NotesPanel({ registerActions } = {}) {
   const creatingRef = useRef(false)
   // True if at least one auto-save succeeded in the current edit session (list needs refresh).
   const autoSavedRef = useRef(false)
+
+  // Local draft journal. The editor's latest values are written to IndexedDB
+  // shortly after each change (and immediately when the tab is hidden), so a
+  // reload, crash, tab discard or expired session cannot lose them.
+  const formRef = useRef(form)
+  formRef.current = form
+  const editingNoteRef = useRef(editingNote)
+  editingNoteRef.current = editingNote
+  const userIdRef = useRef(userId)
+  userIdRef.current = userId
+  const draftSeqRef = useRef(0)
+  const draftTimerRef = useRef(null)
+  const draftIdRef = useRef(null)
+  const [draftBanner, setDraftBanner] = useState(null)
 
   // Search form state (what the user is typing/selecting)
   const [search, setSearch] = useState(DEFAULT_SEARCH)
@@ -816,6 +832,8 @@ export default function NotesPanel({ registerActions } = {}) {
     setEditorHeight(DEFAULT_EDITOR_HEIGHT)
     setEditMode(false)
     setImportOpen(false)
+    draftIdRef.current = newDraftId()
+    setDraftBanner(null)
     setCreateMode(true)
     if (needsReload) await reload()
   }
@@ -985,11 +1003,66 @@ export default function NotesPanel({ registerActions } = {}) {
     return body
   }
 
+  /**
+   * Write the editor's current values to the local draft journal. Entries are
+   * removed after a successful save or an explicit discard, not merely because
+   * the form matches the server copy: opening a note starts clean while the
+   * restore banner is still being decided.
+   */
+  const persistDraft = useCallback(async (seq) => {
+    const uid = userIdRef.current
+    // An explicit sign-out disables re-auth before the editor unmounts, so the
+    // unmount flush cannot recreate a draft that logout just cleared.
+    if (!uid || !(createMode || editMode) || !isReauthEnabled()) return
+    const values = formRef.current
+    const note = editingNoteRef.current
+    const base = baselineRef.current
+    const dirty = note
+      ? values.title.trim() !== (base?.title || '')
+        || values.content !== (base?.content || '')
+        || values.tags.trim().toLowerCase() !== (base?.tags || '').trim().toLowerCase()
+      : !!(values.title.trim() || values.content || values.tags.trim())
+    if (!note && !draftIdRef.current) draftIdRef.current = newDraftId()
+    // Nothing to journal. Do not delete an existing draft here: opening a note
+    // starts with a clean form while the restore banner is still being decided,
+    // and deleting would race that read. Successful saves and explicit
+    // discards remove the entry instead.
+    if (!dirty) return
+    if (seq != null && seq !== draftSeqRef.current) return // a newer change superseded this write
+    const key = note ? draftKey(uid, note.id) : draftKey(uid, null, draftIdRef.current)
+    await putDraft({
+      key,
+      userId: uid,
+      noteId: note?.id ?? null,
+      draftId: note ? null : draftIdRef.current,
+      title: values.title,
+      content: values.content,
+      tags: values.tags,
+      baseVersion: base?.version ?? 0,
+      updatedAt: Date.now(),
+    }).catch(() => {})
+  }, [createMode, editMode])
 
+  const persistDraftRef = useRef(persistDraft)
+  persistDraftRef.current = persistDraft
+  useEffect(() => () => {
+    persistDraftRef.current?.()
+  }, [])
+
+  const refreshDraftBanner = useCallback(async () => {
+    if (!userId) return
+    try {
+      const drafts = await listDrafts(userId)
+      setDraftBanner(drafts.length > 0 ? { draft: drafts[0] } : null)
+    } catch (e) {
+      // storage unavailable — nothing to recover
+    }
+  }, [userId])
 
   // Selecting a note shows its title, tags and content for editing.
-  const openEdit = (note) => {
+  const openEdit = (note, options = {}) => {
     clearAutoSaveTimer()
+    setDraftBanner(null)
     setEditorHeight(clampEditorHeight(note.editorHeight ?? DEFAULT_EDITOR_HEIGHT))
     baselineRef.current = {
       title: note.title || '',
@@ -1001,13 +1074,129 @@ export default function NotesPanel({ registerActions } = {}) {
     setAutoSaveStatus('idle')
     setLastSaved(null)
     setEditingNote(note)
-    setForm({ title: note.title || '', content: note.content || '', tags: (note.tags || '').toLowerCase() })
+    draftIdRef.current = null
+    setForm(options.draft
+      ? { title: options.draft.title || '', content: options.draft.content || '', tags: options.draft.tags || '' }
+      : { title: note.title || '', content: note.content || '', tags: (note.tags || '').toLowerCase() })
     setFormError(null)
     setCreateMode(false)
     setImportOpen(false)
     setEditMode(true)
     refreshNoteAttachments(note.id)
+
+    // Offer a newer local draft (e.g. saved when the session expired) instead
+    // of silently overwriting it with the server copy.
+    if (!options.draft && userId) {
+      getDraft(draftKey(userId, note.id))
+        .then((draft) => {
+          if (!draft) return
+          // Compare content rather than client/server timestamps: clock skew
+          // must not make a real draft look stale. A draft identical to the
+          // server copy has nothing to recover.
+          const differs = (draft.title || '') !== (note.title || '')
+            || (draft.content || '') !== (note.content || '')
+            || (draft.tags || '').trim().toLowerCase() !== (note.tags || '').trim().toLowerCase()
+          if (differs) setDraftBanner({ draft, note })
+          else deleteDraft(draft.key).catch(() => {})
+        })
+        .catch(() => {})
+    }
   }
+
+  /** Restore the draft shown in the banner (existing note or never-created note). */
+  const restoreDraft = async () => {
+    const draft = draftBanner?.draft
+    if (!draft) return
+    if (draft.noteId) {
+      try {
+        const note = await notesApi.get(draft.noteId)
+        openEdit(note, { draft })
+        setDraftBanner(null)
+      } catch (e) {
+        setError(e.status === 404
+          ? 'That note no longer exists. You can discard the local draft.'
+          : `Failed to load the note for this draft: ${e.message}`)
+      }
+      return
+    }
+    clearAutoSaveTimer()
+    baselineRef.current = null
+    createdNoteRef.current = null
+    autoSavedRef.current = false
+    draftIdRef.current = draft.draftId || newDraftId()
+    setEditingNote(null)
+    setForm({ title: draft.title || '', content: draft.content || '', tags: draft.tags || '' })
+    setEditorHeight(DEFAULT_EDITOR_HEIGHT)
+    setFormError(null)
+    setNoteAttachments([])
+    setCreateMode(true)
+    setEditMode(false)
+    setImportOpen(false)
+    setDraftBanner(null)
+  }
+
+  const discardDraft = async () => {
+    const draft = draftBanner?.draft
+    if (draft?.key) await deleteDraft(draft.key).catch(() => {})
+    setDraftBanner(null)
+    refreshDraftBanner()
+  }
+
+  // Debounced journal write on every editor change.
+  useEffect(() => {
+    if (!userId || !(createMode || editMode)) return undefined
+    const seq = ++draftSeqRef.current
+    if (draftTimerRef.current) clearTimeout(draftTimerRef.current)
+    draftTimerRef.current = setTimeout(() => {
+      draftTimerRef.current = null
+      persistDraft(seq)
+    }, 750)
+    return () => {
+      if (draftTimerRef.current) {
+        clearTimeout(draftTimerRef.current)
+        draftTimerRef.current = null
+      }
+    }
+  }, [form, createMode, editMode, editingNote, userId, persistDraft])
+
+  // Once the user starts editing the server copy, the older-draft banner is no
+  // longer the decision in front of them. Hide it so it cannot be restored over
+  // newer typing by accident.
+  useEffect(() => {
+    if (!draftBanner) return
+    const base = baselineRef.current
+    const note = editingNoteRef.current
+    const dirty = note
+      ? form.title.trim() !== (base?.title || '')
+        || form.content !== (base?.content || '')
+        || form.tags.trim().toLowerCase() !== (base?.tags || '').trim().toLowerCase()
+      : !!(form.title.trim() || form.content || form.tags.trim())
+    if (dirty) setDraftBanner(null)
+  }, [form, draftBanner, editingNote])
+
+  // The hidden transition is the last reliable point before a tab is frozen or
+  // discarded, so flush there instead of relying on `beforeunload`.
+  useEffect(() => {
+    if (!(createMode || editMode)) return undefined
+    const flush = () => persistDraftRef.current?.()
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') flush()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener('pagehide', flush)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('pagehide', flush)
+    }
+  }, [createMode, editMode])
+
+  // Surface any recoverable draft while the list is showing.
+  useEffect(() => {
+    if (!userId || createMode || editMode) return undefined
+    purgeExpired().catch(() => {})
+    refreshDraftBanner()
+    return undefined
+  }, [userId, createMode, editMode, refreshDraftBanner])
 
   /** Reload the attachment list shown in the note view. */
   const refreshNoteAttachments = async (noteId) => {
@@ -1112,6 +1301,15 @@ export default function NotesPanel({ registerActions } = {}) {
       setAutoSaveError(null)
       setAutoSaveStatus('saved')
       lastSaveErrorRef.current = null
+      // The server has this exact version: drop the local journal entry, but
+      // only if the user did not type more while the request was in flight.
+      if (userIdRef.current) {
+        const latest = formRef.current
+        const unchanged = latest.title === values.title
+          && latest.content === values.content
+          && latest.tags === values.tags
+        if (unchanged) deleteDraft(draftKey(userIdRef.current, noteId)).catch(() => {})
+      }
       return true
     } catch (e) {
       const message = e.status === 401 ? 'Session expired. Please login again.' : (e.message || 'Auto-save failed')
@@ -1159,6 +1357,13 @@ export default function NotesPanel({ registerActions } = {}) {
           version: created.version ?? 0,
         }
         setEditingNote(created)
+        // The note now has an id, so the "new note" journal entry is obsolete;
+        // any keystrokes made while the request was in flight are re-journaled
+        // under the note key by the draft effect.
+        if (draftIdRef.current && userIdRef.current) {
+          deleteDraft(draftKey(userIdRef.current, null, draftIdRef.current)).catch(() => {})
+        }
+        draftIdRef.current = null
         // A height chosen before the note existed is saved now that it has an id.
         if (editorHeightRef.current !== DEFAULT_EDITOR_HEIGHT) {
           notesApi.setEditorHeight(created.id, editorHeightRef.current).catch(() => {})
@@ -1239,6 +1444,10 @@ export default function NotesPanel({ registerActions } = {}) {
         }
         setEditingNote(created)
         note = created
+        if (draftIdRef.current && userIdRef.current) {
+          deleteDraft(draftKey(userIdRef.current, null, draftIdRef.current)).catch(() => {})
+        }
+        draftIdRef.current = null
         // Persist a height chosen before the note existed.
         if (editorHeightRef.current !== DEFAULT_EDITOR_HEIGHT) {
           notesApi.setEditorHeight(created.id, editorHeightRef.current).catch(() => {})
@@ -1283,12 +1492,14 @@ export default function NotesPanel({ registerActions } = {}) {
   // fields are pending instead of losing them silently.
   useEffect(() => {
     if (!(createMode || editMode)) return undefined
+    const hasNote = !!(editingNote || createdNoteRef.current)
+    const dirty = hasNote
+      ? Object.keys(diffFromBaseline(form)).length > 0
+      : !!(form.title.trim() || form.content || form.tags.trim())
+    // Only register the listener while there is something to lose: an
+    // always-on `beforeunload` hurts bfcache and is unreliable as a save hook.
+    if (!dirty) return undefined
     const onBeforeUnload = (event) => {
-      const hasNote = !!(editingNote || createdNoteRef.current)
-      const dirty = hasNote
-        ? Object.keys(diffFromBaseline(form)).length > 0
-        : !!(form.title.trim() || form.content || form.tags.trim())
-      if (!dirty) return
       event.preventDefault()
       event.returnValue = ''
     }
@@ -1387,6 +1598,10 @@ export default function NotesPanel({ registerActions } = {}) {
         }
         targetNote = created
         setEditingNote(created)
+        if (draftIdRef.current && userIdRef.current) {
+          deleteDraft(draftKey(userIdRef.current, null, draftIdRef.current)).catch(() => {})
+        }
+        draftIdRef.current = null
         autoSavedRef.current = true
         setCreateMode(false)
         setEditMode(true)
@@ -1543,6 +1758,20 @@ export default function NotesPanel({ registerActions } = {}) {
 
   return (
     <Stack gap="md" p={{ base: 'sm', sm: 'md' }} style={{ width: '100%' }}>
+      {draftBanner && (!(createMode || editMode) || draftBanner.draft.noteId === editingNote?.id) && (
+        <Alert color="yellow" title="Unsaved draft on this device">
+          <Group justify="space-between" align="center" wrap="wrap" gap="xs">
+            <Text size="sm">
+              {draftBanner.draft.title?.trim() ? `“${draftBanner.draft.title.trim()}”` : 'An unsaved note'} from{' '}
+              {new Date(draftBanner.draft.updatedAt).toLocaleString()}
+            </Text>
+            <Group gap="xs">
+              <Button size="xs" onClick={restoreDraft}>Restore</Button>
+              <Button size="xs" variant="subtle" onClick={discardDraft}>Discard</Button>
+            </Group>
+          </Group>
+        </Alert>
+      )}
       {/* Header */}
 
 

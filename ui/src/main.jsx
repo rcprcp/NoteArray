@@ -1,10 +1,13 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import { MantineProvider } from '@mantine/core'
 import { Notifications, notifications } from '@mantine/notifications'
 import App from './App'
+import ReauthModal from './ReauthModal'
 import { billingApi, usersApi } from './api'
+import { broadcastLogout, broadcastReauthSuccess, onSessionExpired, setReauthEnabled } from './sessionExpiry'
+import { clearUserDrafts } from './draftStore'
 import '@mantine/core/styles.css'
 import '@mantine/tiptap/styles.css'
 import '@mantine/notifications/styles.css'
@@ -33,6 +36,21 @@ function Root() {
   // Feature switch sourced from GET /api/billing/config. Defaults to hidden:
   // an unreachable/older backend must not advertise plans it cannot sell.
   const [billingEnabled, setBillingEnabled] = useState(false)
+  // In-place re-authentication: a 401 on a protected call opens this modal
+  // instead of navigating away (so the editor keeps its content).
+  const [reauthOpened, setReauthOpened] = useState(false)
+  const reauthFinishRef = useRef(null)
+
+  // Re-auth is only meaningful while the app has a signed-in user; the initial
+  // /api/users/me probe must fall through to the login page instead.
+  useEffect(() => {
+    setReauthEnabled(!!currentUser)
+  }, [currentUser])
+
+  useEffect(() => onSessionExpired((finish) => {
+    reauthFinishRef.current = finish
+    setReauthOpened(true)
+  }), [])
 
   // Check if user is already logged in (session cookie exists) and load the
   // public client config in parallel, before the first real render.
@@ -41,7 +59,7 @@ function Root() {
 
     const checkSession = async () => {
       try {
-        const user = await usersApi.getCurrentUser()
+        const user = await usersApi.getCurrentUser({ retryOnReauth: false })
         if (!active) return
         setCurrentUser(user)
         if (user?.themeColor) {
@@ -74,7 +92,7 @@ function Root() {
 
   const handleLogin = async () => {
     try {
-      const user = await usersApi.getCurrentUser()
+      const user = await usersApi.getCurrentUser({ retryOnReauth: false })
       setCurrentUser(user)
       if (user?.themeColor) {
         setThemeColor(user.themeColor)
@@ -86,7 +104,34 @@ function Root() {
     }
   }
 
+  // Re-auth succeeded: refresh the account (the new cookie is already set),
+  // close the modal, and release every queued request so it retries once.
+  const handleReauthSuccess = async () => {
+    await handleLogin()
+    setReauthOpened(false)
+    const finish = reauthFinishRef.current
+    reauthFinishRef.current = null
+    finish?.(true)
+    // Other tabs share the cookie: let their queued requests retry too.
+    broadcastReauthSuccess()
+  }
+
+  // User declined: keep the editor open and let the draft journal protect the
+  // content; the failed request surfaces its normal error.
+  const handleReauthCancel = () => {
+    setReauthOpened(false)
+    const finish = reauthFinishRef.current
+    reauthFinishRef.current = null
+    finish?.(false)
+  }
+
   const handleLogout = async () => {
+    const userId = currentUser?.id
+    // Disable re-auth first: a logout must not open the "session expired"
+    // prompt, and the editor's unmount must not re-journal the draft after the
+    // explicit sign-out has cleared it.
+    setReauthEnabled(false)
+    broadcastLogout()
     try {
       await usersApi.logout()
     } catch (e) {
@@ -97,6 +142,9 @@ function Root() {
         message: 'The server could not end the session; you have been signed out locally.',
       })
     }
+    // An explicit sign-out discards that user's local drafts. Session expiry
+    // does not call this path, so an unexpected expiry keeps the draft.
+    if (userId) clearUserDrafts(userId).catch(() => {})
     setCurrentUser(null)
   }
 
@@ -172,6 +220,12 @@ function Root() {
           onLogout={handleLogout}
         />
       </BrowserRouter>
+      <ReauthModal
+        opened={reauthOpened && !!currentUser}
+        user={currentUser}
+        onSuccess={handleReauthSuccess}
+        onCancel={handleReauthCancel}
+      />
     </MantineProvider>
   )
 }

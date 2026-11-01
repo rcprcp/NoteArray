@@ -254,6 +254,12 @@ the browser cookie, so a leaked database snapshot cannot be replayed. Sessions e
 that user's sessions, expires the current session cookie, and redirects the user to the login
 screen so they must sign in again with the new password.
 
+If a session expires mid-edit, the SPA keeps the editor mounted, writes the draft to a local
+IndexedDB journal, and asks for the password (and TOTP code) in place. After re-authentication
+the pending save is retried once. A draft that outlives the tab can be restored from the
+**Unsaved draft on this device** banner on the notes list. Explicit sign-out clears the journal;
+unexpected expiry keeps it.
+
 ### Session Cookies & CSRF Protection
 
 - **HttpOnly:** Cannot be accessed by JavaScript; protects against XSS attacks.
