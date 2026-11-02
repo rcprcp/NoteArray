@@ -2,7 +2,7 @@
 
 A practical guide to using NoteArray, a modern note-taking application that works on desktop, tablet, and mobile devices.
 
-**Last updated: 1 November 2026**
+**Last updated: 2 November 2026**
 
 ---
 
@@ -12,7 +12,7 @@ A practical guide to using NoteArray, a modern note-taking application that work
 2. [Creating & Writing Notes](#2-creating--writing-notes)
 3. [Images & Attachments](#3-images--attachments)
 4. [Organizing: Tags & Pinning](#4-organizing-tags--pinning)
-5. [TODO Lists](#5-todo-lists)
+5. [Task Lists in Notes](#5-task-lists-in-notes)
 6. [Searching Your Notes](#6-searching-your-notes)
 7. [Viewing, Sorting & Deleting](#7-viewing-sorting--deleting)
 8. [Importing & Exporting Notes](#8-importing--exporting-notes)
@@ -266,40 +266,23 @@ Any active search/filters appear as **removable chips** above the list, plus an 
 
 ---
 
-## 5. TODO Lists
+## 5. Task Lists in Notes
 
-TODO lists are standalone checklists, separate from notes. Open them with **TODO Lists** in the header.
+Task lists are part of a note, not a separate feature. They are stored in the note's markdown, so they count toward the note's storage and are included when you export your notes.
 
-### Create a list
+### Creating a task list
 
-1. Click **TODO Lists** in the header.
-2. Click **New**, enter a title, and click **Create**.
-3. Select the list in the left column. On a phone the list column is shown first; use the back arrow to return to it.
+- Click the **Task list** button in the editor toolbar, or type `- [ ] ` at the start of a line.
+- Press **Enter** to add the next item.
+- Use **Tab** to indent an item under the one above (a subtask) and **Shift+Tab** to outdent it.
+- Click a checkbox to mark an item done; completed items are struck through.
+- Task items can be mixed with normal note text.
 
-### Add and organize items
+### Removing task formatting
 
-- Type in **Add an item...** and press **Enter** (or click **Add**) to add a top-level item.
-- Click an item's text to rename it; press **Enter** or click away to save, **Esc** to cancel.
-- Check the box to mark an item done. Completed items are struck through.
-- Open the **⋯** menu on an item to set a **priority** (None / Low / Medium / High), add a **sub-item**, set or clear a **due date**, or **delete** the item (its sub-items are deleted too).
-- Drag the handle on the left of an item to reorder it. Dropping onto another item makes it a sibling of that item; a dragged parent moves together with its sub-items.
-- On a phone, or with a keyboard, open the **⋯** menu and use **Move up** / **Move down** to reorder an item among its siblings.
-- Use **All**, **Open**, and **Done** to filter the list. The progress bar shows how many items are complete.
+- Toggle the **Task list** button off, or remove the `- [ ]` / `- [x]` marker from the line.
 
-### Due dates and priorities
-
-- A due date is optional. Overdue items are highlighted red; items due today are highlighted yellow.
-- Priority is optional and shown as a badge (High is red, Medium yellow, Low blue).
-
-### Link a note
-
-- Click **Link note**, search for a note, and choose it. The list then shows the note title.
-- Click **Open note** to jump to the linked note, or **Change note** to link a different one. **Unlink current note** removes the link without deleting either item.
-- In the note editor, click **Create TODO list** to turn the note's `- [ ]` / `- [x]` checkboxes into a new TODO list. The new list opens automatically. Notes without checklist items show an error instead.
-
-### Delete a list
-
-Open the list and click the red trash icon. Deleting a list deletes all of its items.
+> **No separate TODO manager:** There is no standalone TODO Lists page, no priorities, due dates, or reminders. Tasks are checkboxes in the note and are saved with it. Standalone TODO lists from earlier versions are not converted automatically.
 
 ## 6. Searching Your Notes
 
@@ -569,9 +552,6 @@ Where messages come from and what to do:
 | *"invalid email or password"* | Wrong credentials. | Check for typos / Caps Lock. Wait out any throttle timer. |
 | *"too many attempts; try again in N seconds"* | Throttling after repeated failures or heavy traffic. | Wait the stated time (or 15 min after 8 consecutive failures). |
 | *"Note was modified in another session. Close and reopen the note to load the latest version."* | The same note was saved from another window/device while you edited. | Close and reopen the note to load the latest saved version. |
-| *"This note has no checklist items (- [ ] or - [x])."* | **Create TODO list** was used on a note without markdown checkboxes. | Add `- [ ]` task lines to the note first, then try again. |
-| *"TODO item was modified; reload and try again"* / *"TODO list was modified; reload and try again"* | The same TODO list or item was changed in another tab or device. | The view reloads automatically; retry the action. |
-| *"parent cycle detected"* | A drag would make an item its own ancestor. | Drop the item outside its own sub-items. |
 | *"Storage quota exceeded. Please upgrade your plan or delete notes to free up space."* | You hit your plan's storage limit (returned as **413**). | Delete notes or attachments to recover space, or upgrade your plan. |
 | *"Only PNG, JPEG, GIF, WebP images and PDF files are supported"* | An attachment type outside the whitelist was dropped. | Convert the file, or link text describing it and attach a PDF where possible. |
 | *"Attachment exceeds the maximum size of 10 MB"* | A single file was too big. | Compress / split it. |
