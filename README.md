@@ -1,6 +1,6 @@
 # NoteArray
 
-A modern note-taking and standalone TODO-list application built with **Quarkus** (Java 25), **Panache ORM**, **PostgreSQL**, and a **React** UI with **Vite** and **Mantine**. Works great on desktop, tablet, and mobile devices.
+A modern note-taking application built with **Quarkus** (Java 25), **Panache ORM**, **PostgreSQL**, and a **React** UI with **Vite** and **Mantine**. Works great on desktop, tablet, and mobile devices.
 
 ## Documentation
 
@@ -26,8 +26,6 @@ NoteArray/
 │   │   │   │   ├── BaseEntity.java            # Base class with UUID id and timestamps
 │   │   │   │   ├── User.java                  # User entity: unique name/email, theme_color, last_login, superuser, plan + Stripe state
 │   │   │   │   ├── Note.java                  # Note entity with title, markdown content, tags, pinned flag, version
-│   │   │   │   ├── TodoList.java              # Standalone TODO list (owner, title, optional note link, pinned, version)
-│   │   │   │   ├── TodoItem.java              # Nested TODO item (text, checked, order, priority, due date)
 │   │   │   │   ├── NoteAttachment.java        # Attachment blob (BYTEA) + filename/content type, orphan tracking
 │   │   │   │   ├── UserTotp.java              # Optional TOTP enrollment (encrypted secret, replay step)
 │   │   │   │   ├── RecoveryCode.java          # Single-use, hashed TOTP recovery codes
@@ -37,7 +35,6 @@ NoteArray/
 │   │   │   ├── resource/
 │   │   │   │   ├── UserResource.java          # Users: CRUD + login/logout, plan checkout/sync, throttle, password/email policy
 │   │   │   │   ├── NoteResource.java          # Notes: CRUD, search, filters, storage, imports, attachment upload/list
-│   │   │   │   ├── TodoListResource.java      # TODO lists/items: CRUD, nesting, reorder, due dates, priorities, note link
 │   │   │   │   ├── AttachmentResource.java    # Attachment download/preview (?download=1) and delete
 │   │   │   │   ├── BillingConfigResource.java # Public client config: billing feature switch
 │   │   │   │   ├── StripeWebhookResource.java # Signature-verified, downgrade-only Stripe lifecycle webhook
@@ -61,21 +58,20 @@ NoteArray/
 │   │   │       ├── TotpAccountService.java    # Enrollment, replay-safe verification, disable
 │   │   │       ├── RecoveryCodeService.java   # Generate/hash/consume recovery codes
 │   │   │       ├── LoginChallengeService.java # Single-use 2FA login challenges + purge
-│   │   │       ├── TodoChecklistParser.java   # Markdown checklist (- [ ] / - [x]) → nested TODO items
 │   │   │       └── StripeBillingService.java  # Stripe Checkout verification and subscription cancellation (see STRIPE.md)
 │   │   └── resources/
 │   │       ├── application.properties         # Quarkus config (DB, Flyway, OpenAPI, sessions, limits, headers, Stripe)
-│   │       └── db/migration/                  # Flyway migrations V1.0.0 … V1.5.0 (24 files)
-│   └── test/java/com/notearray/               # 199 JUnit 5 unit tests across 30 classes
+│   │       └── db/migration/                  # Flyway migrations V1.0.0 … V1.6.0 (25 files)
+│   └── test/java/com/notearray/               # 189 JUnit 5 unit tests across 28 classes
 │       ├── NoteArrayApplicationTest.java      # JAX-RS registration and SPA route redirects
 │       ├── resource/                          # AttachmentQuota, BillingConfig, ImportLimits, JoplinAttachmentImport,
 │       │                                      # JoplinFolderTags, NoteEditorHeight, NotePagination, NoteVersionConflict,
-│       │                                      # StripeWebhook, TagPrefixFilter, TodoListResource, UserDeleteVerification,
+│       │                                      # StripeWebhook, TagPrefixFilter, UserDeleteVerification,
 │       │                                      # UserPasswordChange, UserPlanSync
 │       ├── security/                          # CsrfFilterTest, SecurityHeadersFilterTest, SessionExpiredFilterTest
 │       └── service/                           # AttachmentCleanupService, ClientIp, EmailPolicy, LoginThrottlePolicy,
 │                                              # PasswordPolicy, RecoveryCodeService, StripeBillingService,
-│                                              # TodoChecklistParser, TotpCrypto, TotpService
+│                                              # TotpCrypto, TotpService
 ├── ui/                                        # React + Vite frontend (mobile-responsive)
 │   ├── src/
 │   │   ├── App.jsx                            # App shell, responsive header, routes (/login, /notes, /settings, /help/*)
@@ -91,7 +87,6 @@ NoteArray/
 │   │   ├── TwoFactorCard.jsx                  # TOTP enrollment (QR), recovery codes, disable/regenerate
 │   │   ├── LoginPage.jsx                      # Login (password + TOTP step) and signup page
 │   │   ├── NotesPanel.jsx                     # Notes UI: editor, tags, search panel, attachments, import, auto-save
-│   │   ├── TodoPanel.jsx                      # Standalone TODO lists: nesting, drag reorder, priorities, due dates
 │   │   ├── ThemeButton.jsx                    # Theme color palette constants and picker
 │   │   ├── UserMenu.jsx                       # Legacy user menu components (unused)
 │   │   └── index.css                          # Mobile-first responsive styles
@@ -215,15 +210,6 @@ last link is gone. Because blobs live in PostgreSQL, they are included in a norm
 - `expires_at` (TIMESTAMP, when the login expires)
 - Indexed on `user_id` and `expires_at`
 - A user may have many rows, i.e. be signed in on multiple devices at once
-
-### `todo_lists` and `todo_items` Tables
-
-Standalone TODO lists, separate from notes. A list can optionally be linked to one note; deleting the note keeps the list and clears the link.
-
-- **`todo_lists`** – `id`, `owner_id` (FK → users, cascade), `title` (255), `note_id` (nullable FK → notes, `ON DELETE SET NULL`), `pinned`, `version` (optimistic locking), `created_at`, `updated_at`
-- **`todo_items`** – `id`, `list_id` (FK → todo_lists, cascade), `parent_id` (nullable self-FK, cascade for sub-items), `body` (2000), `checked`, `sort_order` (per parent), `priority` (`NONE`/`LOW`/`MEDIUM`/`HIGH`), `due_date` (nullable), `version`, `created_at`, `updated_at`
-
-Indexed on `(owner_id, updated_at)`, `(list_id, parent_id, sort_order)` and `due_date`. Deleting a list cascades its items; deleting a parent item cascades its sub-items.
 
 ### `login_throttle` Table
 
@@ -667,27 +653,7 @@ on another note start their grace clock right away. Deleting an **account** remo
   - Tags imported note with `markdown-import`
   - Content is stored as markdown
 
-### TODO Lists
-
-All endpoints are owner-scoped (superusers may access all) and require authentication. Unauthenticated calls use the standard `401 {"code":"session_expired"}` response.
-
-| Method | Path | Purpose |
-|---|---|---|
-| GET | `/api/todo-lists` | List summaries (item/open/overdue counts, linked note title). Optional `?noteId=` returns only lists linked to that note. |
-| POST | `/api/todo-lists` | Create `{title, noteId?}` |
-| GET | `/api/todo-lists/{id}` | List with every item in tree order |
-| PUT | `/api/todo-lists/{id}` | Update `{title?, pinned?, version}` (stale `version` → **409**) |
-| PUT | `/api/todo-lists/{id}/note` | Link or unlink a note: `{noteId}` (`null` clears the link) |
-| DELETE | `/api/todo-lists/{id}` | Delete the list and all of its items |
-| POST | `/api/todo-lists/from-note/{noteId}` | Create a list from the note's markdown checkboxes (`- [ ]` / `- [x]`); 400 when there are none |
-| POST | `/api/todo-lists/{id}/items` | Add `{text, parentId?, priority?, dueDate?}` |
-| PUT | `/api/todo-lists/{id}/items/{itemId}` | Update `{text?, checked?, priority?, dueDate?, version}` (stale `version` → **409**) |
-| DELETE | `/api/todo-lists/{id}/items/{itemId}` | Delete an item and its sub-items |
-| PUT | `/api/todo-lists/{id}/items/reorder` | Persist a new tree order: `{items:[{id,parentId}]}`. Must include every item exactly once; parent cycles are rejected. |
-
-`dueDate` is an ISO date (`YYYY-MM-DD`); an empty string clears it on update. `priority` is `NONE`, `LOW`, `MEDIUM` or `HIGH`. Positions are assigned per parent in request order, so the client can send a flat tree-order array after a drag.
-
-## OpenAPI Documentation
+### Notes – Export
 
 When the backend is running in development mode (`mvn quarkus:dev`), you can access the API documentation and metrics (these endpoints are disabled by default in the `prod` profile):
 
@@ -767,15 +733,16 @@ The interactive Swagger UI allows you to test all endpoints directly from your b
 - **Delete note** – Confirmation shows the note's title
 - **Resize the editor** – Drag the corner grip (or focus it and use ↑ / ↓) to change the editor height; the size is saved per note and restored when you reopen it on any device. On smaller screens the frame is capped at ~85% of the visible height (`dvh`), without overwriting a taller desktop setting unless you actually resize
 
-### TODO Lists
+### Task Lists in Notes
 
-The **TODO Lists** header item opens a standalone task manager, separate from notes. Lists have a title, optional linked note, pin, progress bar and open/overdue counts. Items support:
+Task checkboxes are part of the note body, not a separate feature:
 
-- inline add, inline rename, check-off and delete (sub-items cascade)
-- nested sub-items, drag-to-reorder (a dragged parent moves with its subtree), and **Move up** / **Move down** menu actions for mobile/keyboard use
-- priority (None/Low/Medium/High) and optional due dates with overdue/today highlighting
-- All / Open / Done filters and completion progress
-- **Link note** search from the list, plus a **Create TODO list** button in the note editor that converts the note's `- [ ]` / `- [x]` checklist into a list and opens it
+- Use the **Task list** toolbar button or type `- [ ] ` in the editor.
+- Click a checkbox to mark an item done; completed items are struck through.
+- **Tab / Shift+Tab** nest and outdent subtasks.
+- Stored as markdown (`- [ ]` / `- [x]`) inside `notes.content`, so task items count toward the note's storage total and are included in note exports.
+- There is no separate TODO store, priorities, due dates, reminders, or cross-note task dashboard.
+- The former standalone TODO tables were removed in `V1.6.0`; existing standalone lists are not migrated into notes.
 
 ### Attachments
 - **Drag-and-drop or paste** images (PNG/JPEG/GIF/WebP) and PDFs directly into the editor; each file is max **10 MB**

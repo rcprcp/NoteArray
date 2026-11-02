@@ -61,7 +61,6 @@ public class SpaResource {
             return Response.seeOther(URI.create("/login")).build();
         }
         if ("notes".equals(path)
-                || "todos".equals(path)
                 || "settings".equals(path)
                 || "help/faq".equals(path)
                 || "help/user-guide".equals(path)

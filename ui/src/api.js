@@ -135,35 +135,6 @@ function buildNoteListParams(search, filters) {
   return params
 }
 
-export const todoApi = {
-  /** All TODO lists, or only those linked to one note. */
-  list: (noteId) => request(noteId ? `/api/todo-lists?noteId=${encodeURIComponent(noteId)}` : '/api/todo-lists'),
-  get: (id) => request(`/api/todo-lists/${id}`),
-  create: (payload) => request('/api/todo-lists', { method: 'POST', body: JSON.stringify(payload) }),
-  update: (id, payload) => request(`/api/todo-lists/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
-  remove: (id) => request(`/api/todo-lists/${id}`, { method: 'DELETE' }),
-  linkNote: (id, noteId) => request(`/api/todo-lists/${id}/note`, {
-    method: 'PUT',
-    body: JSON.stringify({ noteId }),
-  }),
-  createFromNote: (noteId) => request(`/api/todo-lists/from-note/${noteId}`, { method: 'POST' }),
-  addItem: (listId, payload) => request(`/api/todo-lists/${listId}/items`, {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  }),
-  updateItem: (listId, itemId, payload) => request(`/api/todo-lists/${listId}/items/${itemId}`, {
-    method: 'PUT',
-    body: JSON.stringify(payload),
-  }),
-  removeItem: (listId, itemId) => request(`/api/todo-lists/${listId}/items/${itemId}`, {
-    method: 'DELETE',
-  }),
-  reorder: (listId, items) => request(`/api/todo-lists/${listId}/items/reorder`, {
-    method: 'PUT',
-    body: JSON.stringify({ items }),
-  }),
-}
-
 export const notesApi = {
   // Optional search: { q, searchTitles, searchContent }
   // Optional filters: { tags: [], untagged, pinned, createdFrom, createdTo, updatedFrom, updatedTo }

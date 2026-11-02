@@ -1,7 +1,7 @@
 # Security Scan — NoteArray on `192.168.0.2:8080`
 
 - **Date:** 2026-10-24
-- **Post-scan update:** 2026-11-01 — session-expiry recovery added (F8) and 401 responses made machine-readable. Standalone TODO lists added; their endpoints use the same owner checks, `CsrfFilter`, session cookie and 401 contract (no new findings).
+- **Post-scan update:** 2026-11-02 — session-expiry recovery added (F8), 401 responses made machine-readable, and the standalone TODO-list endpoints/tables were removed (task checkboxes now live in note content).
 - **Target:** `192.168.0.2:8080` (packaged jar, `prod` profile)
 - **Scanned from:** `192.168.0.146` (same LAN)
 - **Method:** non-intrusive — common-port check, HTTP header/endpoint probing, one

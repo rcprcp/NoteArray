@@ -17,7 +17,7 @@ import TextAlign from '@tiptap/extension-text-align'
 import Placeholder from '@tiptap/extension-placeholder'
 import { Markdown } from 'tiptap-markdown'
 import { Link } from '@mantine/tiptap'
-import { notesApi, todoApi } from './api'
+import { notesApi } from './api'
 import { getDraft, putDraft, deleteDraft, listDrafts, purgeExpired, draftKey, newDraftId } from './draftStore'
 import { isReauthEnabled } from './sessionExpiry'
 import { DEFAULT_FILTERS, buildApiFilters, describeFilters, sanitizeFilters } from './filters'
@@ -848,19 +848,6 @@ export default function NotesPanel({ registerActions, userId } = {}) {
     openCreateRef.current?.()
   }, [location.state, location.pathname, navigate])
 
-  // A TODO list can deep-link to the note it is linked to.
-  useEffect(() => {
-    const noteId = location.state?.openNoteId
-    if (!noteId) return
-    navigate(location.pathname, { replace: true, state: null })
-    notesApi.get(noteId)
-      .then((note) => openEdit(note))
-      .catch((e) => setError(e.status === 404
-        ? 'That note no longer exists.'
-        : `Failed to open note: ${e.message}`))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.state, location.pathname, navigate])
-
   useEffect(() => writeStorage(FILTERS_KEY, filters), [filters])
   // Re-register whenever the values the header reads change. registerActions is a
   // stable callback in App, so without these deps the handlers and the open/closed
@@ -1494,32 +1481,6 @@ export default function NotesPanel({ registerActions, userId } = {}) {
   }
   flushPendingChangesRef.current = flushPendingChanges
 
-  /** Turn the note's markdown checkboxes into a standalone TODO list. */
-  const createTodoFromNote = async () => {
-    if (!editingNote) return
-    const saved = await flushPendingChanges()
-    if (!saved) return
-    try {
-      const created = await todoApi.createFromNote(editingNote.id)
-      notifications.show({
-        color: 'teal',
-        title: 'TODO list created',
-        message: `Created "${created.title}" from this note's checklist.`,
-      })
-      navigate('/todos', { state: { listId: created.id } })
-    } catch (e) {
-      const message = e.status === 400
-        ? e.message
-        : `Failed to create TODO list: ${e.message}`
-      setFormError(message)
-      notifications.show({
-        color: 'red',
-        title: 'Could not create TODO list',
-        message,
-      })
-    }
-  }
-
   // Best-effort save if the editor is unmounted without an explicit navigation
   // (e.g. browser back/forward within the SPA). The page stays alive, so the
   // in-flight request still completes even though the component is gone.
@@ -1939,9 +1900,6 @@ export default function NotesPanel({ registerActions, userId } = {}) {
             <TextInput label="Title" style={{ flex: 1, minWidth: 0 }} required maxLength={255} value={form.title} error={formError && !form.title.trim()} onChange={(e) => setForm({ ...form, title: e.currentTarget.value })} size={inputSize} />
             {editingNote && (
               <Group gap="xs" wrap="nowrap" style={{ flex: '0 0 auto' }}>
-                <Button variant="light" size={inputSize} onClick={createTodoFromNote}>
-                  Create TODO list
-                </Button>
                 <Button variant="light" color="red" size={inputSize} onClick={removeFromEditor}>
                   Delete Note
                 </Button>

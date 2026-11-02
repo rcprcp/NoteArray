@@ -67,12 +67,8 @@ const PAGES = {
         body: 'No. Each device has its own session, so re-authenticating on one device creates a new session for that device only; the other device stays signed in on its existing session until its own 7-day session expires or is revoked. Changing your password signs out every device, and enabling or disabling two-factor authentication signs out every other device. If you are using two tabs in the same browser, they share the session cookie, so signing in again in one tab lets the other continue without a separate prompt.',
       },
       {
-        heading: 'How do TODO lists work?',
-        body: 'TODO Lists in the header is a standalone task manager, separate from notes. Create a list, add items, and check them off. Items can be nested, dragged to reorder, given a priority (None/Low/Medium/High) and an optional due date (overdue items turn red). Use All/Open/Done to filter, and Link note to attach a note.',
-      },
-      {
-        heading: 'Can I convert a note checklist into a TODO list?',
-        body: 'Yes. Open the note and click Create TODO list next to Delete Note. NoteArray converts every - [ ] / - [x] line (including indented sub-items) into a standalone TODO list linked to that note; the note itself is unchanged. If the note has no checklist items, you will see an error instead.',
+        heading: 'How do task lists work?',
+        body: 'Use the Task list button in the note editor toolbar, or type - [ ] at the start of a line. Click a checkbox to mark an item done; completed items are struck through. Press Tab to indent an item under the one above, and Shift+Tab to outdent it. Tasks are stored as part of the note content and count toward the note storage total; there is no separate TODO manager.',
       },
       {
         heading: 'How are my notes saved?',
