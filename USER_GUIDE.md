@@ -1,6 +1,6 @@
-# NoteArray User's Guide
+# Note[A]rray User's Guide
 
-A practical guide to using NoteArray, a modern note-taking application that works on desktop, tablet, and mobile devices.
+A practical guide to using Note[A]rray, a modern note-taking application that works on desktop, tablet, and mobile devices.
 
 **Last updated: 2 November 2026**
 
@@ -27,7 +27,7 @@ A practical guide to using NoteArray, a modern note-taking application that work
 
 ### Creating an account
 
-1. Open NoteArray in your browser.
+1. Open Note[A]rray in your browser.
 2. On the login page, click **Sign up** ("Don't have an account? Sign up").
 3. Fill in **Name**, **Email**, **Password**, and **Confirm Password**.
 4. Click **Create Account**. You are signed in automatically.
@@ -42,11 +42,11 @@ You'll see a hint under the password field, and the form checks the rules before
 
 ### Logging in
 
-Enter your **Email** and **Password** and submit the form (pressing **Enter** works). If the credentials are wrong you'll see a generic error — NoteArray never reveals whether the email or the password was incorrect.
+Enter your **Email** and **Password** and submit the form (pressing **Enter** works). If the credentials are wrong you'll see a generic error — Note[A]rray never reveals whether the email or the password was incorrect.
 
 If your account has **two-factor authentication** enabled, a correct password is followed by a **Two-factor verification** step. Enter the 6-digit code from Google Authenticator (or another TOTP app), or choose **Use a recovery code** and enter one of the single-use codes you saved when enabling it.
 
-> **Too many attempts?** After several consecutive failed logins, NoteArray slows things down deliberately: the wait between attempts doubles each time (1s, 2s, 4s … up to 64s), and after **8 consecutive failures** the account is locked out for **15 minutes**. A successful login clears the count. You may also see **"too many attempts; try again in N seconds"** if the server is busy. Just wait and try again.
+> **Too many attempts?** After several consecutive failed logins, Note[A]rray slows things down deliberately: the wait between attempts doubles each time (1s, 2s, 4s … up to 64s), and after **8 consecutive failures** the account is locked out for **15 minutes**. A successful login clears the count. You may also see **"too many attempts; try again in N seconds"** if the server is busy. Just wait and try again.
 
 ### Staying signed in
 
@@ -58,10 +58,10 @@ If your account has **two-factor authentication** enabled, a correct password is
 
 #### If your session expires while you're editing
 
-1. NoteArray keeps the editor open and writes the current title, tags, and content to a local draft on this device.
+1. Note[A]rray keeps the editor open and writes the current title, tags, and content to a local draft on this device.
 2. A **Session expired** dialog asks you to sign in again. Enter your password, then your 6-digit authenticator code (or a recovery code if you cannot use the authenticator).
 3. After you sign in, the pending save is retried automatically and the note is saved to your account. Your cursor and scroll position stay where they were.
-4. If you close or reload the browser before signing in, reopen NoteArray and choose **Restore** on the **Unsaved draft on this device** banner. **Discard** removes the local copy.
+4. If you close or reload the browser before signing in, reopen Note[A]rray and choose **Restore** on the **Unsaved draft on this device** banner. **Discard** removes the local copy.
 5. Drafts are kept for **7 days** and are deleted after a successful save or when you sign out explicitly. An unexpected session expiry keeps the draft so you can recover it.
 
 > **Multiple devices:** re-authenticating on one device is local to that device. The other device is not notified and does not need the new session key — it continues on its own session. It will only ask you to sign in when its own 7-day session expires, when you change your password, when you enable or disable two-factor authentication, or when it is otherwise revoked.
@@ -89,7 +89,7 @@ Notes:
 
 ### Screen layouts
 
-- On wide screens (≥ 960 px) you're in **wide mode**: the NoteArray title shows in the header and the content is inset from the edges by a margin.
+- On wide screens (≥ 960 px) you're in **wide mode**: the Note[A]rray title shows in the header and the content is inset from the edges by a margin.
 - On narrower screens — or if the header runs out of room — **compact mode** hides the title and uses the full width.
 - On phones (≤ 768 px) the note list switches from a table to a **card grid**, with touch-friendly buttons and full-screen panels.
 
@@ -142,7 +142,7 @@ than a phone screen.
 
 ### Auto-save (no save button!)
 
-There is **no manual save button** — NoteArray saves for you:
+There is **no manual save button** — Note[A]rray saves for you:
 
 - **After 2 seconds of typing inactivity**, changes are saved.
 - A brand-new note is **created automatically** on the first auto-save — you never need to press save first. The note only becomes real once the title (or a dropped file) gives it a non-blank name, so typing without a title yet won't create junk notes. Closing or navigating away also creates it if it has a title.
@@ -155,7 +155,7 @@ There is **no manual save button** — NoteArray saves for you:
 
 ### Closing safely
 
-**Close/Cancel** is always safe: NoteArray waits for any save currently in flight and flushes remaining changes before the editor closes. The same flush runs when you navigate away — **Create Note**, **List Notes**, Personal Settings, Help/About, or the browser Back button — so the title, tags and content you just typed are saved first. If a save fails, the editor stays open instead of dropping your text.
+**Close/Cancel** is always safe: Note[A]rray waits for any save currently in flight and flushes remaining changes before the editor closes. The same flush runs when you navigate away — **Create Note**, **List Notes**, Personal Settings, Help/About, or the browser Back button — so the title, tags and content you just typed are saved first. If a save fails, the editor stays open instead of dropping your text.
 
 A brand-new note that has a title is created when you leave (or close), not discarded. Only changed fields are sent to the server, keeping saves quick.
 
@@ -163,7 +163,7 @@ A brand-new note that has a title is created when you leave (or close), not disc
 
 Each note carries a hidden version counter. If another window or device saved the same note while you were editing:
 
-- NoteArray **automatically merges changes that don't overlap** (e.g. you changed tags while the other session changed the content).
+- Note[A]rray **automatically merges changes that don't overlap** (e.g. you changed tags while the other session changed the content).
 - If both sessions changed the **same field**, you'll see: *"Note was modified in another session. Close and reopen the note to load the latest version."* Closing and reopening the note gives you the newest saved version — your overlapping change doesn't silently get overwritten *by you*, and vice versa.
 
 ---
@@ -372,7 +372,7 @@ Two formats are supported:
 ### Joplin (.jex) — bring your whole notebook
 
 1. Export your notes from **Joplin** as a JEX archive (Joplin's native export format: a single `.jex` file).
-2. In NoteArray's Import / Export view, upload the `.jex` file (up to **50 MB**).
+2. In Note[A]rray's Import / Export view, upload the `.jex` file (up to **50 MB**).
 3. Wait for the result alert.
 
 What you get:
@@ -396,7 +396,7 @@ What you get:
 
 > **Re-importing does not de-duplicate.** The importer treats every `.md` entry as a new note —
 > importing the same JEX a second time creates a second copy of every note (and edits you made
-> in NoteArray or Joplin don't change that). Import each notebook once; if you bring the same
+> in Note[A]rray or Joplin don't change that). Import each notebook once; if you bring the same
 > archive in twice, use the `joplin-import` tag to find and delete the unwanted copies.
 
 ### Markdown (.md) — single files
@@ -432,7 +432,7 @@ Open the **Security** card and click **Change Password**:
 2. Enter a **New Password** and **Verify New Password** (same policy as signup: 8+ chars, upper + lower + a number).
 3. Submit.
 
-**Important:** On success, NoteArray **signs you out everywhere** (all sessions on all devices are invalidated) and returns you to the login page. Sign in again with your new password. This is deliberate — it protects you if your old password was exposed.
+**Important:** On success, Note[A]rray **signs you out everywhere** (all sessions on all devices are invalidated) and returns you to the login page. Sign in again with your new password. This is deliberate — it protects you if your old password was exposed.
 
 ### Two-factor authentication (TOTP)
 
@@ -443,7 +443,7 @@ Add a second step to login using Google Authenticator or any compatible TOTP app
 3. Scan the QR code with your app (or copy the manual key) and enter the 6-digit code.
 4. Save the **recovery codes** shown once. Each code can be used a single time if you lose your phone.
 
-The QR code is generated in your browser; the secret is sent only to your NoteArray server. A code can only be used once (the server
+The QR code is generated in your browser; the secret is sent only to your Note[A]rray server. A code can only be used once (the server
 rejects replays), and login sessions are issued only after both factors succeed. Once enabled, changing your
 password or deleting your account also asks for a code. Use **New recovery codes** to replace the old set, or
 **Disable** with your password plus a code/recovery code.
@@ -459,7 +459,7 @@ A **Logout** button sits in the upper area of Personal Settings. It clears your 
 
 ## 10. Plans, Storage & Billing
 
-NoteArray has three tiers:
+Note[A]rray has three tiers:
 
 | Plan | Storage | Price |
 |---|---|---|
@@ -490,7 +490,7 @@ The **Storage Used** card in Personal Settings shows:
 
 What happens next:
 
-- **Upgrading to Pro or Premium** sends you to a **Stripe checkout page** to enter payment. NoteArray marks your plan as *"Pending Stripe Checkout."* After payment, Stripe sends you back to the app; the plan is **verified with Stripe and activated automatically** — there is no confirmation button to click. If you cancel at checkout, click **Cancel Checkout** to stay on your old plan.
+- **Upgrading to Pro or Premium** sends you to a **Stripe checkout page** to enter payment. Note[A]rray marks your plan as *"Pending Stripe Checkout."* After payment, Stripe sends you back to the app; the plan is **verified with Stripe and activated automatically** — there is no confirmation button to click. If you cancel at checkout, click **Cancel Checkout** to stay on your old plan.
 - **Downgrading to Free** cancels your paid Stripe subscription first and applies the Free plan once Stripe confirms the cancellation. If Stripe cannot confirm, your plan is left unchanged — retry later; no recurring charge is left running in the background.
 - If a payment falls behind (*past due*), a red alert appears asking you to update your payment method.
 
@@ -513,7 +513,7 @@ The red **Delete Account** card at the bottom of Personal Settings:
 
 - Type your **current password** — deletion is confirmed only if the password matches, so a signed-in session alone can never delete your account.
 - **Free users:** confirm, and your account and **all notes are permanently deleted**. You're signed out immediately.
-- **Pro/Premium users:** NoteArray cancels your **Stripe subscription first** and *waits for Stripe to confirm* the cancellation ("Awaiting Stripe subscription cancellation confirmation and deleting account…"), then deletes the account and signs you out. If Stripe can't confirm, the deletion refuses with an error so you're never left with an orphaned recurring charge — try again later.
+- **Pro/Premium users:** Note[A]rray cancels your **Stripe subscription first** and *waits for Stripe to confirm* the cancellation ("Awaiting Stripe subscription cancellation confirmation and deleting account…"), then deletes the account and signs you out. If Stripe can't confirm, the deletion refuses with an error so you're never left with an orphaned recurring charge — try again later.
 - If you have a **pending upgrade checkout**, you must complete or cancel it before deleting.
 - Deletion is permanent and cascades to all notes and attachments. There is no undo.
 
@@ -521,7 +521,7 @@ The red **Delete Account** card at the bottom of Personal Settings:
 
 ## 11. Privacy & Security
 
-NoteArray is designed to collect as little as possible and protect what it keeps. (Short version here; full pages under **Help/About** in the app.)
+Note[A]rray is designed to collect as little as possible and protect what it keeps. (Short version here; full pages under **Help/About** in the app.)
 
 ### What we store (and don't)
 
@@ -534,7 +534,7 @@ NoteArray is designed to collect as little as possible and protect what it keeps
 - **Sanitization** — anything that looks like a script (`<script>`, `<iframe>`, `on*=` handlers, `javascript:` links) is stripped from note content before it's stored or displayed, and the link types are restricted to `http`, `https`, and `mailto`.
 - **Login throttling** — brute-force attempts are slowed (exponential backoff up to 64 s) and accounts lock out for 15 minutes after 8 consecutive failures. Per-IP hourly budgets (120 logins, 30 signups) also apply. Throttling never reveals whether an email is registered.
 - **Two-factor authentication** — optional TOTP (Google Authenticator) with one-time recovery codes, encrypted secrets at rest and replay protection. TOTP resists password theft but is not phishing-proof; passkeys are a future upgrade.
-- **Self-hosting option** — since you can run NoteArray yourself, your data never has to leave infrastructure you control.
+- **Self-hosting option** — since you can run Note[A]rray yourself, your data never has to leave infrastructure you control.
 
 ### Your account deletions are real deletions
 

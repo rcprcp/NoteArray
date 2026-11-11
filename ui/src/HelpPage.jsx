@@ -60,7 +60,7 @@ const PAGES = {
     sections: [
       {
         heading: 'What happens if my session expires while I am editing?',
-        body: 'NoteArray keeps the editor open and saves your current draft on this device. A "Session expired" dialog asks you to sign in again — including your two-factor code or a recovery code — and then automatically saves the note. If you close or reload the browser before signing in, reopen NoteArray and choose Restore on the "Unsaved draft on this device" banner. Drafts are kept for 7 days and are discarded when you sign out explicitly.',
+        body: 'Note[A]rray keeps the editor open and saves your current draft on this device. A "Session expired" dialog asks you to sign in again — including your two-factor code or a recovery code — and then automatically saves the note. If you close or reload the browser before signing in, reopen Note[A]rray and choose Restore on the "Unsaved draft on this device" banner. Drafts are kept for 7 days and are discarded when you sign out explicitly.',
       },
       {
         heading: 'I am signed in on two devices. Does signing in again on one sign me out of the other?',
@@ -72,7 +72,7 @@ const PAGES = {
       },
       {
         heading: 'How are my notes saved?',
-        body: 'NoteArray automatically saves your changes after two seconds of typing inactivity. When you close a note or navigate away (Create Note, List Notes, Settings, Help, browser Back), pending edits are flushed first so your work is not lost. A brand-new note with a title is created on the way out too.',
+        body: 'Note[A]rray automatically saves your changes after two seconds of typing inactivity. When you close a note or navigate away (Create Note, List Notes, Settings, Help, browser Back), pending edits are flushed first so your work is not lost. A brand-new note with a title is created on the way out too.',
       },
       {
         heading: 'Can I make the note editor bigger or smaller?',
@@ -92,7 +92,7 @@ const PAGES = {
       },
       {
         heading: 'Can I import or export my notes?',
-        body: 'Yes. Click Import/Export in the top navigation bar while on the List Notes view. The Import / Export view opens in the main pane. The top half imports notes: a Joplin .jex archive (ZIP or TAR up to 50 MB) or individual .md Markdown files (up to 10 MB), with Joplin folder names and metadata tags preserved as NoteArray tags. The bottom half exports all of your notes as one JSON file per note plus every attachment, packed into a single ZIP archive.',
+        body: 'Yes. Click Import/Export in the top navigation bar while on the List Notes view. The Import / Export view opens in the main pane. The top half imports notes: a Joplin .jex archive (ZIP or TAR up to 50 MB) or individual .md Markdown files (up to 10 MB), with Joplin folder names and metadata tags preserved as Note[A]rray tags. The bottom half exports all of your notes as one JSON file per note plus every attachment, packed into a single ZIP archive.',
       },
       {
         heading: 'How do I customize my theme or change my password?',
@@ -101,7 +101,7 @@ const PAGES = {
     ],
   },
   guide: {
-    title: "NoteArray User's Guide",
+    title: "Note[A]rray User's Guide",
     updated: 'October 2026',
     html: USER_GUIDE_HTML,
   },
@@ -111,7 +111,7 @@ const PAGES = {
     sections: [
       {
         heading: 'Data We Store',
-        body: 'NoteArray stores only the account information you provide at signup (display name, normalized email address, password hash, and theme preference) along with the notes and tags you create or import. We do not collect analytics, telemetry, or advertising identifiers.',
+        body: 'Note[A]rray stores only the account information you provide at signup (display name, normalized email address, password hash, and theme preference) along with the notes and tags you create or import. We do not collect analytics, telemetry, or advertising identifiers.',
       },
       {
         heading: 'Session & Cookie Usage',

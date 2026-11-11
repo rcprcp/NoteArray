@@ -81,7 +81,7 @@ public class UserResource {
     @Inject
     RecoveryCodeService recoveryCodes;
 
-    @ConfigProperty(name = "notearray.totp.issuer", defaultValue = "NoteArray")
+    @ConfigProperty(name = "notearray.totp.issuer", defaultValue = "Note[A]rray")
     String totpIssuer;
 
     /**

@@ -15,7 +15,7 @@ function splitCode(value) {
 
 function downloadRecoveryCodes(codes) {
   const blob = new Blob([
-    'NoteArray — two-factor recovery codes\n',
+    'Note[A]rray — two-factor recovery codes\n',
     'Each code can be used once. Store them somewhere safe.\n\n',
     ...codes.map((c) => `${c}\n`),
   ], { type: 'text/plain' })

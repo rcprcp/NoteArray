@@ -218,7 +218,7 @@ export default function LoginPage({ onLogin }) {
         p="md"
         style={{ borderBottom: '1px solid var(--mantine-color-default-border)' }}
       >
-        <Title order={1} size="h3">NoteArray</Title>
+        <Title order={1} size="h3">Note[A]rray</Title>
       </Box>
       <Container size="xs" my={40}>
         <Card withBorder shadow="sm" p="lg" radius="md">

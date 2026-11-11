@@ -609,6 +609,15 @@ export default function NotesPanel({ registerActions, userId } = {}) {
   const [editMode, setEditMode] = useState(false)
   const [searchExpanded, setSearchExpanded] = useState(false)
 
+  // Identify the open note in the browser tab, and fall back to the app name
+  // while the user is on the list, searching, importing, or creating a blank note.
+  useEffect(() => {
+    const openTitle = createMode || editMode
+      ? (form.title.trim() || editingNote?.title || '').trim()
+      : ''
+    document.title = openTitle ? `N[A] - ${openTitle}` : 'Note[A]rray'
+  }, [createMode, editMode, form.title, editingNote])
+
   // Advanced filters (persisted). Tag filtering lives in the text search's
   // "Search Tags" scope, so no tag list has to be fetched.
   const [filters, setFilters] = useState(() => sanitizeFilters(readStorage(FILTERS_KEY, {})))

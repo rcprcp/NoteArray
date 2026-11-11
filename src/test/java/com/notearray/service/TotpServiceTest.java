@@ -61,10 +61,10 @@ class TotpServiceTest {
 
     @Test
     void buildsAGoogleAuthenticatorCompatibleUri() {
-        String url = TotpService.otpauthUrl("user@example.com", "NoteArray", RFC_SECRET);
-        assertTrue(url.startsWith("otpauth://totp/NoteArray:user%40example.com?"));
+        String url = TotpService.otpauthUrl("user@example.com", "Note[A]rray", RFC_SECRET);
+        assertTrue(url.startsWith("otpauth://totp/Note%5BA%5Drray:user%40example.com?"));
         assertTrue(url.contains("secret=" + RFC_SECRET));
-        assertTrue(url.contains("issuer=NoteArray"));
+        assertTrue(url.contains("issuer=Note%5BA%5Drray"));
         assertTrue(url.contains("algorithm=SHA1"));
         assertTrue(url.contains("digits=6"));
         assertTrue(url.contains("period=30"));

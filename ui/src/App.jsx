@@ -1,4 +1,4 @@
-import { useState, useCallback, useLayoutEffect, useRef } from 'react'
+import { useState, useCallback, useEffect, useLayoutEffect, useRef } from 'react'
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { Avatar, Box, Container, Group, Menu, Stack, Text, Title, UnstyledButton } from '@mantine/core'
 import { IconArrowsExchange, IconUser } from '@tabler/icons-react'
@@ -9,8 +9,8 @@ import PersonalSettings from './PersonalSettings'
 import HelpPage from './HelpPage'
 
 // Adjustable breakpoint (in px) and side margin for switching between
-// wideMode (NoteArray title shown + 10% side margins on all pages) and
-// compactMode (NoteArray title hidden + full-width pages).
+// wideMode (Note[A]rray title shown + 10% side margins on all pages) and
+// compactMode (Note[A]rray title hidden + full-width pages).
 export const WIDE_MODE_MIN_WIDTH = 960
 export const WIDE_MODE_SIDE_MARGIN = '10%'
 
@@ -30,6 +30,14 @@ export default function App({ themeColor, onThemeChange, onPlanChange, onPlanSyn
   const [headerWidth, setHeaderWidth] = useState(0)
   const [titleWidth, setTitleWidth] = useState(0)
   const handleRegister = useCallback((a) => setActions(a), [])
+
+  // NotesPanel owns the tab title while a note is open on /notes; everywhere
+  // else (list, search, settings, help, login) the app name is shown.
+  useEffect(() => {
+    if (!currentUser || location.pathname !== '/notes') {
+      document.title = 'Note[A]rray'
+    }
+  }, [currentUser, location.pathname])
 
   // Track the header's own width (independent of its children) and the title's
   // natural width, so the overflow decision does not depend on whether the
@@ -148,7 +156,7 @@ export default function App({ themeColor, onThemeChange, onPlanChange, onPlanSyn
             aria-hidden={compactMode}
             onClick={goToList}
           >
-            NoteArray
+            Note[A]rray
           </Title>
 
           <HeaderActions
