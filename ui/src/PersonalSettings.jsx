@@ -10,6 +10,7 @@ import {
   PasswordInput,
   Progress,
   SegmentedControl,
+  Select,
   SimpleGrid,
   Stack,
   Table,
@@ -23,7 +24,7 @@ import { IconArrowDown, IconArrowUp, IconCheck, IconKey, IconLogout, IconMoon, I
 import { THEME_COLORS } from './ThemeButton'
 import TwoFactorCard from './TwoFactorCard'
 import { notesApi, usersApi } from './api'
-import { formatNoteDate } from './dateFormat'
+import { DATE_FORMATS, formatNoteDate } from './dateFormat'
 
 function formatDate(value) {
   if (!value) return '—'
@@ -61,12 +62,25 @@ function ProfileRow({ label, value }) {
   )
 }
 
+const DATE_FORMAT_LABELS = {
+  adaptive: 'Smart (recommended)',
+  day_month: 'Day first',
+  month_day: 'Month first',
+  mdy_slash: 'Month/Day/Year + time',
+  dmy_slash: 'Day/Month/Year + time',
+  iso: 'ISO 8601',
+  relative: 'Relative',
+  full: 'Full timestamp',
+}
+
 export default function PersonalSettings({
   user,
   themeColor,
   onThemeChange,
   hourCycle = 'auto',
   onHourCycleChange = () => {},
+  dateFormat = 'adaptive',
+  onDateFormatChange = () => {},
   onPlanChange,
   onPlanSync,
   billingEnabled = false,
@@ -280,7 +294,7 @@ export default function PersonalSettings({
     new Date(previewNow.getFullYear(), previewNow.getMonth(), previewNow.getDate(), 14, 23),
     new Date(previewNow.getFullYear(), 0, 12, 14, 23),
     new Date(previewNow.getFullYear() - 1, 0, 12, 14, 23),
-  ].map((d) => formatNoteDate(d, { hourCycle }))
+  ].map((d) => formatNoteDate(d, { preset: dateFormat, hourCycle }))
 
   return (
     <Stack gap="md" style={{ width: '100%' }}>
@@ -321,6 +335,7 @@ export default function PersonalSettings({
               }
             />
             <ProfileRow label="Theme" value={<Badge color={themeColor}>{user.themeColor || themeColor}</Badge>} />
+            <ProfileRow label="Date format" value={DATE_FORMAT_LABELS[user.dateFormat] || DATE_FORMAT_LABELS.adaptive} />
             <ProfileRow label="Last login" value={formatDate(user.lastLogin)} />
             <ProfileRow label="Created" value={formatDate(user.createdAt)} />
             <ProfileRow label="Updated" value={formatDate(user.updatedAt)} />
@@ -529,6 +544,20 @@ export default function PersonalSettings({
           </div>
 
           <div>
+            <Text size="sm" fw={500} mb="xs">Date format</Text>
+            <Select
+              value={dateFormat}
+              onChange={(value) => value && onDateFormatChange(value)}
+              data={DATE_FORMATS.map((value) => ({ value, label: DATE_FORMAT_LABELS[value] }))}
+              allowDeselect={false}
+              comboboxProps={{ withinPortal: true }}
+            />
+            <Text size="xs" c="dimmed" mt="xs">
+              Notes list preview: {previewSamples.join('   ·   ')}
+            </Text>
+          </div>
+
+          <div>
             <Text size="sm" fw={500} mb="xs">Time format</Text>
             <SegmentedControl
               value={hourCycle}
@@ -539,9 +568,6 @@ export default function PersonalSettings({
                 { value: 'h23', label: '24-hour' },
               ]}
             />
-            <Text size="xs" c="dimmed" mt="xs">
-              Notes list: {previewSamples.join('   ·   ')}
-            </Text>
           </div>
         </Stack>
       </Card>

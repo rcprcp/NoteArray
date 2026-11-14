@@ -40,7 +40,7 @@ class UserHourCycleTest {
     @Test
     void updateRequestCarriesHourCycle() {
         UserRequest req = new UserRequest(
-                null, null, null, null, null, null, null, null, null, "h23");
+                null, null, null, null, null, null, null, null, null, "h23", null);
         assertEquals("h23", req.hourCycle());
     }
 }

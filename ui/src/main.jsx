@@ -15,6 +15,7 @@ import '@mantine/notifications/styles.css'
 const THEME_KEY = 'notearray-theme-color'
 const LEGACY_THEME_KEY = 'notary-theme-color'
 const HOUR_CYCLE_KEY = 'notearray-hour-cycle'
+const DATE_FORMAT_KEY = 'notearray-date-format'
 
 function getInitialThemeColor() {
   const savedColor = localStorage.getItem(THEME_KEY)
@@ -33,10 +34,15 @@ function getInitialHourCycle() {
   return localStorage.getItem(HOUR_CYCLE_KEY) || 'auto'
 }
 
+function getInitialDateFormat() {
+  return localStorage.getItem(DATE_FORMAT_KEY) || 'adaptive'
+}
+
 // SPA shell. Session is managed via HttpOnly cookies.
 function Root() {
   const [themeColor, setThemeColor] = useState(getInitialThemeColor)
   const [hourCycle, setHourCycle] = useState(getInitialHourCycle)
+  const [dateFormat, setDateFormat] = useState(getInitialDateFormat)
   const [currentUser, setCurrentUser] = useState(null)
   const [isLoading, setIsLoading] = useState(true)
   // Feature switch sourced from GET /api/billing/config. Defaults to hidden:
@@ -76,6 +82,10 @@ function Root() {
           setHourCycle(user.hourCycle)
           localStorage.setItem(HOUR_CYCLE_KEY, user.hourCycle)
         }
+        if (user?.dateFormat) {
+          setDateFormat(user.dateFormat)
+          localStorage.setItem(DATE_FORMAT_KEY, user.dateFormat)
+        }
       } catch (e) {
         // Not logged in or session expired
         if (active) setCurrentUser(null)
@@ -111,6 +121,10 @@ function Root() {
       if (user?.hourCycle) {
         setHourCycle(user.hourCycle)
         localStorage.setItem(HOUR_CYCLE_KEY, user.hourCycle)
+      }
+      if (user?.dateFormat) {
+        setDateFormat(user.dateFormat)
+        localStorage.setItem(DATE_FORMAT_KEY, user.dateFormat)
       }
     } catch (e) {
       // Surface to the login page, which displays it in its error alert.
@@ -197,6 +211,23 @@ function Root() {
     }
   }
 
+  // Apply immediately, then persist to the current user's record.
+  const changeDateFormat = async (format) => {
+    setDateFormat(format)
+    localStorage.setItem(DATE_FORMAT_KEY, format)
+    if (!currentUser) return
+    try {
+      await usersApi.update(currentUser.id, { dateFormat: format })
+      setCurrentUser({ ...currentUser, dateFormat: format })
+    } catch (e) {
+      notifications.show({
+        color: 'red',
+        title: 'Date format not saved',
+        message: 'Your date format applies now but could not be saved to your account.',
+      })
+    }
+  }
+
   const changePlan = async (plan) => {
     if (!currentUser) return
     try {
@@ -245,6 +276,8 @@ function Root() {
           onThemeChange={changeTheme}
           hourCycle={hourCycle}
           onHourCycleChange={changeHourCycle}
+          dateFormat={dateFormat}
+          onDateFormatChange={changeDateFormat}
           onPlanChange={changePlan}
           onPlanSync={syncPlan}
           billingEnabled={billingEnabled}

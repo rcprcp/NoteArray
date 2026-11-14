@@ -490,17 +490,17 @@ export function AttachmentIcon({ count }) {
   )
 }
 
-function NoteCard({ note, onEdit, onDelete, onTogglePin, hourCycle }) {
+function NoteCard({ note, onEdit, onDelete, onTogglePin, hourCycle, dateFormat }) {
   return (
     <Card shadow="sm" padding="md" radius="md" withBorder onClick={() => onEdit(note)} style={{ cursor: 'pointer' }}>
       <Stack gap="xs">
         <Group justify="space-between" align="flex-start" wrap="nowrap" gap="xs">
           <Group gap="xs" wrap="wrap" style={{ minWidth: 0 }}>
             <Text fw={500} size="sm" c="dimmed" style={{ minWidth: 0 }}>
-              Created: <time dateTime={note.createdAt} title={formatFullTimestamp(note.createdAt)}>{formatNoteDate(note.createdAt, { hourCycle })}</time>
+              Created: <time dateTime={note.createdAt} title={formatFullTimestamp(note.createdAt, hourCycle)}>{formatNoteDate(note.createdAt, { preset: dateFormat, hourCycle })}</time>
             </Text>
             <Text fw={500} size="sm" c="dimmed" style={{ minWidth: 0 }}>
-              Updated: <time dateTime={note.updatedAt} title={formatFullTimestamp(note.updatedAt)}>{formatNoteDate(note.updatedAt, { hourCycle })}</time>
+              Updated: <time dateTime={note.updatedAt} title={formatFullTimestamp(note.updatedAt, hourCycle)}>{formatNoteDate(note.updatedAt, { preset: dateFormat, hourCycle })}</time>
             </Text>
           </Group>
           <Stack gap={4} align="flex-end">
@@ -536,7 +536,7 @@ function NoteCard({ note, onEdit, onDelete, onTogglePin, hourCycle }) {
 const TEXT_FIELDS = ['title']
 
 // Notes of the authenticated user. No owner selection needed.
-export default function NotesPanel({ registerActions, userId, hourCycle = 'auto' } = {}) {
+export default function NotesPanel({ registerActions, userId, hourCycle = 'auto', dateFormat = 'adaptive' } = {}) {
   const navigate = useNavigate()
   const location = useLocation()
   const openCreateRef = useRef(null)
@@ -2006,7 +2006,7 @@ export default function NotesPanel({ registerActions, userId, hourCycle = 'auto'
         <>
           <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md" style={{ width: "100%" }}>
             {sortedNotes.map((n) => (
-              <NoteCard key={n.id} note={n} onEdit={openEdit} onDelete={remove} onTogglePin={togglePin} hourCycle={hourCycle} />
+              <NoteCard key={n.id} note={n} onEdit={openEdit} onDelete={remove} onTogglePin={togglePin} hourCycle={hourCycle} dateFormat={dateFormat} />
             ))}
           </SimpleGrid>
           {loadMoreIndicator}
@@ -2027,13 +2027,13 @@ export default function NotesPanel({ registerActions, userId, hourCycle = 'auto'
             {sortedNotes.map((n) => (
               <Table.Tr key={n.id} style={{ cursor: 'pointer' }} onClick={() => openEdit(n)}>
                 <Table.Td style={{ whiteSpace: 'nowrap' }}>
-                  <time dateTime={n.createdAt} title={formatFullTimestamp(n.createdAt)}>
-                    {formatNoteDate(n.createdAt, { hourCycle })}
+                  <time dateTime={n.createdAt} title={formatFullTimestamp(n.createdAt, hourCycle)}>
+                    {formatNoteDate(n.createdAt, { preset: dateFormat, hourCycle })}
                   </time>
                 </Table.Td>
                 <Table.Td style={{ whiteSpace: 'nowrap' }}>
-                  <time dateTime={n.updatedAt} title={formatFullTimestamp(n.updatedAt)}>
-                    {formatNoteDate(n.updatedAt, { hourCycle })}
+                  <time dateTime={n.updatedAt} title={formatFullTimestamp(n.updatedAt, hourCycle)}>
+                    {formatNoteDate(n.updatedAt, { preset: dateFormat, hourCycle })}
                   </time>
                 </Table.Td>
                 <Table.Td>

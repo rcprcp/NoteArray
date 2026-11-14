@@ -24,7 +24,7 @@ NoteArray/
 │   │   │   ├── NoteArrayApplication.java       # JAX-RS application root (@ApplicationPath "/")
 │   │   │   ├── entity/
 │   │   │   │   ├── BaseEntity.java            # Base class with UUID id and timestamps
-│   │   │   │   ├── User.java                  # User entity: unique name/email, theme_color, hour_cycle, last_login, superuser, plan + Stripe state
+│   │   │   │   ├── User.java                  # User entity: unique name/email, theme_color, hour_cycle, date_format, last_login, superuser, plan + Stripe state
 │   │   │   │   ├── Note.java                  # Note entity with title, markdown content, tags, pinned flag, version
 │   │   │   │   ├── NoteAttachment.java        # Attachment blob (BYTEA) + filename/content type, orphan tracking
 │   │   │   │   ├── UserTotp.java              # Optional TOTP enrollment (encrypted secret, replay step)
@@ -165,6 +165,7 @@ UPDATE users SET superuser = TRUE WHERE email = 'you@example.com';
 - `password_hash` (VARCHAR 255, BCrypt hashed, never returned in API responses)
 - `theme_color` (VARCHAR 32, Mantine color name, default: `'blue'`)
 - `hour_cycle` (VARCHAR 8, clock preference, default: `'auto'`; `auto` follows the browser locale, `h12` = 12-hour, `h23` = 24-hour)
+- `date_format` (VARCHAR 32, notes-list format, default: `'adaptive'`; also `day_month`, `month_day`, `mdy_slash`, `dmy_slash`, `iso`, `relative`, `full`)
 - `last_login` (TIMESTAMP, nullable, updated on successful login)
 - `superuser` (BOOLEAN, default: FALSE, read-only for application, set via psql only)
 - `plan` (VARCHAR 32, default `'free'`; `free`, `pro` or `premium`)
@@ -398,12 +399,12 @@ UPDATE users SET superuser = FALSE WHERE email = 'user@example.com';
   - Returns 404 if user doesn't exist or caller lacks permission (non-superusers can only view themselves)
 
 - `PUT /api/users/{id}` – Update a user (all fields optional)
-  - **Request body:** `{ "name": "...", "email": "...", "currentPassword": "...", "password": "...", "confirmPassword": "...", "themeColor": "...", "hourCycle": "..." }`
+  - **Request body:** `{ "name": "...", "email": "...", "currentPassword": "...", "password": "...", "confirmPassword": "...", "themeColor": "...", "hourCycle": "...", "dateFormat": "..." }`
   - **Response:** Updated user object
   - Returns 401 if not authenticated
   - Returns 404 if user doesn't exist or caller lacks permission
   - Returns 409 if new name or email is already in use
-  - Returns 400 if `themeColor` or `hourCycle` is not a supported value
+  - Returns 400 if `themeColor`, `hourCycle` or `dateFormat` is not a supported value
   - When changing a password, `currentPassword` is verified against the stored hash **first**; only after it is confirmed valid is the new `password` validated against the Password Policy and checked against `confirmPassword` (returning 400 on any failure)
   - Superusers can update any user; regular users can only update themselves
   - Changing the password invalidates **all** of that user's sessions and expires the caller's session cookie so they must log in again with the new password

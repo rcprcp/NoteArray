@@ -13,6 +13,7 @@ public class User extends BaseEntity {
 
     public static final String DEFAULT_THEME_COLOR = "blue";
     public static final String DEFAULT_HOUR_CYCLE = "auto";
+    public static final String DEFAULT_DATE_FORMAT = "adaptive";
     public static final String DEFAULT_PLAN = "free";
     public static final String PLAN_STATUS_ACTIVE = "active";
     public static final String PLAN_STATUS_PENDING_CHECKOUT = "pending_checkout";
@@ -40,6 +41,13 @@ public class User extends BaseEntity {
      */
     @Column(name = "hour_cycle", nullable = false, length = 8)
     public String hourCycle = DEFAULT_HOUR_CYCLE;
+
+    /**
+     * Preferred notes-list date format. 'adaptive' switches granularity with the
+     * note's age; the other values select a fixed shape. See ui/src/dateFormat.js.
+     */
+    @Column(name = "date_format", nullable = false, length = 32)
+    public String dateFormat = DEFAULT_DATE_FORMAT;
 
     /** Subscription plan tier ('free', 'pro', 'premium'). */
     @Column(name = "plan", nullable = false, length = 32)

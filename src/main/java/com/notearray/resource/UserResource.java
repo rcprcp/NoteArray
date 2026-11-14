@@ -56,6 +56,11 @@ public class UserResource {
     /** Clock preferences accepted by the UI; see ui/src/dateFormat.js. */
     private static final Set<String> HOUR_CYCLES = Set.of("auto", "h12", "h23");
 
+    /** Date-format presets accepted by the UI; keep in sync with ui/src/dateFormat.js. */
+    private static final Set<String> DATE_FORMATS = Set.of(
+            "adaptive", "day_month", "month_day", "mdy_slash",
+            "dmy_slash", "iso", "relative", "full");
+
     @Context
     HttpHeaders headers;
 
@@ -120,13 +125,14 @@ public class UserResource {
             String plan,
             String totpCode,
             String recoveryCode,
-            String hourCycle) {
+            String hourCycle,
+            String dateFormat) {
         public UserRequest(String name, String email, String password, String themeColor) {
-            this(name, email, password, null, null, themeColor, null, null, null, null);
+            this(name, email, password, null, null, themeColor, null, null, null, null, null);
         }
 
         public UserRequest(String name, String email, String password, String currentPassword, String themeColor) {
-            this(name, email, password, currentPassword, null, themeColor, null, null, null, null);
+            this(name, email, password, currentPassword, null, themeColor, null, null, null, null, null);
         }
 
         public UserRequest(
@@ -136,7 +142,7 @@ public class UserResource {
                 String currentPassword,
                 String confirmPassword,
                 String themeColor) {
-            this(name, email, password, currentPassword, confirmPassword, themeColor, null, null, null, null);
+            this(name, email, password, currentPassword, confirmPassword, themeColor, null, null, null, null, null);
         }
     }
 
@@ -505,6 +511,10 @@ public class UserResource {
         if (hourCycleError != null) {
             return hourCycleError;
         }
+        Response dateFormatError = validateDateFormat(req.dateFormat());
+        if (dateFormatError != null) {
+            return dateFormatError;
+        }
         if (!isBlank(req.plan())) {
             return planWriteRejected();
         }
@@ -527,6 +537,9 @@ public class UserResource {
         }
         if (!isBlank(req.hourCycle())) {
             user.hourCycle = req.hourCycle();
+        }
+        if (!isBlank(req.dateFormat())) {
+            user.dateFormat = req.dateFormat();
         }
         // NOTE: req.plan() is never written — see planWriteRejected() (REVIEW #26).
         user.persist();
@@ -592,6 +605,10 @@ public class UserResource {
         if (hourCycleError != null) {
             return hourCycleError;
         }
+        Response dateFormatError = validateDateFormat(req.dateFormat());
+        if (dateFormatError != null) {
+            return dateFormatError;
+        }
         if (!isBlank(req.plan())) {
             return planWriteRejected();
         }
@@ -647,6 +664,9 @@ public class UserResource {
         }
         if (!isBlank(req.hourCycle())) {
             user.hourCycle = req.hourCycle();
+        }
+        if (!isBlank(req.dateFormat())) {
+            user.dateFormat = req.dateFormat();
         }
         // NOTE: req.plan() is never written — see planWriteRejected() (REVIEW #26).
 
@@ -929,6 +949,14 @@ public class UserResource {
     static Response validateHourCycle(String hourCycle) {
         if (!isBlank(hourCycle) && !HOUR_CYCLES.contains(hourCycle)) {
             return Response.status(Response.Status.BAD_REQUEST).entity("invalid hourCycle").build();
+        }
+        return null;
+    }
+
+    /** Accept only the date-format presets the UI can render; blank means "leave unchanged". */
+    static Response validateDateFormat(String dateFormat) {
+        if (!isBlank(dateFormat) && !DATE_FORMATS.contains(dateFormat)) {
+            return Response.status(Response.Status.BAD_REQUEST).entity("invalid dateFormat").build();
         }
         return null;
     }
