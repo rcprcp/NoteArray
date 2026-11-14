@@ -69,6 +69,15 @@ function writeStorage(key, value) {
   }
 }
 
+// Tags are stored as a space-delimited string. The notes list shows them in
+// alphabetical order regardless of the order they were typed in.
+function sortedTags(tags) {
+  return (tags || '')
+    .split(/\s+/)
+    .filter((tag) => tag.length > 0)
+    .sort((a, b) => a.localeCompare(b))
+}
+
 // Milliseconds of typing inactivity before an existing note is auto-saved.
 const AUTOSAVE_DELAY_MS = 2000
 
@@ -532,8 +541,8 @@ function NoteCard({ note, onEdit, onDelete, onTogglePin, hourCycle, dateFormat, 
           </Text>
           {note.tags && (
             <Group gap="xs" mt="xs">
-              {note.tags.split(' ').filter(t => t.length > 0).map((tag, idx) => (
-                <Badge key={idx} size="sm" variant="light">{tag}</Badge>
+              {sortedTags(note.tags).map((tag, idx) => (
+                <Badge key={`${tag}-${idx}`} size="sm" variant="light">{tag}</Badge>
               ))}
             </Group>
           )}
@@ -2132,8 +2141,8 @@ export default function NotesPanel({ registerActions, userId, hourCycle = 'auto'
                     <Text style={{ minWidth: 0 }}>{n.title || <Text c="dimmed" fs="italic">Untitled</Text>}</Text>
                     {n.tags && (
                       <Group gap="xs">
-                        {n.tags.split(' ').filter(t => t.length > 0).map((tag, idx) => (
-                          <Badge key={idx} size="sm" variant="light">{tag}</Badge>
+                        {sortedTags(n.tags).map((tag, idx) => (
+                          <Badge key={`${tag}-${idx}`} size="sm" variant="light">{tag}</Badge>
                         ))}
                       </Group>
                     )}

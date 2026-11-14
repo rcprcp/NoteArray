@@ -324,7 +324,7 @@ phones the card view suits best; the list view is a compact table). Next to it, 
 the note's **Created** date (hidden by default) so the table can give more width to titles. On desktop the list is a table:
 
 - **Updated / Title** columns (plus **Created** when the calendar toggle is on)
-- Tags shown as badges under the title
+- Tags shown as badges under the title, alphabetically
 - A **paperclip icon** next to the title — and in card view — marks notes that carry one or more attachments (hover for the count)
 - Untitled notes show as italic *"Untitled"*
 - Row actions: **Pin** (a pin/star icon button), **Edit**, and **Delete**
