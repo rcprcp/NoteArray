@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { ActionIcon, Alert, Box, Button, Checkbox, Group, List, Modal, Stack, Table, Text, TextInput, UnstyledButton, Badge, Loader, Card, SimpleGrid, Tooltip } from '@mantine/core'
-import { IconCalendar, IconCheck, IconChevronDown, IconChevronUp, IconDownload, IconLayoutGrid, IconList, IconListCheck, IconPaperclip, IconPin, IconSearch, IconSelector, IconMenu2, IconX } from '@tabler/icons-react'
+import { ActionIcon, Alert, Box, Button, Checkbox, Group, Input, List, Modal, Stack, Table, Text, TextInput, UnstyledButton, Badge, Loader, Card, SimpleGrid, Tooltip } from '@mantine/core'
+import { IconCalendar, IconCheck, IconChevronDown, IconChevronUp, IconDownload, IconLayoutGrid, IconList, IconListCheck, IconPaperclip, IconPin, IconSearch, IconSelector, IconMenu2, IconTrash, IconX } from '@tabler/icons-react'
 import { useMediaQuery } from '@mantine/hooks'
 import { notifications } from '@mantine/notifications'
 import ImportExportPanel from './ImportExportPanel'
@@ -37,6 +37,8 @@ const SHOW_CREATED_KEY = 'notearray.show-created'
 // Date columns shrink to their content so the title column gets the rest of
 // the table width.
 const DATE_COLUMN_STYLE = { width: 1, whiteSpace: 'nowrap' }
+// Mantine input control heights, used to line up labels placed beside inputs.
+const INPUT_HEIGHTS = { xs: 30, sm: 36, md: 42, lg: 50 }
 
 // Initial paint and "load more" page size; a refresh never re-fetches more than
 // MAX_REFRESH items even if the user has scrolled further.
@@ -552,6 +554,11 @@ export default function NotesPanel({ registerActions, userId, hourCycle = 'auto'
   const controlSize = isMobile ? 'xs' : 'sm'
   const inputSize = isMobile ? 'sm' : 'md'
   const modalSize = isMobile ? 'sm' : 'lg'
+  // Inline labels beside inputs keep the editor header compact. The fixed
+  // line height matches the control height so the label stays aligned even
+  // when a validation message appears under the input.
+  const labelLineHeight = `${INPUT_HEIGHTS[inputSize] || 36}px`
+  const inlineLabelStyle = { flex: '0 0 auto', lineHeight: labelLineHeight, marginBottom: 0 }
   const [notes, setNotes] = useState([])
   // Pagination state: the cursor for the next page, whether more rows exist,
   // and separate flags for the first/refresh request vs. an append request.
@@ -1941,19 +1948,65 @@ export default function NotesPanel({ registerActions, userId, hourCycle = 'auto'
       {(createMode || editMode) ? (
         <Stack gap="md" style={{ width: '100%', flex: 1, minWidth: 0 }}>
           {formError && <Alert color="red" withCloseButton onClose={() => setFormError(null)}>{formError}</Alert>}
-          <Group justify="space-between" align="flex-end" wrap="nowrap" gap="xs" style={{ width: '100%' }}>
-            <TextInput label="Title" style={{ flex: 1, minWidth: 0 }} required maxLength={255} value={form.title} error={formError && !form.title.trim()} onChange={(e) => setForm({ ...form, title: e.currentTarget.value })} size={inputSize} />
+          {/* Title shares its row with the label and the delete action. On
+              phones Delete collapses to a trash icon so the input keeps a
+              usable width in portrait. */}
+          <Group align="flex-start" wrap="nowrap" gap="xs" style={{ width: '100%' }}>
+            <Input.Label htmlFor="note-title" required style={inlineLabelStyle}>Title</Input.Label>
+            <TextInput
+              id="note-title"
+              style={{ flex: 1, minWidth: 0 }}
+              required
+              maxLength={255}
+              value={form.title}
+              error={formError && !form.title.trim()}
+              onChange={(e) => setForm({ ...form, title: e.currentTarget.value })}
+              size={inputSize}
+            />
             {editingNote && (
-              <Group gap="xs" wrap="nowrap" style={{ flex: '0 0 auto' }}>
-                <Button variant="light" color="red" size={inputSize} onClick={removeFromEditor}>
+              isMobile ? (
+                <Tooltip label="Delete Note">
+                  <ActionIcon
+                    variant="light"
+                    color="red"
+                    size="lg"
+                    onClick={removeFromEditor}
+                    aria-label="Delete Note"
+                    style={{ flex: '0 0 auto' }}
+                  >
+                    <IconTrash size={16} />
+                  </ActionIcon>
+                </Tooltip>
+              ) : (
+                <Button variant="light" color="red" size={inputSize} onClick={removeFromEditor} style={{ flex: '0 0 auto' }}>
                   Delete Note
                 </Button>
-              </Group>
+              )
             )}
           </Group>
-          {editingNote && <Text size="xs" c="dimmed">Created: {new Date(editingNote.createdAt).toLocaleString()}</Text>}
+
+          {/* Tags share a row with the Created timestamp; on narrow screens the
+              timestamp wraps below instead of squeezing the tag input. */}
           <div>
-            <TextInput label="Tags (space-delimited)" w="100%" style={{ width: "100%" }} placeholder="joplin important work" maxLength={10000} value={form.tags} onChange={(e) => setForm({ ...form, tags: e.currentTarget.value.toLowerCase() })} size={inputSize} />
+            <Group justify="space-between" align="flex-start" wrap="wrap" gap="xs">
+              <Group align="flex-start" wrap="nowrap" gap="xs" style={{ flex: '1 1 260px', minWidth: 0 }}>
+                <Input.Label htmlFor="note-tags" style={inlineLabelStyle}>Tags</Input.Label>
+                <TextInput
+                  id="note-tags"
+                  style={{ flex: 1, minWidth: 0 }}
+                  placeholder="space-delimited: joplin important work"
+                  maxLength={10000}
+                  value={form.tags}
+                  onChange={(e) => setForm({ ...form, tags: e.currentTarget.value.toLowerCase() })}
+                  size={inputSize}
+                />
+              </Group>
+              {editingNote && (
+                <Text size="xs" c="dimmed" style={{ lineHeight: labelLineHeight, flex: '0 0 auto' }}>
+                  Created: {new Date(editingNote.createdAt).toLocaleString()}
+                </Text>
+              )}
+            </Group>
             {form.tags && (
               <Group gap="xs" mt="xs">
                 {form.tags.split(/\s+/).filter((t) => t.length > 0).map((t, i) => (
@@ -1993,7 +2046,10 @@ export default function NotesPanel({ registerActions, userId, hourCycle = 'auto'
             </div>
           )}
           <div style={{ width: "100%" }}>
-            <Text fw={500} size="sm" mb={6}>Content (drag and drop images or PDFs into the editor)</Text>
+            <Group justify="space-between" align="baseline" gap={4} mb={6}>
+              <Text fw={500} size="sm">Content</Text>
+              <Text size="xs" c="dimmed">Drag and drop images or PDFs into the editor</Text>
+            </Group>
             <div style={{ width: "100%" }}>
               <MarkdownEditor
                 value={form.content}

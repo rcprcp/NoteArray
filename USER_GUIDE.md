@@ -106,7 +106,7 @@ Click **Create Note** in the header. The editor replaces the list and shows:
 - the rich-text editor, with the placeholder *"Write your note here, or drag and drop an image or PDF…"*
 - an auto-save status line
 
-A **Created: …** line appears under the title once the note exists, and the button changes from **Cancel** (creating) to **Close** (editing).
+A **Created: …** timestamp appears beside the Tags field once the note exists (it wraps below the field on narrow screens), and the button changes from **Cancel** (creating) to **Close** (editing). On phones the editor's **Delete Note** action collapses to a red trash icon so the Title field keeps a usable width in portrait.
 
 ### Formatting toolbar
 
