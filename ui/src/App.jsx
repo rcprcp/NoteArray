@@ -20,7 +20,7 @@ function initials(name) {
   return (parts[0][0] + (parts[1]?.[0] || '')).toUpperCase()
 }
 
-export default function App({ themeColor, onThemeChange, onPlanChange, onPlanSync, billingEnabled = false, currentUser, onLogin, onLogout }) {
+export default function App({ themeColor, onThemeChange, hourCycle = 'auto', onHourCycleChange, onPlanChange, onPlanSync, billingEnabled = false, currentUser, onLogin, onLogout }) {
   const navigate = useNavigate()
   const location = useLocation()
   const [actions, setActions] = useState(null)
@@ -206,7 +206,7 @@ export default function App({ themeColor, onThemeChange, onPlanChange, onPlanSyn
         }}
       >
         <Routes>
-          <Route path="/notes" element={<NotesPanel registerActions={handleRegister} wideMode={wideMode} userId={currentUser.id} />} />
+          <Route path="/notes" element={<NotesPanel registerActions={handleRegister} wideMode={wideMode} userId={currentUser.id} hourCycle={hourCycle} />} />
           <Route
             path="/settings"
             element={
@@ -214,6 +214,8 @@ export default function App({ themeColor, onThemeChange, onPlanChange, onPlanSyn
                 user={currentUser}
                 themeColor={themeColor}
                 onThemeChange={onThemeChange}
+                hourCycle={hourCycle}
+                onHourCycleChange={onHourCycleChange}
                 onPlanChange={onPlanChange}
                 onPlanSync={onPlanSync}
                 billingEnabled={billingEnabled}

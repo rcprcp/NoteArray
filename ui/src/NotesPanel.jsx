@@ -21,6 +21,7 @@ import { notesApi } from './api'
 import { getDraft, putDraft, deleteDraft, listDrafts, purgeExpired, draftKey, newDraftId } from './draftStore'
 import { isReauthEnabled } from './sessionExpiry'
 import { DEFAULT_FILTERS, buildApiFilters, describeFilters, sanitizeFilters } from './filters'
+import { formatNoteDate, formatFullTimestamp } from './dateFormat'
 import './editor.css'
 
 const EMPTY_FORM = { title: '', content: '', tags: '' }
@@ -489,14 +490,18 @@ export function AttachmentIcon({ count }) {
   )
 }
 
-function NoteCard({ note, onEdit, onDelete, onTogglePin }) {
+function NoteCard({ note, onEdit, onDelete, onTogglePin, hourCycle }) {
   return (
     <Card shadow="sm" padding="md" radius="md" withBorder onClick={() => onEdit(note)} style={{ cursor: 'pointer' }}>
       <Stack gap="xs">
         <Group justify="space-between" align="flex-start" wrap="nowrap" gap="xs">
           <Group gap="xs" wrap="wrap" style={{ minWidth: 0 }}>
-            <Text fw={500} size="sm" c="dimmed" style={{ minWidth: 0 }}>Created: {new Date(note.createdAt).toLocaleDateString()}</Text>
-            <Text fw={500} size="sm" c="dimmed" style={{ minWidth: 0 }}>Updated: {new Date(note.updatedAt).toLocaleDateString()}</Text>
+            <Text fw={500} size="sm" c="dimmed" style={{ minWidth: 0 }}>
+              Created: <time dateTime={note.createdAt} title={formatFullTimestamp(note.createdAt)}>{formatNoteDate(note.createdAt, { hourCycle })}</time>
+            </Text>
+            <Text fw={500} size="sm" c="dimmed" style={{ minWidth: 0 }}>
+              Updated: <time dateTime={note.updatedAt} title={formatFullTimestamp(note.updatedAt)}>{formatNoteDate(note.updatedAt, { hourCycle })}</time>
+            </Text>
           </Group>
           <Stack gap={4} align="flex-end">
             <Group gap="xs" wrap="nowrap">
@@ -531,7 +536,7 @@ function NoteCard({ note, onEdit, onDelete, onTogglePin }) {
 const TEXT_FIELDS = ['title']
 
 // Notes of the authenticated user. No owner selection needed.
-export default function NotesPanel({ registerActions, userId } = {}) {
+export default function NotesPanel({ registerActions, userId, hourCycle = 'auto' } = {}) {
   const navigate = useNavigate()
   const location = useLocation()
   const openCreateRef = useRef(null)
@@ -2001,7 +2006,7 @@ export default function NotesPanel({ registerActions, userId } = {}) {
         <>
           <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md" style={{ width: "100%" }}>
             {sortedNotes.map((n) => (
-              <NoteCard key={n.id} note={n} onEdit={openEdit} onDelete={remove} onTogglePin={togglePin} />
+              <NoteCard key={n.id} note={n} onEdit={openEdit} onDelete={remove} onTogglePin={togglePin} hourCycle={hourCycle} />
             ))}
           </SimpleGrid>
           {loadMoreIndicator}
@@ -2021,8 +2026,16 @@ export default function NotesPanel({ registerActions, userId } = {}) {
           <Table.Tbody>
             {sortedNotes.map((n) => (
               <Table.Tr key={n.id} style={{ cursor: 'pointer' }} onClick={() => openEdit(n)}>
-                <Table.Td>{new Date(n.createdAt).toLocaleString()}</Table.Td>
-                <Table.Td>{new Date(n.updatedAt).toLocaleString()}</Table.Td>
+                <Table.Td style={{ whiteSpace: 'nowrap' }}>
+                  <time dateTime={n.createdAt} title={formatFullTimestamp(n.createdAt)}>
+                    {formatNoteDate(n.createdAt, { hourCycle })}
+                  </time>
+                </Table.Td>
+                <Table.Td style={{ whiteSpace: 'nowrap' }}>
+                  <time dateTime={n.updatedAt} title={formatFullTimestamp(n.updatedAt)}>
+                    {formatNoteDate(n.updatedAt, { hourCycle })}
+                  </time>
+                </Table.Td>
                 <Table.Td>
                   <Stack gap="xs">
                     <Text style={{ minWidth: 0 }}>{n.title || <Text c="dimmed" fs="italic">Untitled</Text>}</Text>

@@ -9,6 +9,7 @@ import {
   Group,
   PasswordInput,
   Progress,
+  SegmentedControl,
   SimpleGrid,
   Stack,
   Table,
@@ -22,6 +23,7 @@ import { IconArrowDown, IconArrowUp, IconCheck, IconKey, IconLogout, IconMoon, I
 import { THEME_COLORS } from './ThemeButton'
 import TwoFactorCard from './TwoFactorCard'
 import { notesApi, usersApi } from './api'
+import { formatNoteDate } from './dateFormat'
 
 function formatDate(value) {
   if (!value) return '—'
@@ -63,6 +65,8 @@ export default function PersonalSettings({
   user,
   themeColor,
   onThemeChange,
+  hourCycle = 'auto',
+  onHourCycleChange = () => {},
   onPlanChange,
   onPlanSync,
   billingEnabled = false,
@@ -268,6 +272,15 @@ export default function PersonalSettings({
       setSavingPassword(false)
     }
   }
+
+  // Live preview of the adaptive list format for the three age tiers:
+  // today, earlier this year, and an older note.
+  const previewNow = new Date()
+  const previewSamples = [
+    new Date(previewNow.getFullYear(), previewNow.getMonth(), previewNow.getDate(), 14, 23),
+    new Date(previewNow.getFullYear(), 0, 12, 14, 23),
+    new Date(previewNow.getFullYear() - 1, 0, 12, 14, 23),
+  ].map((d) => formatNoteDate(d, { hourCycle }))
 
   return (
     <Stack gap="md" style={{ width: '100%' }}>
@@ -513,6 +526,22 @@ export default function PersonalSettings({
                 </Button>
               ))}
             </SimpleGrid>
+          </div>
+
+          <div>
+            <Text size="sm" fw={500} mb="xs">Time format</Text>
+            <SegmentedControl
+              value={hourCycle}
+              onChange={onHourCycleChange}
+              data={[
+                { value: 'auto', label: 'Auto' },
+                { value: 'h12', label: '12-hour' },
+                { value: 'h23', label: '24-hour' },
+              ]}
+            />
+            <Text size="xs" c="dimmed" mt="xs">
+              Notes list: {previewSamples.join('   ·   ')}
+            </Text>
           </div>
         </Stack>
       </Card>

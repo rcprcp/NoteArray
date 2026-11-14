@@ -12,6 +12,7 @@ import java.time.Instant;
 public class User extends BaseEntity {
 
     public static final String DEFAULT_THEME_COLOR = "blue";
+    public static final String DEFAULT_HOUR_CYCLE = "auto";
     public static final String DEFAULT_PLAN = "free";
     public static final String PLAN_STATUS_ACTIVE = "active";
     public static final String PLAN_STATUS_PENDING_CHECKOUT = "pending_checkout";
@@ -32,6 +33,13 @@ public class User extends BaseEntity {
     /** Mantine primary color name chosen by the user in the UI. */
     @Column(name = "theme_color", nullable = false, length = 32)
     public String themeColor = DEFAULT_THEME_COLOR;
+
+    /**
+     * Preferred clock for note timestamps: 'auto' follows the browser locale,
+     * 'h12' forces a 12-hour clock and 'h23' forces a 24-hour clock.
+     */
+    @Column(name = "hour_cycle", nullable = false, length = 8)
+    public String hourCycle = DEFAULT_HOUR_CYCLE;
 
     /** Subscription plan tier ('free', 'pro', 'premium'). */
     @Column(name = "plan", nullable = false, length = 32)

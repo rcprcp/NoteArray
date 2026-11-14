@@ -53,6 +53,9 @@ public class UserResource {
 
     private static final Set<String> PLANS = Set.of("free", "pro", "premium");
 
+    /** Clock preferences accepted by the UI; see ui/src/dateFormat.js. */
+    private static final Set<String> HOUR_CYCLES = Set.of("auto", "h12", "h23");
+
     @Context
     HttpHeaders headers;
 
@@ -116,13 +119,14 @@ public class UserResource {
             String themeColor,
             String plan,
             String totpCode,
-            String recoveryCode) {
+            String recoveryCode,
+            String hourCycle) {
         public UserRequest(String name, String email, String password, String themeColor) {
-            this(name, email, password, null, null, themeColor, null, null, null);
+            this(name, email, password, null, null, themeColor, null, null, null, null);
         }
 
         public UserRequest(String name, String email, String password, String currentPassword, String themeColor) {
-            this(name, email, password, currentPassword, null, themeColor, null, null, null);
+            this(name, email, password, currentPassword, null, themeColor, null, null, null, null);
         }
 
         public UserRequest(
@@ -132,7 +136,7 @@ public class UserResource {
                 String currentPassword,
                 String confirmPassword,
                 String themeColor) {
-            this(name, email, password, currentPassword, confirmPassword, themeColor, null, null, null);
+            this(name, email, password, currentPassword, confirmPassword, themeColor, null, null, null, null);
         }
     }
 
@@ -497,6 +501,10 @@ public class UserResource {
         if (!isBlank(req.themeColor()) && !THEME_COLORS.contains(req.themeColor())) {
             return Response.status(Response.Status.BAD_REQUEST).entity("invalid themeColor").build();
         }
+        Response hourCycleError = validateHourCycle(req.hourCycle());
+        if (hourCycleError != null) {
+            return hourCycleError;
+        }
         if (!isBlank(req.plan())) {
             return planWriteRejected();
         }
@@ -516,6 +524,9 @@ public class UserResource {
         user.passwordHash = BcryptUtil.bcryptHash(req.password());
         if (!isBlank(req.themeColor())) {
             user.themeColor = req.themeColor();
+        }
+        if (!isBlank(req.hourCycle())) {
+            user.hourCycle = req.hourCycle();
         }
         // NOTE: req.plan() is never written — see planWriteRejected() (REVIEW #26).
         user.persist();
@@ -577,6 +588,10 @@ public class UserResource {
         if (!isBlank(req.themeColor()) && !THEME_COLORS.contains(req.themeColor())) {
             return Response.status(Response.Status.BAD_REQUEST).entity("invalid themeColor").build();
         }
+        Response hourCycleError = validateHourCycle(req.hourCycle());
+        if (hourCycleError != null) {
+            return hourCycleError;
+        }
         if (!isBlank(req.plan())) {
             return planWriteRejected();
         }
@@ -629,6 +644,9 @@ public class UserResource {
         }
         if (!isBlank(req.themeColor())) {
             user.themeColor = req.themeColor();
+        }
+        if (!isBlank(req.hourCycle())) {
+            user.hourCycle = req.hourCycle();
         }
         // NOTE: req.plan() is never written — see planWriteRejected() (REVIEW #26).
 
@@ -905,6 +923,14 @@ public class UserResource {
 
     private static boolean isBlank(String s) {
         return s == null || s.isBlank();
+    }
+
+    /** Accept only the clock preferences the UI can render; blank means "leave unchanged". */
+    static Response validateHourCycle(String hourCycle) {
+        if (!isBlank(hourCycle) && !HOUR_CYCLES.contains(hourCycle)) {
+            return Response.status(Response.Status.BAD_REQUEST).entity("invalid hourCycle").build();
+        }
+        return null;
     }
 
     /** Client address used to key IP-based limits (see {@link ClientIp}). */

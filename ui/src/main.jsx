@@ -14,6 +14,7 @@ import '@mantine/notifications/styles.css'
 
 const THEME_KEY = 'notearray-theme-color'
 const LEGACY_THEME_KEY = 'notary-theme-color'
+const HOUR_CYCLE_KEY = 'notearray-hour-cycle'
 
 function getInitialThemeColor() {
   const savedColor = localStorage.getItem(THEME_KEY)
@@ -28,9 +29,14 @@ function getInitialThemeColor() {
   return 'blue'
 }
 
+function getInitialHourCycle() {
+  return localStorage.getItem(HOUR_CYCLE_KEY) || 'auto'
+}
+
 // SPA shell. Session is managed via HttpOnly cookies.
 function Root() {
   const [themeColor, setThemeColor] = useState(getInitialThemeColor)
+  const [hourCycle, setHourCycle] = useState(getInitialHourCycle)
   const [currentUser, setCurrentUser] = useState(null)
   const [isLoading, setIsLoading] = useState(true)
   // Feature switch sourced from GET /api/billing/config. Defaults to hidden:
@@ -66,6 +72,10 @@ function Root() {
           setThemeColor(user.themeColor)
           localStorage.setItem(THEME_KEY, user.themeColor)
         }
+        if (user?.hourCycle) {
+          setHourCycle(user.hourCycle)
+          localStorage.setItem(HOUR_CYCLE_KEY, user.hourCycle)
+        }
       } catch (e) {
         // Not logged in or session expired
         if (active) setCurrentUser(null)
@@ -97,6 +107,10 @@ function Root() {
       if (user?.themeColor) {
         setThemeColor(user.themeColor)
         localStorage.setItem(THEME_KEY, user.themeColor)
+      }
+      if (user?.hourCycle) {
+        setHourCycle(user.hourCycle)
+        localStorage.setItem(HOUR_CYCLE_KEY, user.hourCycle)
       }
     } catch (e) {
       // Surface to the login page, which displays it in its error alert.
@@ -166,6 +180,23 @@ function Root() {
     }
   }
 
+  // Apply immediately, then persist to the current user's record.
+  const changeHourCycle = async (cycle) => {
+    setHourCycle(cycle)
+    localStorage.setItem(HOUR_CYCLE_KEY, cycle)
+    if (!currentUser) return
+    try {
+      await usersApi.update(currentUser.id, { hourCycle: cycle })
+      setCurrentUser({ ...currentUser, hourCycle: cycle })
+    } catch (e) {
+      notifications.show({
+        color: 'red',
+        title: 'Time format not saved',
+        message: 'Your clock preference applies now but could not be saved to your account.',
+      })
+    }
+  }
+
   const changePlan = async (plan) => {
     if (!currentUser) return
     try {
@@ -212,6 +243,8 @@ function Root() {
         <App
           themeColor={themeColor}
           onThemeChange={changeTheme}
+          hourCycle={hourCycle}
+          onHourCycleChange={changeHourCycle}
           onPlanChange={changePlan}
           onPlanSync={syncPlan}
           billingEnabled={billingEnabled}

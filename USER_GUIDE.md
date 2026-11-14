@@ -415,12 +415,15 @@ Click **your avatar** in the header to open **Personal Settings**.
 
 ### Your profile
 
-A card shows your **Name, Email, plan badge, theme, last login, created/updated dates**, and your account ID (usefully when contacting support or calling APIs directly).
+A card shows your **Name, Email, plan badge, theme, time format, last login, created/updated dates**, and your account ID (usefully when contacting support or calling APIs directly).
 
 ### Appearance: Light / Dark / Auto + colors
 
 - **Light / Dark / Auto** buttons — Auto follows your operating system's preference.
 - 14 **color palettes** (blue by default) — click any palette to apply instantly.
+- **Time format** — choose **Auto** to follow your browser's clock convention, or force a **12-hour** or **24-hour** clock. The preview under the buttons shows how dates in the notes list will look.
+
+The notes list uses a compact, adaptive date: time only for notes touched today, month and day for notes from this year, and month, day and year for older notes. The order follows your browser's locale (for example `Nov 13` in the US and `13 Nov` in the UK). Hover any date to see the full timestamp.
 
 Your appearance choice is saved to your account and follows you across devices and sessions. If the account save fails (e.g. a dropped connection), you'll get a *"Theme not saved"* warning — the color still applies locally, and simply re-clicking will retry the save.
 
@@ -525,7 +528,7 @@ Note[A]rray is designed to collect as little as possible and protect what it kee
 
 ### What we store (and don't)
 
-- **Stored:** your **name**, **email**, a **hashed password** (never readable by anyone, including operators), your **theme color**, your **subscription state**, and **your notes, tags and attachments**.
+- **Stored:** your **name**, **email**, a **hashed password** (never readable by anyone, including operators), your **theme color**, your **time format**, your **subscription state**, and **your notes, tags and attachments**.
 - **Not stored:** no analytics, no telemetry, no advertising trackers, no third-party scripts.
 - **One cookie only:** `NOTEARRAY_SESSION`, which keeps you signed in. It can't be read by scripts (HttpOnly) and is never shared across sites (SameSite=Strict). Sessions are stored in the database only as a **SHA-256 hash** — a leaked database copy can't be replayed to hijack accounts.
 
