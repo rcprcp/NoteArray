@@ -320,21 +320,24 @@ You can pair a search with the Search Titles / Search Note Content / Search Tags
 ### The notes list
 
 The default view is **List Notes**. A **card / list toggle** at the top right switches the display on any device (on
-phones the card view suits best; the list view is a compact table). On desktop the list is a table:
+phones the card view suits best; the list view is a compact table). Next to it, the **calendar toggle** shows or hides
+the note's **Created** date (hidden by default) so the table can give more width to titles. On desktop the list is a table:
 
-- **Created / Updated / Title** columns
+- **Updated / Title** columns (plus **Created** when the calendar toggle is on)
 - Tags shown as badges under the title
 - A **paperclip icon** next to the title — and in card view — marks notes that carry one or more attachments (hover for the count)
 - Untitled notes show as italic *"Untitled"*
 - Row actions: **Pin** (a pin/star icon button), **Edit**, and **Delete**
+- Hovering a date shows the full timestamp, including the created date
 - The list paints the first **50** notes, then appends more as you scroll. The footer shows **Load more** (also usable with the keyboard), a spinner while the next page loads, or **End of notes** when everything is loaded
 
-On mobile, the default is **cards** with the created/updated dates, a 2-line-clamped title, tags, and the same Pin/Edit/Delete actions (you can switch to the table with the toggle).
+On mobile, the default is **cards** with the updated date (and created date when the calendar toggle is on), a
+2-line-clamped title, tags, and the same Pin/Edit/Delete actions (you can switch to the table with the toggle).
 
 ### Sorting
 
-- **Default order:** Created, **newest first**.
-- Click any column header (desktop) to sort by it; click again to reverse. Clicking a date column defaults to newest-first, and the Title column to A→Z — an arrow shows the current direction.
+- **Default order:** Updated, **newest first**.
+- Click any column header (desktop) to sort by it; click again to reverse. Clicking a date column defaults to newest-first, and the Title column to A→Z — an arrow shows the current direction. Hiding the Created column also returns the sort to Updated if it was sorted by Created.
 - The chosen sort is applied by the server, so every page you append stays in the same order. Changing the sort reloads the first page (with a brief loading state); the card view uses the same sort, so switch to the table view to change it.
 - When a note is edited or created while a sort/search is active, the currently loaded pages are refreshed so it lands in the right place.
 

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { ActionIcon, Alert, Box, Button, Checkbox, Group, List, Modal, Stack, Table, Text, TextInput, UnstyledButton, Badge, Loader, Card, SimpleGrid, Tooltip } from '@mantine/core'
-import { IconCheck, IconChevronDown, IconChevronUp, IconDownload, IconLayoutGrid, IconList, IconListCheck, IconPaperclip, IconPin, IconSearch, IconSelector, IconMenu2, IconX } from '@tabler/icons-react'
+import { IconCalendar, IconCheck, IconChevronDown, IconChevronUp, IconDownload, IconLayoutGrid, IconList, IconListCheck, IconPaperclip, IconPin, IconSearch, IconSelector, IconMenu2, IconX } from '@tabler/icons-react'
 import { useMediaQuery } from '@mantine/hooks'
 import { notifications } from '@mantine/notifications'
 import ImportExportPanel from './ImportExportPanel'
@@ -31,6 +31,12 @@ const FILTERS_KEY = 'notearray.filters'
 // Card/list display preference: 'auto' follows screen size, or an explicit override.
 const VIEW_KEY = 'notearray.view'
 const DEFAULT_VIEW_MODE = 'auto'
+// The Created column is hidden by default (the editor and the Updated tooltip
+// still carry it); this remembers the user's choice.
+const SHOW_CREATED_KEY = 'notearray.show-created'
+// Date columns shrink to their content so the title column gets the rest of
+// the table width.
+const DATE_COLUMN_STYLE = { width: 1, whiteSpace: 'nowrap' }
 
 // Initial paint and "load more" page size; a refresh never re-fetches more than
 // MAX_REFRESH items even if the user has scrolled further.
@@ -416,11 +422,11 @@ function MarkdownEditor({ value, onChange, onDropFiles, onPreviewAttachment, hei
 }
 
 // Clickable, sortable column header.
-function SortableTh({ label, field, sort, onSort }) {
+function SortableTh({ label, field, sort, onSort, style }) {
   const active = sort.field === field
   const Icon = !active ? IconSelector : sort.dir === 'asc' ? IconChevronUp : IconChevronDown
   return (
-    <Table.Th aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
+    <Table.Th style={style} aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
       <UnstyledButton onClick={() => onSort(field)}>
         <Group gap={4} wrap="nowrap">
           <Text fw={600} size="sm">{label}</Text>
@@ -490,15 +496,17 @@ export function AttachmentIcon({ count }) {
   )
 }
 
-function NoteCard({ note, onEdit, onDelete, onTogglePin, hourCycle, dateFormat }) {
+function NoteCard({ note, onEdit, onDelete, onTogglePin, hourCycle, dateFormat, showCreated }) {
   return (
     <Card shadow="sm" padding="md" radius="md" withBorder onClick={() => onEdit(note)} style={{ cursor: 'pointer' }}>
       <Stack gap="xs">
         <Group justify="space-between" align="flex-start" wrap="nowrap" gap="xs">
           <Group gap="xs" wrap="wrap" style={{ minWidth: 0 }}>
-            <Text fw={500} size="sm" c="dimmed" style={{ minWidth: 0 }}>
-              Created: <time dateTime={note.createdAt} title={formatFullTimestamp(note.createdAt, hourCycle)}>{formatNoteDate(note.createdAt, { preset: dateFormat, hourCycle })}</time>
-            </Text>
+            {showCreated && (
+              <Text fw={500} size="sm" c="dimmed" style={{ minWidth: 0 }}>
+                Created: <time dateTime={note.createdAt} title={formatFullTimestamp(note.createdAt, hourCycle)}>{formatNoteDate(note.createdAt, { preset: dateFormat, hourCycle })}</time>
+              </Text>
+            )}
             <Text fw={500} size="sm" c="dimmed" style={{ minWidth: 0 }}>
               Updated: <time dateTime={note.updatedAt} title={formatFullTimestamp(note.updatedAt, hourCycle)}>{formatNoteDate(note.updatedAt, { preset: dateFormat, hourCycle })}</time>
             </Text>
@@ -557,7 +565,7 @@ export default function NotesPanel({ registerActions, userId, hourCycle = 'auto'
   const loadingMoreRef = useRef(false)
   const requestSeqRef = useRef(0)
   const sentinelRef = useRef(null)
-  const [sort, setSort] = useState({ field: 'createdAt', dir: 'desc' })
+  const [sort, setSort] = useState({ field: 'updatedAt', dir: 'desc' })
   const [error, setError] = useState(null)
   const [formError, setFormError] = useState(null)
   const [editingNote, setEditingNote] = useState(null)
@@ -630,6 +638,18 @@ export default function NotesPanel({ registerActions, userId, hourCycle = 'auto'
   const [viewMode, setViewMode] = useState(() => readStorage(VIEW_KEY, DEFAULT_VIEW_MODE))
   useEffect(() => writeStorage(VIEW_KEY, viewMode), [viewMode])
   const cardView = viewMode === 'card' || (viewMode === 'auto' && isMobile)
+  // Whether the Created date is shown next to Updated (table column / card line).
+  const [showCreated, setShowCreated] = useState(() => readStorage(SHOW_CREATED_KEY, false))
+  useEffect(() => writeStorage(SHOW_CREATED_KEY, showCreated), [showCreated])
+  const toggleShowCreated = () => {
+    const next = !showCreated
+    setShowCreated(next)
+    // The Created header disappears with the column; keep the visible list
+    // ordered by a column the user can still see and control.
+    if (!next && sort.field === 'createdAt') {
+      setSort({ field: 'updatedAt', dir: 'desc' })
+    }
+  }
 
   // Import / Export states
   const [importOpen, setImportOpen] = useState(false)
@@ -1879,7 +1899,7 @@ export default function NotesPanel({ registerActions, userId, hourCycle = 'auto'
               {hasMore ? ' · more available' : ''}
             </Text>
           </Stack>
-          <Group gap={4} wrap="nowrap" style={{ flex: '0 0 auto' }} role="group" aria-label="Notes display mode">
+          <Group gap={4} wrap="nowrap" style={{ flex: '0 0 auto' }} role="group" aria-label="Notes display options">
             <Tooltip label="Card view">
               <ActionIcon
                 variant={viewMode === 'card' ? 'filled' : 'light'}
@@ -1900,6 +1920,17 @@ export default function NotesPanel({ registerActions, userId, hourCycle = 'auto'
                 aria-pressed={viewMode === 'list'}
               >
                 <IconList size={16} />
+              </ActionIcon>
+            </Tooltip>
+            <Tooltip label={showCreated ? 'Hide created date' : 'Show created date'}>
+              <ActionIcon
+                variant={showCreated ? 'filled' : 'light'}
+                size="lg"
+                onClick={toggleShowCreated}
+                aria-label="Show created date"
+                aria-pressed={showCreated}
+              >
+                <IconCalendar size={16} />
               </ActionIcon>
             </Tooltip>
           </Group>
@@ -2006,7 +2037,7 @@ export default function NotesPanel({ registerActions, userId, hourCycle = 'auto'
         <>
           <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md" style={{ width: "100%" }}>
             {sortedNotes.map((n) => (
-              <NoteCard key={n.id} note={n} onEdit={openEdit} onDelete={remove} onTogglePin={togglePin} hourCycle={hourCycle} dateFormat={dateFormat} />
+              <NoteCard key={n.id} note={n} onEdit={openEdit} onDelete={remove} onTogglePin={togglePin} hourCycle={hourCycle} dateFormat={dateFormat} showCreated={showCreated} />
             ))}
           </SimpleGrid>
           {loadMoreIndicator}
@@ -2017,26 +2048,30 @@ export default function NotesPanel({ registerActions, userId, hourCycle = 'auto'
           <Table striped highlightOnHover withTableBorder style={{ width: "100%" }}>
           <Table.Thead>
             <Table.Tr>
-              <SortableTh label="Created" field="createdAt" sort={sort} onSort={toggleSort} />
-              <SortableTh label="Updated" field="updatedAt" sort={sort} onSort={toggleSort} />
-              <SortableTh label="Title" field="title" sort={sort} onSort={toggleSort} />
+              {showCreated && (
+                <SortableTh label="Created" field="createdAt" sort={sort} onSort={toggleSort} style={DATE_COLUMN_STYLE} />
+              )}
+              <SortableTh label="Updated" field="updatedAt" sort={sort} onSort={toggleSort} style={DATE_COLUMN_STYLE} />
+              <SortableTh label="Title" field="title" sort={sort} onSort={toggleSort} style={{ width: '100%' }} />
               <Table.Th />
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
             {sortedNotes.map((n) => (
               <Table.Tr key={n.id} style={{ cursor: 'pointer' }} onClick={() => openEdit(n)}>
-                <Table.Td style={{ whiteSpace: 'nowrap' }}>
-                  <time dateTime={n.createdAt} title={formatFullTimestamp(n.createdAt, hourCycle)}>
-                    {formatNoteDate(n.createdAt, { preset: dateFormat, hourCycle })}
-                  </time>
-                </Table.Td>
-                <Table.Td style={{ whiteSpace: 'nowrap' }}>
+                {showCreated && (
+                  <Table.Td style={DATE_COLUMN_STYLE}>
+                    <time dateTime={n.createdAt} title={formatFullTimestamp(n.createdAt, hourCycle)}>
+                      {formatNoteDate(n.createdAt, { preset: dateFormat, hourCycle })}
+                    </time>
+                  </Table.Td>
+                )}
+                <Table.Td style={DATE_COLUMN_STYLE}>
                   <time dateTime={n.updatedAt} title={formatFullTimestamp(n.updatedAt, hourCycle)}>
                     {formatNoteDate(n.updatedAt, { preset: dateFormat, hourCycle })}
                   </time>
                 </Table.Td>
-                <Table.Td>
+                <Table.Td style={{ width: '100%' }}>
                   <Stack gap="xs">
                     <Text style={{ minWidth: 0 }}>{n.title || <Text c="dimmed" fs="italic">Untitled</Text>}</Text>
                     {n.tags && (
