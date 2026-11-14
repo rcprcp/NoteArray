@@ -424,7 +424,7 @@ A card shows your **Name, Email, plan badge, theme, date format, time format, la
 
 - **Light / Dark / Auto** buttons — Auto follows your operating system's preference.
 - 14 **color palettes** (blue by default) — click any palette to apply instantly.
-- **Date format** — **Smart** (the default) shows the time for notes touched today, the date for notes from this year, and the year for older notes. Other choices pin a fixed shape: **Day first** (`13 Nov`), **Month first** (`Nov 13`), **Month/Day/Year + time** (`Nov/13/26 14:23`), **Day/Month/Year + time** (`13/Nov/26 14:23`), **ISO 8601** (`2026-11-13 14:23`), **Relative** (`3d ago`) and **Full timestamp**.
+- **Date format** — **Smart** (the default) shows relative times for notes touched in the last three days (`now`, `5m ago`, `3h ago`, `2d ago`), then the date for notes from this year, and the year for older notes. Other choices pin a fixed shape: **Day first** (`13 Nov`), **Month first** (`Nov 13`), **Month/Day/Year + time** (`Nov/13/26 14:23`), **Day/Month/Year + time** (`13/Nov/26 14:23`), **ISO 8601** (`2026-11-13 14:23`), **Relative** (`3d ago`, up to a week) and **Full timestamp**.
 - **Time format** — choose **Auto** to follow your browser's clock convention, or force a **12-hour** or **24-hour** clock.
 
 The preview under the date controls shows how the notes list will look. The order used by **Smart** follows your browser's locale (for example `Nov 13` in the US and `13 Nov` in the UK); pick **Day first** if your browser is set to US English but you prefer day-first dates. Hover any date in the list to see the full timestamp.

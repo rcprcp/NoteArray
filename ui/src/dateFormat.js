@@ -2,7 +2,7 @@
 //
 // The default "adaptive" preset keeps the list narrow without hiding
 // information:
-//   - today             -> time only ("14:23" / "2:23 PM")
+//   - last 3 days       -> relative ("now", "5m ago", "3h ago", "2d ago")
 //   - earlier this year -> month and day ("Nov 13" / "13 Nov")
 //   - older             -> month, day and year ("Nov 13, 2025" / "13 Nov 2025")
 //
@@ -36,6 +36,24 @@ function clockOptions(hourCycle) {
   return hourCycle === 'h12' || hourCycle === 'h23' ? { hourCycle } : {}
 }
 
+const MINUTE_MS = 60 * 1000
+const HOUR_MS = 60 * MINUTE_MS
+const DAY_MS = 24 * HOUR_MS
+// Smart dates stay relative for the first three days, then switch to the
+// compact calendar form. The explicit Relative preset keeps a week of context.
+const ADAPTIVE_RELATIVE_LIMIT_MS = 3 * DAY_MS
+const RELATIVE_PRESET_LIMIT_MS = 7 * DAY_MS
+
+/** Relative label while the timestamp is inside the window, otherwise null. */
+function elapsedText(date, now, limitMs) {
+  const elapsedMs = now.getTime() - date.getTime()
+  if (elapsedMs < 0 || elapsedMs >= limitMs) return null
+  if (elapsedMs < MINUTE_MS) return 'now'
+  if (elapsedMs < HOUR_MS) return `${Math.floor(elapsedMs / MINUTE_MS)}m ago`
+  if (elapsedMs < DAY_MS) return `${Math.floor(elapsedMs / HOUR_MS)}h ago`
+  return `${Math.floor(elapsedMs / DAY_MS)}d ago`
+}
+
 // Intl formatter construction is comparatively expensive and the notes list
 // renders hundreds of timestamps per pass, so cache by preset/locale.
 const formatters = new Map()
@@ -66,18 +84,13 @@ function dateParts(date, locale, options, key) {
   return parts
 }
 
-function sameDay(date, now) {
-  return date.getFullYear() === now.getFullYear()
-    && date.getMonth() === now.getMonth()
-    && date.getDate() === now.getDate()
-}
-
 function sameYear(date, now) {
   return date.getFullYear() === now.getFullYear()
 }
 
-function adaptiveText(date, locale, hourCycle, now) {
-  if (sameDay(date, now)) return timeText(date, locale, hourCycle)
+function adaptiveText(date, locale, now) {
+  const recent = elapsedText(date, now, ADAPTIVE_RELATIVE_LIMIT_MS)
+  if (recent) return recent
   const showYear = !sameYear(date, now)
   return formatter(
     locale,
@@ -130,19 +143,10 @@ function isoText(date, locale, hourCycle) {
 }
 
 function relativeText(date, locale, hourCycle, now) {
-  const elapsedMs = now.getTime() - date.getTime()
-  if (elapsedMs >= 0) {
-    const minutes = Math.floor(elapsedMs / 60000)
-    if (minutes < 1) return 'just now'
-    if (minutes < 60) return `${minutes}m ago`
-    const hours = Math.floor(minutes / 60)
-    if (hours < 24) return `${hours}h ago`
-    const days = Math.floor(hours / 24)
-    if (days < 7) return `${days}d ago`
-  }
-  // Future timestamps (clock skew) and notes older than a week fall back to
-  // the adaptive date so the entry still carries an absolute reference.
-  return adaptiveText(date, locale, hourCycle, now)
+  // Future timestamps (clock skew) and notes older than the window fall back
+  // to the adaptive date so the entry still carries an absolute reference.
+  return elapsedText(date, now, RELATIVE_PRESET_LIMIT_MS)
+    ?? adaptiveText(date, locale, now)
 }
 
 function fullText(date, locale, hourCycle) {
@@ -174,13 +178,9 @@ export function formatNoteDate(
 
   switch (preset) {
     case 'day_month':
-      return sameDay(date, now)
-        ? timeText(date, locale, hourCycle)
-        : dayMonthText(date, locale, now)
+      return elapsedText(date, now, ADAPTIVE_RELATIVE_LIMIT_MS) ?? dayMonthText(date, locale, now)
     case 'month_day':
-      return sameDay(date, now)
-        ? timeText(date, locale, hourCycle)
-        : monthDayText(date, locale, now)
+      return elapsedText(date, now, ADAPTIVE_RELATIVE_LIMIT_MS) ?? monthDayText(date, locale, now)
     case 'mdy_slash':
       return slashText(date, locale, hourCycle, false)
     case 'dmy_slash':
@@ -193,7 +193,7 @@ export function formatNoteDate(
       return fullText(date, locale, hourCycle)
     case 'adaptive':
     default:
-      return adaptiveText(date, locale, hourCycle, now)
+      return adaptiveText(date, locale, now)
   }
 }
 

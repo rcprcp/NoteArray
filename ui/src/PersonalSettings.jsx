@@ -288,10 +288,10 @@ export default function PersonalSettings({
   }
 
   // Live preview of the adaptive list format for the three age tiers:
-  // today, earlier this year, and an older note.
+  // the last few minutes, earlier this year, and an older note.
   const previewNow = new Date()
   const previewSamples = [
-    new Date(previewNow.getFullYear(), previewNow.getMonth(), previewNow.getDate(), 14, 23),
+    new Date(previewNow.getTime() - 3 * 60 * 1000),
     new Date(previewNow.getFullYear(), 0, 12, 14, 23),
     new Date(previewNow.getFullYear() - 1, 0, 12, 14, 23),
   ].map((d) => formatNoteDate(d, { preset: dateFormat, hourCycle }))
